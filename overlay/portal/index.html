@@ -6,25 +6,16 @@
     <title>5tratumOS</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/forgeos.css?v=15" />
-    <script defer src="/app.js?v=20"></script>
+    <link rel="stylesheet" href="/forgeos.css?v=16" />
+    <script defer src="/app.js?v=21"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <div class="forgeos-shell">
       <aside class="forgeos-sidebar" aria-label="5tratumOS navigation">
         <div class="forgeos-brand">
-          <img class="forgeos-brand__mark" src="/assets/5tratum-icon.png" alt="" aria-hidden="true" />
-          <div class="min-w-0">
-            <div class="forgeos-brand__title">5tratumOS</div>
-            <div class="forgeos-brand__sub">AxeSuite host</div>
-          </div>
-          <button id="btn-sidebar-collapse" class="forgeos-icon-btn" type="button" title="Collapse sidebar" aria-label="Collapse sidebar">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-              <path
-                fill="currentColor"
-                d="M11 4a1 1 0 0 1 1 1v14a1 1 0 1 1-2 0V5a1 1 0 0 1 1-1Zm6.3 3.3a1 1 0 0 1 1.4 1.4L15.41 12l3.29 3.3a1 1 0 0 1-1.4 1.4l-4-4a1 1 0 0 1 0-1.4l4-4Z"
-              />
-            </svg>
+          <button id="btn-sidebar-collapse" class="forgeos-brand__btn" type="button" title="Toggle sidebar" aria-label="Toggle sidebar">
+            <img class="forgeos-brand__mark forgeos-brand__mark--full" src="/assets/5tratum-mark.png" alt="5tratumOS" />
+            <img class="forgeos-brand__mark forgeos-brand__mark--icon" src="/assets/5tratum-icon.png" alt="5tratumOS" />
           </button>
         </div>
 
@@ -178,7 +169,7 @@
                   <div class="forgeos-segment" role="tablist" aria-label="Store channel">
                     <button class="forgeos-segment__btn forgeos-segment__btn--active" type="button" data-store-channel="main">MAIN</button>
                     <button class="forgeos-segment__btn" type="button" data-store-channel="dev">DEV</button>
-                    <button class="forgeos-segment__btn" type="button" data-store-channel="umbrel">Umbrel</button>
+                    <button class="forgeos-segment__btn" type="button" data-store-channel="umbrel">Global</button>
                   </div>
                   <button id="btn-store-sync" class="axe-btn" type="button">Sync</button>
                 </div>
@@ -211,7 +202,7 @@
                     <select id="setting-channel" class="forgeos-input">
                       <option value="main">MAIN</option>
                       <option value="dev">DEV</option>
-                      <option value="umbrel">Umbrel</option>
+                      <option value="umbrel">Global</option>
                     </select>
                   </div>
                   <div class="mt-3">

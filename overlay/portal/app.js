@@ -124,6 +124,7 @@
     let systemUpdatePollTimer = null;
     let systemUpdatePollInFlight = false;
   let openAppIds = [];
+  let maximizedAppId = null;
   const OPEN_APPS_KEY = 'forgeos.openApps';
   const INSTALLED_CACHE_KEY = 'forgeos.installedCache.v1';
   const STORE_CHANNEL_KEY = 'forgeos.storeChannel';
@@ -326,20 +327,20 @@
 
     if (storeSourceLabel) {
       storeSourceLabel.textContent =
-        ch === 'umbrel' ? 'Umbrel App Store' : ch === 'dev' ? 'AxeSuite DEV' : 'AxeSuite MAIN';
+        ch === 'umbrel' ? 'Global App Store' : ch === 'dev' ? 'AxeSuite DEV' : 'AxeSuite MAIN';
     }
 
     if (storeSourceDesc) {
       storeSourceDesc.textContent =
         ch === 'umbrel'
-          ? 'Browse Umbrel app templates and install them into 5tratumOS.'
+          ? 'Browse community app templates and install them into 5tratumOS.'
           : ch === 'dev'
             ? 'Preview channel for AxeSuite apps (use with caution).'
             : 'Stable releases for AxeSuite apps.';
     }
 
     if (storeSearchInput) {
-      storeSearchInput.placeholder = ch === 'umbrel' ? 'Search Umbrel apps...' : 'Search apps...';
+      storeSearchInput.placeholder = ch === 'umbrel' ? 'Search global apps...' : 'Search apps...';
     }
   }
 
@@ -1301,6 +1302,7 @@
     if (installedById && installedById.size) {
       openAppIds = openAppIds.filter((id) => installedById.has(id));
     }
+    if (maximizedAppId && !openAppIds.includes(maximizedAppId)) maximizedAppId = null;
     saveOpenApps();
   }
 
@@ -1417,9 +1419,21 @@
     window.setTimeout(() => cancelProgress(id), 900);
   }
 
-  function setWorkspaceLayout(count) {
+  function setWorkspaceLayout(count, opts) {
     if (!workspaceEl) return;
-    workspaceEl.classList.remove('forgeos-workspace--1', 'forgeos-workspace--2', 'forgeos-workspace--3', 'forgeos-workspace--4');
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const maximized = !!options.maximized;
+    workspaceEl.classList.remove(
+      'forgeos-workspace--1',
+      'forgeos-workspace--2',
+      'forgeos-workspace--3',
+      'forgeos-workspace--4',
+      'forgeos-workspace--maximized',
+    );
+    if (maximized) {
+      workspaceEl.classList.add('forgeos-workspace--maximized');
+      return;
+    }
     const n = Math.min(4, Math.max(0, Number(count) || 0));
     if (n >= 1) workspaceEl.classList.add(`forgeos-workspace--${n}`);
   }
@@ -1477,6 +1491,38 @@
     const actions = document.createElement('div');
     actions.className = 'forgeos-tile__actions';
 
+    const btnMin = document.createElement('button');
+    btnMin.type = 'button';
+    btnMin.className = 'forgeos-tile__btn forgeos-tile__btn--min';
+    btnMin.title = 'Restore';
+    btnMin.setAttribute('aria-label', 'Restore');
+    btnMin.textContent = '–';
+    btnMin.disabled = maximizedAppId !== id;
+    btnMin.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (maximizedAppId !== id) return;
+      maximizedAppId = null;
+      renderWorkspace();
+    });
+
+    const btnMax = document.createElement('button');
+    btnMax.type = 'button';
+    btnMax.className = 'forgeos-tile__btn forgeos-tile__btn--max';
+    btnMax.title = 'Maximize';
+    btnMax.setAttribute('aria-label', 'Maximize');
+    btnMax.textContent = '□';
+    btnMax.disabled = maximizedAppId === id;
+    btnMax.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (maximizedAppId === id) return;
+      maximizedAppId = id;
+      dashboardShowHome = false;
+      selectedAppId = id;
+      syncInstalledSelection();
+      updateAppHeader();
+      renderWorkspace();
+    });
+
     const btnClose = document.createElement('button');
     btnClose.type = 'button';
     btnClose.className = 'forgeos-tile__close';
@@ -1487,6 +1533,8 @@
       toggleAppOpen({ id });
     });
 
+    actions.appendChild(btnMin);
+    actions.appendChild(btnMax);
     actions.appendChild(btnClose);
 
     bar.appendChild(brand);
@@ -1511,7 +1559,7 @@
 
     frameWrap.appendChild(iframe);
 
-    tile.draggable = true;
+    tile.draggable = !maximizedAppId;
     tile.addEventListener('dragstart', (e) => {
       dragAppId = id;
       tile.classList.add('forgeos-tile--dragging');
@@ -1568,12 +1616,15 @@
     }
 
     const showWorkspace = count > 0 && !dashboardShowHome;
-    setWorkspaceLayout(showWorkspace ? count : 0);
+    const isMaximized = !!(maximizedAppId && openAppIds.includes(maximizedAppId));
+    if (maximizedAppId && !isMaximized) maximizedAppId = null;
+    const visibleApps = isMaximized ? apps.filter((a) => String(a && a.id ? a.id : '').trim() === maximizedAppId) : apps;
+    setWorkspaceLayout(showWorkspace ? (isMaximized ? 1 : count) : 0, { maximized: showWorkspace && isMaximized });
     if (workspaceEmptyEl) workspaceEmptyEl.style.display = showWorkspace ? 'none' : 'block';
     workspaceEl.style.display = showWorkspace ? 'grid' : 'none';
     if (!showWorkspace) return;
 
-    for (const app of apps) {
+    for (const app of visibleApps) {
       const tile = makeTile(app);
       if (tile) workspaceEl.appendChild(tile);
     }
@@ -2182,7 +2233,7 @@
     if (isVirtual) {
       const items = [
         {
-          label: id === 'umbrel-store' ? 'Open Umbrel Store' : 'Open',
+          label: id === 'umbrel-store' ? 'Open Global App Store' : 'Open',
           onClick: async () => {
             if (id === 'umbrel-store') {
               setView('store');
@@ -2586,11 +2637,11 @@
 
       const title = document.createElement('div');
       title.className = 'text-lg font-extrabold tracking-tight';
-      title.textContent = 'Umbrel store not synced';
+      title.textContent = 'Global store not synced';
 
       const sub = document.createElement('div');
       sub.className = 'mt-2 text-sm text-slate-300';
-      sub.textContent = storeLastError ? `Error: ${storeLastError}` : 'Click Sync to download the Umbrel store index.';
+      sub.textContent = storeLastError ? `Error: ${storeLastError}` : 'Click Sync to download the global store index.';
 
       const actions = document.createElement('div');
       actions.className = 'forgeos-store-item__actions';
@@ -2598,7 +2649,7 @@
       const btn = document.createElement('button');
       btn.className = 'axe-btn';
       btn.type = 'button';
-      btn.textContent = 'Sync Umbrel store';
+      btn.textContent = 'Sync global store';
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         syncStoreNow().catch(() => {});
@@ -2846,7 +2897,7 @@
     const raw = String(value || '').replace(/\r\n/g, '\n').trim();
     if (!raw) return '';
 
-    // Umbrel descriptions sometimes use " - " as bullet separators in a single paragraph.
+    // Some store descriptions use " - " as bullet separators in a single paragraph.
     if (!raw.includes('\n')) {
       const parts = raw
         .split(' - ')
