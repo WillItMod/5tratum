@@ -1,0 +1,128 @@
+---
+- name: Provision 5tratumOS base (Docker + overlay)
+  hosts: forgeos
+  become: true
+  vars:
+    forgeos_root: /opt/forgeos
+    forgeos_state_dir: /var/lib/forgeos
+    forgeos_channel: main
+    local_forgeos_dir: "{{ playbook_dir }}/../.."
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - jq
+        state: present
+
+    - name: Detect distro
+      ansible.builtin.set_fact:
+        docker_repo_id: "{{ ansible_facts.distribution | lower }}"
+
+    - name: Fail if unsupported distro
+      ansible.builtin.fail:
+        msg: "Unsupported distro for Docker repo install: {{ ansible_facts.distribution }}"
+      when: ansible_facts.distribution not in ["Ubuntu", "Debian"]
+
+    - name: Ensure APT keyrings directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Install Docker APT keyring
+      ansible.builtin.shell: |
+        set -euo pipefail
+        curl -fsSL "https://download.docker.com/linux/{{ docker_repo_id }}/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+      args:
+        creates: /etc/apt/keyrings/docker.gpg
+
+    - name: Add Docker APT repo
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch={{ docker_arch }} signed-by=/etc/apt/keyrings/docker.gpg]
+          https://download.docker.com/linux/{{ docker_repo_id }}
+          {{ ansible_facts.distribution_release }} stable
+        filename: docker
+        state: present
+      vars:
+        docker_arch: >-
+          {{
+            'amd64' if ansible_facts.architecture in ['x86_64', 'amd64']
+            else 'arm64' if ansible_facts.architecture in ['aarch64', 'arm64']
+            else ansible_facts.architecture
+          }}
+
+    - name: Install Docker Engine + Compose v2
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Ensure 5tratumOS directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ forgeos_root }}"
+        - "{{ forgeos_root }}/apps"
+        - "{{ forgeos_state_dir }}/apps"
+        - /etc/forgeos
+
+    - name: Copy overlay
+      ansible.builtin.copy:
+        src: "{{ local_forgeos_dir }}/overlay/"
+        dest: "{{ forgeos_root }}/overlay/"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy app templates
+      ansible.builtin.copy:
+        src: "{{ local_forgeos_dir }}/apps-available/"
+        dest: "{{ forgeos_root }}/apps-available/"
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install forgeos CLI
+      ansible.builtin.copy:
+        src: "{{ local_forgeos_dir }}/bin/forgeos"
+        dest: /usr/local/bin/forgeos
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Set default channel
+      ansible.builtin.copy:
+        content: "{{ forgeos_channel }}\n"
+        dest: /etc/forgeos/channel
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install systemd unit
+      ansible.builtin.copy:
+        src: "{{ local_forgeos_dir }}/systemd/forgeos-overlay.service"
+        dest: /etc/systemd/system/forgeos-overlay.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable overlay service
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: forgeos-overlay.service
+        enabled: true
+        state: started

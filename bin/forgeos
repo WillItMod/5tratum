@@ -1,0 +1,1145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FORGEOS_ROOT="${FORGEOS_ROOT:-/opt/forgeos}"
+FORGEOS_STATE_DIR="${FORGEOS_STATE_DIR:-/var/lib/forgeos}"
+CHANNEL_FILE="${FORGEOS_CHANNEL_FILE:-/etc/forgeos/channel}"
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+current_channel() {
+  if [ -n "${FORGEOS_CHANNEL:-}" ]; then
+    echo "${FORGEOS_CHANNEL}"
+    return 0
+  fi
+  if [ -f "${CHANNEL_FILE}" ]; then
+    tr -d ' \t\r\n' <"${CHANNEL_FILE}" || true
+    return 0
+  fi
+  echo "main"
+}
+
+require_docker() {
+  have docker || die "docker not found (install Docker Engine + Compose v2)"
+  docker info >/dev/null 2>&1 || die "docker is not accessible (is the daemon running? permissions?)"
+  docker compose version >/dev/null 2>&1 || die "docker compose not available (install docker-compose-plugin)"
+}
+
+ensure_dirs() {
+  mkdir -p "${FORGEOS_ROOT}/overlay" "${FORGEOS_ROOT}/apps" "${FORGEOS_ROOT}/apps-available"
+  mkdir -p "${FORGEOS_STATE_DIR}/apps"
+}
+
+compose_up() {
+  local project="$1"
+  local workdir="$2"
+  shift 2
+  (cd "${workdir}" && docker compose --project-name "${project}" "$@")
+}
+
+usage() {
+  cat <<'EOF'
+forgeos: manage 5tratumOS overlay + AxeSuite apps (Docker Compose)
+
+Usage:
+  forgeos channel get
+  forgeos channel set <main|dev>
+
+  forgeos store sync [main|dev|umbrel|all]
+
+  forgeos overlay up
+  forgeos overlay down
+  forgeos overlay logs
+  forgeos overlay status
+
+  forgeos app available
+  forgeos app installed
+  forgeos app install <app-id> [--channel <main|dev>]
+  forgeos app update <app-id>
+  forgeos app uninstall <app-id> [--purge]
+  forgeos app up <app-id>
+  forgeos app down <app-id>
+  forgeos app pull <app-id>
+  forgeos app logs <app-id>
+EOF
+}
+
+cmd="${1:-}"
+shift || true
+
+case "${cmd}" in
+  ""|-h|--help|help)
+    usage
+    exit 0
+    ;;
+esac
+
+ensure_dirs
+
+case "${cmd}" in
+  channel)
+    sub="${1:-}"; shift || true
+    case "${sub}" in
+      get)
+        current_channel
+        ;;
+      set)
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "channel set requires root (writes ${CHANNEL_FILE})"
+        ch="${1:-}"
+        [ -n "${ch}" ] || die "missing channel (main|dev)"
+        case "${ch}" in
+          main|dev) ;;
+          *) die "invalid channel: ${ch} (expected main|dev)" ;;
+        esac
+        install -d -m 0755 "$(dirname "${CHANNEL_FILE}")"
+        printf "%s\n" "${ch}" >"${CHANNEL_FILE}"
+        echo "${ch}"
+        ;;
+      *)
+        die "unknown subcommand: channel ${sub:-}"
+        ;;
+    esac
+    ;;
+
+  store)
+    sub="${1:-}"; shift || true
+    case "${sub}" in
+      sync)
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "store sync requires root (writes ${FORGEOS_ROOT}/store)"
+        have curl || die "curl not found (install curl)"
+        have tar || die "tar not found"
+
+        target="${1:-all}"
+        case "${target}" in
+          ""|all|main|dev|umbrel) ;;
+          *) die "invalid store sync target: ${target} (expected main|dev|umbrel|all)" ;;
+        esac
+
+        store_base="${FORGEOS_ROOT}/store"
+        mkdir -p "${store_base}"
+
+        sync_one() {
+          local ch="$1"
+          local url="$2"
+          local url_fallback="${3:-}"
+          local dest="${store_base}/${ch}"
+          local tmp="${store_base}/.tmp-${ch}-$$"
+
+          rm -rf "${tmp}"
+          mkdir -p "${tmp}"
+
+          echo "syncing store (${ch})..."
+          if ! curl -fsSL "${url}" | tar -xz -C "${tmp}" --strip-components=1; then
+            [ -n "${url_fallback}" ] || die "failed to download store from ${url}"
+            rm -rf "${tmp}"
+            mkdir -p "${tmp}"
+            echo "primary store URL failed; trying fallback..."
+            curl -fsSL "${url_fallback}" | tar -xz -C "${tmp}" --strip-components=1
+          fi
+
+          rm -rf "${dest}"
+          mv "${tmp}" "${dest}"
+        }
+
+        main_url="https://github.com/WillItMod/umbrel-community-store/archive/refs/heads/main.tar.gz"
+        dev_url="https://github.com/WillItMod/umbrel-dev-community-store/archive/refs/heads/main.tar.gz"
+        umbrel_repo="${FORGEOS_UMBREL_STORE_REPO:-getumbrel/umbrel-apps}"
+        umbrel_branch="${FORGEOS_UMBREL_STORE_BRANCH:-master}"
+        umbrel_url_default="https://github.com/${umbrel_repo}/archive/refs/heads/${umbrel_branch}.tar.gz"
+        umbrel_url="${FORGEOS_UMBREL_STORE_URL:-${umbrel_url_default}}"
+        umbrel_url_fallback=""
+        if [ -z "${FORGEOS_UMBREL_STORE_URL:-}" ]; then
+          if [ "${umbrel_branch}" = "master" ]; then
+            umbrel_url_fallback="https://github.com/${umbrel_repo}/archive/refs/heads/main.tar.gz"
+          elif [ "${umbrel_branch}" = "main" ]; then
+            umbrel_url_fallback="https://github.com/${umbrel_repo}/archive/refs/heads/master.tar.gz"
+          fi
+        fi
+
+        if [ "${target}" = "all" ] || [ -z "${target}" ]; then
+          sync_one "main" "${main_url}"
+          sync_one "dev" "${dev_url}"
+          sync_one "umbrel" "${umbrel_url}" "${umbrel_url_fallback}"
+        elif [ "${target}" = "main" ]; then
+          sync_one "main" "${main_url}"
+        elif [ "${target}" = "umbrel" ]; then
+          sync_one "umbrel" "${umbrel_url}" "${umbrel_url_fallback}"
+        else
+          sync_one "dev" "${dev_url}"
+        fi
+
+        echo "store synced: ${store_base}"
+        ;;
+      *)
+        die "unknown subcommand: store ${sub:-}"
+        ;;
+    esac
+    ;;
+
+  overlay)
+    require_docker
+    sub="${1:-}"; shift || true
+    case "${sub}" in
+      up)
+        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" up -d
+        ;;
+      down)
+        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" down
+        ;;
+      logs)
+        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" logs --tail=200 -f
+        ;;
+      status)
+        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" ps
+        ;;
+      *)
+        die "unknown subcommand: overlay ${sub:-}"
+        ;;
+    esac
+    ;;
+
+  app)
+    require_docker
+    sub="${1:-}"; shift || true
+    case "${sub}" in
+      available)
+        ch="$(current_channel)"
+        avail_dir="${FORGEOS_ROOT}/apps-available/${ch}"
+        [ -d "${avail_dir}" ] || die "no available apps for channel '${ch}' in ${avail_dir}"
+        (cd "${avail_dir}" && ls -1) || true
+        ;;
+      installed)
+        (cd "${FORGEOS_ROOT}/apps" && ls -1) || true
+        ;;
+      install)
+        app_id="${1:-}"; shift || true
+        [ -n "${app_id}" ] || die "missing app id"
+        ch="$(current_channel)"
+        if [ "${1:-}" = "--channel" ]; then
+          shift
+          ch="${1:-}"
+          shift || true
+        fi
+        [ -n "${ch}" ] || die "missing channel value"
+        store_root="${FORGEOS_ROOT}/store/${ch}"
+        store_dir=""
+        store_port=""
+        dst="${FORGEOS_ROOT}/apps/${app_id}"
+        [ ! -e "${dst}" ] || die "app already installed: ${app_id} (${dst})"
+
+        install -d -m 0755 "${dst}"
+
+        src="${FORGEOS_ROOT}/apps-available/${ch}/${app_id}"
+        if [ -d "${src}" ]; then
+          cp -a "${src}/." "${dst}/"
+        else
+          [ -d "${store_root}" ] || die "store not found: ${store_root} (run: sudo forgeos store sync ${ch})"
+
+          resolved="$(
+            TARGET_APP_ID="${app_id}" STORE_ROOT="${store_root}" python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+try:
+    import yaml  # type: ignore
+except Exception:
+    print("", file=sys.stderr)
+    sys.exit(2)
+
+target = (os.environ.get("TARGET_APP_ID") or "").strip().lower()
+root = Path(os.environ.get("STORE_ROOT") or "")
+if not target or not root.is_dir():
+    sys.exit(1)
+
+def map_store_id_to_app_id(store_id: str) -> str:
+    raw = (store_id or "").strip().lower()
+    # Umbrel store uses canonical IDs like "bitcoin", "nextcloud", etc.
+    if root.name.strip().lower() == "umbrel":
+        raw = raw.replace(" ", "-")
+        raw = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
+        return raw or "app"
+    for prefix in ("willitmod-dev-", "willitmod-"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix) :]
+            break
+    raw = raw.replace("_", "").replace("-", "")
+    if not raw.startswith("axe"):
+        raw = f"axe{raw}"
+    return raw
+
+for entry in sorted(root.iterdir(), key=lambda p: p.name):
+    if not entry.is_dir():
+        continue
+    if entry.name.startswith("."):
+        continue
+    manifest_path = entry / "umbrel-app.yml"
+    compose_path = entry / "docker-compose.yml"
+    if not manifest_path.is_file() or not compose_path.is_file():
+        continue
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        continue
+    store_id = str(manifest.get("id") or entry.name)
+    app_id = map_store_id_to_app_id(store_id)
+    if app_id != target:
+        continue
+    port = manifest.get("port") or ""
+    print(f"{entry.name}\t{port}")
+    sys.exit(0)
+
+sys.exit(1)
+PY
+          )"
+
+          [ -n "${resolved}" ] || die "no store recipe for '${app_id}' on channel '${ch}' (missing ${src})"
+          store_dir="$(printf '%s' "${resolved}" | awk -F '\t' '{print $1}')"
+          store_port="$(printf '%s' "${resolved}" | awk -F '\t' '{print $2}')"
+
+          gen_ok="$(
+            STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" STORE_PORT="${store_port}" DEST="${dst}" APP_ID="${app_id}" python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+try:
+    import yaml  # type: ignore
+except Exception:
+    sys.exit(2)
+
+root = Path(os.environ.get("STORE_ROOT") or "")
+store_dir = os.environ.get("STORE_DIR") or ""
+dest = Path(os.environ.get("DEST") or "")
+app_id = (os.environ.get("APP_ID") or "").strip().lower()
+port_raw = (os.environ.get("STORE_PORT") or "").strip()
+
+try:
+    port = int(port_raw) if port_raw else 0
+except ValueError:
+    port = 0
+
+compose_path = root / store_dir / "docker-compose.yml"
+manifest_path = root / store_dir / "umbrel-app.yml"
+if not compose_path.is_file() or not dest.is_dir():
+    sys.exit(1)
+
+compose = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+if not isinstance(compose, dict):
+    compose = {}
+
+manifest = {}
+if manifest_path.is_file():
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        manifest = {}
+
+host_port = port
+if not host_port:
+    try:
+        host_port = int(str(manifest.get("port") or "").strip() or "0")
+    except Exception:
+        host_port = 0
+
+services = compose.get("services") or {}
+if not isinstance(services, dict):
+    services = {}
+
+def env_to_dict(env):
+    if isinstance(env, dict):
+        out = {}
+        for k, v in env.items():
+            ks = str(k).strip()
+            if not ks:
+                continue
+            out[ks] = "" if v is None else str(v)
+        return out
+    if isinstance(env, list):
+        out = {}
+        for item in env:
+            s = "" if item is None else str(item)
+            if "=" not in s:
+                continue
+            k, v = s.split("=", 1)
+            k = k.strip()
+            if not k:
+                continue
+            out[k] = v
+        return out
+    return {}
+
+def parse_port_entry(entry):
+    raw = "" if entry is None else str(entry)
+    raw = raw.strip()
+    if not raw:
+        return None, None
+    base = raw.split("/", 1)[0]
+    parts = base.split(":")
+    try:
+        if len(parts) == 1:
+            return None, int(parts[0])
+        if len(parts) == 2:
+            return int(parts[0]), int(parts[1])
+        if len(parts) >= 3:
+            return int(parts[-2]), int(parts[-1])
+    except Exception:
+        return None, None
+    return None, None
+
+def ensure_port_mapping(svc, host, container):
+    if not isinstance(svc, dict) or not host or not container:
+        return
+    ports = svc.get("ports")
+    if not isinstance(ports, list):
+        ports = [] if ports in (None, "") else [ports]
+    for entry in ports:
+        h, _ = parse_port_entry(entry)
+        if h == host:
+            return
+    ports.append(f"{host}:{container}")
+    svc["ports"] = ports
+
+app_proxy = services.get("app_proxy") if isinstance(services.get("app_proxy"), dict) else None
+proxy_env = env_to_dict(app_proxy.get("environment") if app_proxy else None)
+app_host = str(proxy_env.get("APP_HOST") or "").strip()
+app_port_raw = str(proxy_env.get("APP_PORT") or "").strip()
+try:
+    app_port = int(app_port_raw) if app_port_raw else 0
+except Exception:
+    app_port = 0
+
+services.pop("app_proxy", None)
+
+# Remove any leftover dependencies on Umbrel's app_proxy.
+for _name, _svc in list(services.items()):
+    if not isinstance(_svc, dict):
+        continue
+    deps = _svc.get("depends_on")
+    if isinstance(deps, list):
+        deps2 = [d for d in deps if str(d).strip() != "app_proxy"]
+        if deps2:
+            _svc["depends_on"] = deps2
+        else:
+            _svc.pop("depends_on", None)
+    elif isinstance(deps, dict) and "app_proxy" in deps:
+        deps.pop("app_proxy", None)
+        if deps:
+            _svc["depends_on"] = deps
+        else:
+            _svc.pop("depends_on", None)
+    services[_name] = _svc
+
+def find_ui_service(services, host):
+    host = (host or "").strip()
+    if not host:
+        return None
+    if host in services:
+        return host
+    for name, svc in services.items():
+        if not isinstance(svc, dict):
+            continue
+        if str(svc.get("container_name") or "").strip() == host:
+            return name
+        nets = svc.get("networks")
+        if isinstance(nets, dict):
+            for _, cfg in nets.items():
+                if not isinstance(cfg, dict):
+                    continue
+                aliases = cfg.get("aliases")
+                if isinstance(aliases, list) and host in [str(a).strip() for a in aliases]:
+                    return name
+    return None
+
+ui_service = find_ui_service(services, app_host) or ("app" if "app" in services else None)
+if not ui_service and services:
+    ui_service = next(iter(services.keys()))
+
+if host_port and ui_service:
+    svc = services.get(ui_service) or {}
+    if isinstance(svc, dict):
+        ensure_port_mapping(svc, host_port, app_port or host_port)
+        services[ui_service] = svc
+
+compose["services"] = services
+
+# Remove legacy compose version to avoid warnings.
+compose.pop("version", None)
+
+# Strip Umbrel's shared network if present; allow Compose default network instead.
+drop_networks = {"umbrel_main_network"}
+networks = compose.get("networks")
+if isinstance(networks, dict):
+    drop = []
+    for net_name, cfg in networks.items():
+        if str(net_name).strip() == "umbrel_main_network":
+            drop.append(net_name)
+            continue
+        if isinstance(cfg, dict) and str(cfg.get("name") or "").strip() == "umbrel_main_network":
+            drop.append(net_name)
+    for net_name in drop:
+        networks.pop(net_name, None)
+    for net_name in drop:
+        nn = str(net_name).strip()
+        if nn and nn != "default":
+            drop_networks.add(nn)
+    if not networks:
+        compose.pop("networks", None)
+    else:
+        compose["networks"] = networks
+
+for name, svc in list(services.items()):
+    if not isinstance(svc, dict):
+        continue
+    nets = svc.get("networks")
+    if isinstance(nets, list):
+        nets2 = [n for n in nets if str(n).strip() not in drop_networks]
+        if nets2:
+            svc["networks"] = nets2
+        else:
+            svc.pop("networks", None)
+    elif isinstance(nets, dict):
+        for dn in list(nets.keys()):
+            if str(dn).strip() in drop_networks:
+                nets.pop(dn, None)
+        if nets:
+            svc["networks"] = nets
+        else:
+            svc.pop("networks", None)
+    services[name] = svc
+
+out_path = dest / "docker-compose.yml"
+out_path.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+sys.exit(0)
+PY
+          )"
+
+          [ $? -eq 0 ] || die "failed to generate compose from store for ${app_id}"
+        fi
+
+        app_state_dir="${FORGEOS_STATE_DIR}/apps/${app_id}"
+        install -d -m 0755 "${app_state_dir}/data"
+
+        # Seed app data payloads from the store recipe (templates/defaults).
+        store_data_dir="${store_root}/${store_dir}/data"
+        if [ -d "${store_data_dir}" ]; then
+          cp -an "${store_data_dir}/." "${app_state_dir}/data/" 2>/dev/null || true
+        fi
+
+        persist_env="${app_state_dir}/.env"
+        if [ ! -f "${persist_env}" ]; then
+          jwt_secret="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+)"
+          app_password="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(18))
+PY
+)"
+          # Default to a private-range base so Umbrel recipes that derive APP_SUBNET="${NETWORK_IP}/16"
+          # stay syntactically valid even when 5tratumOS uses per-project networks.
+          cat >"${persist_env}" <<EOF
+NETWORK_IP=172.16.0.0
+APP_PASSWORD=${app_password}
+JWT_SECRET=${jwt_secret}
+EOF
+          chmod 600 "${persist_env}" 2>/dev/null || true
+        fi
+
+        # Compose interpolation reads .env in the project directory; include persistent secrets.
+        cat >"${dst}/.env" <<EOF
+APP_DATA_DIR=${app_state_dir}
+EOF
+        cat "${persist_env}" >>"${dst}/.env"
+        chmod 600 "${dst}/.env" 2>/dev/null || true
+
+        # Umbrel recipes commonly run as uid/gid 1000; ensure the app data dir is writable.
+        if [ "${EUID:-$(id -u)}" -eq 0 ]; then
+          chown -R 1000:1000 "${app_state_dir}" 2>/dev/null || true
+        fi
+
+        meta_file="${dst}/forgeos.json"
+        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" CHANNEL="${ch}" APP_ID="${app_id}" APP_DIR="${dst}" python3 - <<'PY' >"${meta_file}"
+import json
+import os
+import time
+from pathlib import Path
+
+try:
+    import yaml  # type: ignore
+except Exception:
+    yaml = None
+
+
+def image_tag(image: str) -> str:
+    raw = (image or "").strip()
+    if not raw:
+        return ""
+    base = raw.split("@", 1)[0]
+    idx = base.rfind(":")
+    if idx <= base.rfind("/"):
+        return ""
+    tag = base[idx + 1 :].strip()
+    if not tag or tag.lower() == "latest":
+        return ""
+    return tag
+
+
+app_id = (os.environ.get("APP_ID") or "").strip().lower()
+channel = (os.environ.get("CHANNEL") or "").strip().lower()
+store_root = Path(os.environ.get("STORE_ROOT") or "")
+store_dir = (os.environ.get("STORE_DIR") or "").strip()
+app_dir = Path(os.environ.get("APP_DIR") or "")
+
+manifest = {}
+store_id = store_dir
+installed_version = ""
+
+if yaml is not None and store_root.is_dir() and store_dir:
+    manifest_path = store_root / store_dir / "umbrel-app.yml"
+    if manifest_path.is_file():
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            manifest = {}
+        if isinstance(manifest, dict):
+            store_id = str(manifest.get("id") or store_id)
+            installed_version = str(manifest.get("version") or "") or installed_version
+
+if not installed_version:
+    compose_path = app_dir / "docker-compose.yml"
+    if compose_path.is_file():
+        if yaml is not None:
+            try:
+                compose = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                compose = {}
+            services = compose.get("services") if isinstance(compose, dict) else {}
+            if isinstance(services, dict):
+                for name in ("app", "server", "web", "ui"):
+                    svc = services.get(name)
+                    if not isinstance(svc, dict):
+                        continue
+                    installed_version = image_tag(str(svc.get("image") or ""))
+                    if installed_version:
+                        break
+                if not installed_version:
+                    for svc in services.values():
+                        if not isinstance(svc, dict):
+                            continue
+                        installed_version = image_tag(str(svc.get("image") or ""))
+                        if installed_version:
+                            break
+        if not installed_version:
+            for line in compose_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                s = line.strip()
+                if not s.startswith("image:"):
+                    continue
+                installed_version = image_tag(s.split(":", 1)[1].strip())
+                if installed_version:
+                    break
+
+now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+meta = {
+    "app_id": app_id,
+    "channel": channel,
+    "store_dir": store_dir,
+    "store_id": store_id,
+    "installed_version": installed_version,
+    "installed_at": now,
+    "updated_at": now,
+}
+print(json.dumps(meta, separators=(",", ":"), ensure_ascii=False))
+PY
+
+        echo "installed ${app_id} (channel=${ch})"
+        ;;
+      update)
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "app update requires root (writes ${FORGEOS_ROOT}/apps)"
+        app_id="${1:-}"; shift || true
+        [ -n "${app_id}" ] || die "missing app id"
+        app_dir="${FORGEOS_ROOT}/apps/${app_id}"
+        [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+
+        meta_file="${app_dir}/forgeos.json"
+        meta_channel=""
+        if [ -f "${meta_file}" ]; then
+          meta_channel="$(python3 -c "import json; import sys; p='${meta_file}';\n\ntry:\n  obj=json.load(open(p,'r',encoding='utf-8'))\nexcept Exception:\n  obj={}\nprint(str(obj.get('channel','') or '').strip())" 2>/dev/null || true)"
+        fi
+
+        ch="$(current_channel)"
+        case "${meta_channel}" in
+          main|dev|umbrel) ch="${meta_channel}" ;;
+        esac
+
+        store_root="${FORGEOS_ROOT}/store/${ch}"
+        [ -d "${store_root}" ] || die "store not found: ${store_root} (run: sudo forgeos store sync ${ch})"
+
+        resolved="$(
+          TARGET_APP_ID="${app_id}" STORE_ROOT="${store_root}" python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+try:
+    import yaml  # type: ignore
+except Exception:
+    sys.exit(2)
+
+target = (os.environ.get("TARGET_APP_ID") or "").strip().lower()
+root = Path(os.environ.get("STORE_ROOT") or "")
+if not target or not root.is_dir():
+    sys.exit(1)
+
+def map_store_id_to_app_id(store_id: str) -> str:
+    raw = (store_id or "").strip().lower()
+    # Umbrel store uses canonical IDs like "bitcoin", "nextcloud", etc.
+    if root.name.strip().lower() == "umbrel":
+        raw = raw.replace(" ", "-")
+        raw = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
+        return raw or "app"
+    for prefix in ("willitmod-dev-", "willitmod-"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix) :]
+            break
+    raw = raw.replace("_", "").replace("-", "")
+    if not raw.startswith("axe"):
+        raw = f"axe{raw}"
+    return raw
+
+for entry in sorted(root.iterdir(), key=lambda p: p.name):
+    if not entry.is_dir():
+        continue
+    if entry.name.startswith("."):
+        continue
+    manifest_path = entry / "umbrel-app.yml"
+    compose_path = entry / "docker-compose.yml"
+    if not manifest_path.is_file() or not compose_path.is_file():
+        continue
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        continue
+    store_id = str(manifest.get("id") or entry.name)
+    app_id = map_store_id_to_app_id(store_id)
+    if app_id != target:
+        continue
+    port = manifest.get("port") or ""
+    print(f"{entry.name}\t{port}")
+    sys.exit(0)
+
+sys.exit(1)
+PY
+        )"
+
+        [ -n "${resolved}" ] || die "no store recipe for '${app_id}' on channel '${ch}' (run: sudo forgeos store sync ${ch})"
+        store_dir="$(printf '%s' "${resolved}" | awk -F '\t' '{print $1}')"
+        store_port="$(printf '%s' "${resolved}" | awk -F '\t' '{print $2}')"
+
+        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" STORE_PORT="${store_port}" DEST="${app_dir}" APP_ID="${app_id}" python3 - <<'PY'
+import os
+import sys
+from pathlib import Path
+
+try:
+    import yaml  # type: ignore
+except Exception:
+    sys.exit(2)
+
+root = Path(os.environ.get("STORE_ROOT") or "")
+store_dir = os.environ.get("STORE_DIR") or ""
+dest = Path(os.environ.get("DEST") or "")
+app_id = (os.environ.get("APP_ID") or "").strip().lower()
+port_raw = (os.environ.get("STORE_PORT") or "").strip()
+
+try:
+    port = int(port_raw) if port_raw else 0
+except ValueError:
+    port = 0
+
+compose_path = root / store_dir / "docker-compose.yml"
+manifest_path = root / store_dir / "umbrel-app.yml"
+if not compose_path.is_file() or not dest.is_dir():
+    sys.exit(1)
+
+compose = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+if not isinstance(compose, dict):
+    compose = {}
+
+manifest = {}
+if manifest_path.is_file():
+    try:
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        manifest = {}
+
+host_port = port
+if not host_port:
+    try:
+        host_port = int(str(manifest.get("port") or "").strip() or "0")
+    except Exception:
+        host_port = 0
+
+services = compose.get("services") or {}
+if not isinstance(services, dict):
+    services = {}
+
+def env_to_dict(env):
+    if isinstance(env, dict):
+        out = {}
+        for k, v in env.items():
+            ks = str(k).strip()
+            if not ks:
+                continue
+            out[ks] = "" if v is None else str(v)
+        return out
+    if isinstance(env, list):
+        out = {}
+        for item in env:
+            s = "" if item is None else str(item)
+            if "=" not in s:
+                continue
+            k, v = s.split("=", 1)
+            k = k.strip()
+            if not k:
+                continue
+            out[k] = v
+        return out
+    return {}
+
+def parse_port_entry(entry):
+    raw = "" if entry is None else str(entry)
+    raw = raw.strip()
+    if not raw:
+        return None, None
+    base = raw.split("/", 1)[0]
+    parts = base.split(":")
+    try:
+        if len(parts) == 1:
+            return None, int(parts[0])
+        if len(parts) == 2:
+            return int(parts[0]), int(parts[1])
+        if len(parts) >= 3:
+            return int(parts[-2]), int(parts[-1])
+    except Exception:
+        return None, None
+    return None, None
+
+def ensure_port_mapping(svc, host, container):
+    if not isinstance(svc, dict) or not host or not container:
+        return
+    ports = svc.get("ports")
+    if not isinstance(ports, list):
+        ports = [] if ports in (None, "") else [ports]
+    for entry in ports:
+        h, _ = parse_port_entry(entry)
+        if h == host:
+            return
+    ports.append(f"{host}:{container}")
+    svc["ports"] = ports
+
+app_proxy = services.get("app_proxy") if isinstance(services.get("app_proxy"), dict) else None
+proxy_env = env_to_dict(app_proxy.get("environment") if app_proxy else None)
+app_host = str(proxy_env.get("APP_HOST") or "").strip()
+app_port_raw = str(proxy_env.get("APP_PORT") or "").strip()
+try:
+    app_port = int(app_port_raw) if app_port_raw else 0
+except Exception:
+    app_port = 0
+
+services.pop("app_proxy", None)
+
+# Remove any leftover dependencies on Umbrel's app_proxy.
+for _name, _svc in list(services.items()):
+    if not isinstance(_svc, dict):
+        continue
+    deps = _svc.get("depends_on")
+    if isinstance(deps, list):
+        deps2 = [d for d in deps if str(d).strip() != "app_proxy"]
+        if deps2:
+            _svc["depends_on"] = deps2
+        else:
+            _svc.pop("depends_on", None)
+    elif isinstance(deps, dict) and "app_proxy" in deps:
+        deps.pop("app_proxy", None)
+        if deps:
+            _svc["depends_on"] = deps
+        else:
+            _svc.pop("depends_on", None)
+    services[_name] = _svc
+
+def find_ui_service(services, host):
+    host = (host or "").strip()
+    if not host:
+        return None
+    if host in services:
+        return host
+    for name, svc in services.items():
+        if not isinstance(svc, dict):
+            continue
+        if str(svc.get("container_name") or "").strip() == host:
+            return name
+        nets = svc.get("networks")
+        if isinstance(nets, dict):
+            for _, cfg in nets.items():
+                if not isinstance(cfg, dict):
+                    continue
+                aliases = cfg.get("aliases")
+                if isinstance(aliases, list) and host in [str(a).strip() for a in aliases]:
+                    return name
+    return None
+
+ui_service = find_ui_service(services, app_host) or ("app" if "app" in services else None)
+if not ui_service and services:
+    ui_service = next(iter(services.keys()))
+
+if host_port and ui_service:
+    svc = services.get(ui_service) or {}
+    if isinstance(svc, dict):
+        ensure_port_mapping(svc, host_port, app_port or host_port)
+        services[ui_service] = svc
+
+compose["services"] = services
+
+compose.pop("version", None)
+
+drop_networks = {"umbrel_main_network"}
+networks = compose.get("networks")
+if isinstance(networks, dict):
+    drop = []
+    for net_name, cfg in networks.items():
+        if str(net_name).strip() == "umbrel_main_network":
+            drop.append(net_name)
+            continue
+        if isinstance(cfg, dict) and str(cfg.get("name") or "").strip() == "umbrel_main_network":
+            drop.append(net_name)
+    for net_name in drop:
+        networks.pop(net_name, None)
+    for net_name in drop:
+        nn = str(net_name).strip()
+        if nn and nn != "default":
+            drop_networks.add(nn)
+    if not networks:
+        compose.pop("networks", None)
+    else:
+        compose["networks"] = networks
+
+for name, svc in list(services.items()):
+    if not isinstance(svc, dict):
+        continue
+    nets = svc.get("networks")
+    if isinstance(nets, list):
+        nets2 = [n for n in nets if str(n).strip() not in drop_networks]
+        if nets2:
+            svc["networks"] = nets2
+        else:
+            svc.pop("networks", None)
+    elif isinstance(nets, dict):
+        for dn in list(nets.keys()):
+            if str(dn).strip() in drop_networks:
+                nets.pop(dn, None)
+        if nets:
+            svc["networks"] = nets
+        else:
+            svc.pop("networks", None)
+    services[name] = svc
+
+out_path = dest / "docker-compose.yml"
+out_path.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
+sys.exit(0)
+PY
+
+        app_state_dir="${FORGEOS_STATE_DIR}/apps/${app_id}"
+        install -d -m 0755 "${app_state_dir}/data"
+
+        store_data_dir="${store_root}/${store_dir}/data"
+        if [ -d "${store_data_dir}" ]; then
+          cp -an "${store_data_dir}/." "${app_state_dir}/data/" 2>/dev/null || true
+        fi
+
+        persist_env="${app_state_dir}/.env"
+        if [ ! -f "${persist_env}" ]; then
+          jwt_secret="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+)"
+          app_password="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(18))
+PY
+)"
+          cat >"${persist_env}" <<EOF
+NETWORK_IP=172.16.0.0
+APP_PASSWORD=${app_password}
+JWT_SECRET=${jwt_secret}
+EOF
+          chmod 600 "${persist_env}" 2>/dev/null || true
+        fi
+
+        cat >"${app_dir}/.env" <<EOF
+APP_DATA_DIR=${app_state_dir}
+EOF
+        cat "${persist_env}" >>"${app_dir}/.env"
+        chmod 600 "${app_dir}/.env" 2>/dev/null || true
+
+        tmp_meta="$(mktemp)"
+        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" CHANNEL="${ch}" APP_ID="${app_id}" APP_DIR="${app_dir}" python3 - <<'PY' >"${tmp_meta}"
+import json
+import os
+import time
+from pathlib import Path
+
+try:
+    import yaml  # type: ignore
+except Exception:
+    yaml = None
+
+
+def image_tag(image: str) -> str:
+    raw = (image or "").strip()
+    if not raw:
+        return ""
+    base = raw.split("@", 1)[0]
+    idx = base.rfind(":")
+    if idx <= base.rfind("/"):
+        return ""
+    tag = base[idx + 1 :].strip()
+    if not tag or tag.lower() == "latest":
+        return ""
+    return tag
+
+
+app_id = (os.environ.get("APP_ID") or "").strip().lower()
+channel = (os.environ.get("CHANNEL") or "").strip().lower()
+store_root = Path(os.environ.get("STORE_ROOT") or "")
+store_dir = (os.environ.get("STORE_DIR") or "").strip()
+app_dir = Path(os.environ.get("APP_DIR") or "")
+
+manifest = {}
+store_id = store_dir
+installed_version = ""
+
+if yaml is not None and store_root.is_dir() and store_dir:
+    manifest_path = store_root / store_dir / "umbrel-app.yml"
+    if manifest_path.is_file():
+        try:
+            manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            manifest = {}
+        if isinstance(manifest, dict):
+            store_id = str(manifest.get("id") or store_id)
+            installed_version = str(manifest.get("version") or "") or installed_version
+
+if not installed_version:
+    compose_path = app_dir / "docker-compose.yml"
+    if compose_path.is_file():
+        if yaml is not None:
+            try:
+                compose = yaml.safe_load(compose_path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                compose = {}
+            services = compose.get("services") if isinstance(compose, dict) else {}
+            if isinstance(services, dict):
+                for name in ("app", "server", "web", "ui"):
+                    svc = services.get(name)
+                    if not isinstance(svc, dict):
+                        continue
+                    installed_version = image_tag(str(svc.get("image") or ""))
+                    if installed_version:
+                        break
+                if not installed_version:
+                    for svc in services.values():
+                        if not isinstance(svc, dict):
+                            continue
+                        installed_version = image_tag(str(svc.get("image") or ""))
+                        if installed_version:
+                            break
+        if not installed_version:
+            for line in compose_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                s = line.strip()
+                if not s.startswith("image:"):
+                    continue
+                installed_version = image_tag(s.split(":", 1)[1].strip())
+                if installed_version:
+                    break
+
+now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+meta = {
+    "app_id": app_id,
+    "channel": channel,
+    "store_dir": store_dir,
+    "store_id": store_id,
+    "installed_version": installed_version,
+    "updated_at": now,
+}
+print(json.dumps(meta, separators=(",", ":"), ensure_ascii=False))
+PY
+        mv "${tmp_meta}" "${meta_file}"
+
+        chown -R 1000:1000 "${app_state_dir}" 2>/dev/null || true
+
+        compose_up "forgeos-${app_id}" "${app_dir}" pull
+        compose_up "forgeos-${app_id}" "${app_dir}" up -d --remove-orphans
+        echo "updated ${app_id} (channel=${ch})"
+        ;;
+      uninstall)
+        app_id="${1:-}"; shift || true
+        [ -n "${app_id}" ] || die "missing app id"
+        purge="false"
+        if [ "${1:-}" = "--purge" ]; then
+          purge="true"
+          shift || true
+        fi
+        app_dir="${FORGEOS_ROOT}/apps/${app_id}"
+        [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+
+        project="forgeos-${app_id}"
+        (cd "${app_dir}" && docker compose --project-name "${project}" down --remove-orphans) || true
+
+        rm -rf "${app_dir}"
+        if [ "${purge}" = "true" ]; then
+          rm -rf "${FORGEOS_STATE_DIR}/apps/${app_id}"
+          echo "uninstalled ${app_id} (purged)"
+        else
+          echo "uninstalled ${app_id}"
+        fi
+        ;;
+      up|down|pull|logs)
+        action="${sub}"
+        app_id="${1:-}"; shift || true
+        [ -n "${app_id}" ] || die "missing app id"
+        app_dir="${FORGEOS_ROOT}/apps/${app_id}"
+        [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        case "${action}" in
+          up)
+            compose_up "forgeos-${app_id}" "${app_dir}" up -d
+            ;;
+          down)
+            compose_up "forgeos-${app_id}" "${app_dir}" down
+            ;;
+          pull)
+            compose_up "forgeos-${app_id}" "${app_dir}" pull
+            ;;
+          logs)
+            compose_up "forgeos-${app_id}" "${app_dir}" logs --tail=200 -f
+            ;;
+        esac
+        ;;
+      *)
+        die "unknown subcommand: app ${sub:-}"
+        ;;
+    esac
+    ;;
+
+  *)
+    die "unknown command: ${cmd}"
+    ;;
+esac

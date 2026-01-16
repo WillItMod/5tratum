@@ -1,0 +1,15 @@
+[Unit]
+Description=5tratumOS overlay (Docker Compose)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/forgeos/overlay
+ExecStart=/usr/bin/docker compose --project-name forgeos-overlay up -d
+ExecStop=/usr/bin/docker compose --project-name forgeos-overlay down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

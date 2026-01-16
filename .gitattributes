@@ -1,0 +1,10 @@
+# Keep Linux-friendly line endings in the repo (bootstrap/scripts/services run on Linux)
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary

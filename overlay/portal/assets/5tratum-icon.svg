@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="g" x1="10" y1="50" x2="54" y2="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E5FF" />
+      <stop offset="0.55" stop-color="#FF2BD6" />
+      <stop offset="1" stop-color="#FF9A00" />
+    </linearGradient>
+    <linearGradient id="fl" x1="32" y1="6" x2="32" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE39A" />
+      <stop offset="0.45" stop-color="#FF9A00" />
+      <stop offset="1" stop-color="#FF2B2B" />
+    </linearGradient>
+    <filter id="ds" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.55" />
+    </filter>
+  </defs>
+
+  <!-- Molten pour / flame -->
+  <path
+    d="M32 6c6 8 6 13 0 22c-6-9-6-14 0-22Z"
+    fill="url(#fl)"
+    filter="url(#ds)"
+    opacity="0.95"
+  />
+  <path
+    d="M32 16c3.5 4.7 3.5 7.4 0 13c-3.5-5.6-3.5-8.3 0-13Z"
+    fill="#FFF2C6"
+    opacity="0.6"
+  />
+
+  <!-- The 5 -->
+  <g filter="url(#ds)">
+    <text
+      x="32"
+      y="52"
+      text-anchor="middle"
+      font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
+      font-size="44"
+      font-weight="900"
+      fill="url(#g)"
+      letter-spacing="-1"
+    >
+      5
+    </text>
+  </g>
+</svg>
+

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 900" role="img" aria-label="ForgeOS watermark">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00e5ff" stop-opacity="0.55" />
+      <stop offset="0.55" stop-color="#ff2bd6" stop-opacity="0.5" />
+      <stop offset="1" stop-color="#ff9a00" stop-opacity="0.5" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="44%" r="60%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <g opacity="0.9">
+    <circle cx="450" cy="420" r="360" fill="url(#glow)" />
+  </g>
+
+  <g fill="none" stroke="url(#g)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <!-- Flame -->
+    <path
+      d="M485 180c22 50 6 86-18 114-18 21-33 42-27 72 4 17 13 32 23 44-58-11-110-63-106-132 4-70 64-108 128-98Z"
+    />
+    <path
+      d="M548 256c51 58 54 126 20 174-25 35-64 55-105 55-55 0-102-30-124-76 22 18 50 28 79 28 67 0 122-51 122-114 0-23-8-45-12-67Z"
+    />
+
+    <!-- Anvil -->
+    <path d="M250 500c0-36 29-65 65-65h270c36 0 65 29 65 65v30h-108l-23 70H371l-23-70H250v-30Z" />
+    <path d="M325 672h250l25 78H300l25-78Z" />
+    <path d="M302 810h296c15 0 27 12 27 27v45H275v-45c0-15 12-27 27-27Z" />
+  </g>
+</svg>

@@ -1,0 +1,24 @@
+# Build artifacts
+*.tgz
+*.tar.gz
+*.qcow2
+*.img
+*.img.xz
+*.iso
+*.vmdk
+
+# Runtime / generated
+__pycache__/
+*.pyc
+*.pyo
+*.log
+
+# Local config / secrets
+.env
+.env.*
+inventory.ini
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+*.swp

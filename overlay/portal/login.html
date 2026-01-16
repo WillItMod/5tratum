@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>5tratumOS Login</title>
+    <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
+    <link rel="stylesheet" href="/axe.css?v=1" />
+    <link rel="stylesheet" href="/forgeos.css?v=13" />
+  </head>
+  <body class="forgeos-login-body min-h-screen bg-axe-950 text-slate-100">
+    <main class="forgeos-login" aria-label="5tratumOS Login">
+      <section class="axe-card forgeos-login__card">
+        <div class="forgeos-login__brand">
+          <img class="forgeos-login__mark" src="/assets/5tratum-icon.png" alt="" />
+          <div class="min-w-0">
+            <div class="forgeos-login__title">5tratumOS</div>
+            <div id="login-subtitle" class="forgeos-login__sub">Sign in to continue.</div>
+          </div>
+        </div>
+
+        <form id="auth-form" class="forgeos-form" autocomplete="on">
+          <label class="forgeos-label" for="auth-username">Username</label>
+          <input
+            id="auth-username"
+            class="forgeos-input"
+            type="text"
+            inputmode="text"
+            autocomplete="username"
+            placeholder="admin"
+            required
+          />
+
+          <div class="mt-3">
+            <label class="forgeos-label" for="auth-password">Password</label>
+            <input
+              id="auth-password"
+              class="forgeos-input"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Password"
+              required
+            />
+          </div>
+
+          <div id="auth-password2-wrap" class="mt-3 hidden">
+            <label class="forgeos-label" for="auth-password2">Confirm password</label>
+            <input id="auth-password2" class="forgeos-input" type="password" autocomplete="new-password" />
+          </div>
+
+          <div class="mt-4 flex flex-wrap items-center gap-2">
+            <button id="auth-submit" class="axe-btn" type="submit">Login</button>
+            <button id="auth-refresh" class="axe-btn" type="button">Refresh</button>
+          </div>
+
+          <div id="login-error" class="forgeos-login__error hidden" role="alert"></div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        const subtitle = document.getElementById('login-subtitle');
+        const form = document.getElementById('auth-form');
+        const usernameEl = document.getElementById('auth-username');
+        const passwordEl = document.getElementById('auth-password');
+        const password2Wrap = document.getElementById('auth-password2-wrap');
+        const password2El = document.getElementById('auth-password2');
+        const submitBtn = document.getElementById('auth-submit');
+        const refreshBtn = document.getElementById('auth-refresh');
+        const errEl = document.getElementById('login-error');
+
+        const params = new URLSearchParams(window.location.search || '');
+        const nextRaw = params.get('next') || '/';
+
+        function safeNext(value) {
+          const v = String(value || '').trim();
+          if (!v.startsWith('/')) return '/';
+          if (v.startsWith('//')) return '/';
+          if (v.startsWith('/login')) return '/';
+          return v;
+        }
+
+        let mode = 'login';
+
+        function showError(msg) {
+          const text = String(msg || '').trim();
+          if (!errEl) return;
+          if (!text) {
+            errEl.classList.add('hidden');
+            errEl.textContent = '';
+            return;
+          }
+          errEl.textContent = text;
+          errEl.classList.remove('hidden');
+        }
+
+        function setMode(nextMode) {
+          mode = nextMode === 'setup' ? 'setup' : 'login';
+          if (subtitle) {
+            subtitle.textContent = mode === 'setup' ? 'First-time setup: create your admin user.' : 'Sign in to continue.';
+          }
+          if (submitBtn) submitBtn.textContent = mode === 'setup' ? 'Create admin' : 'Login';
+          if (password2Wrap) password2Wrap.classList.toggle('hidden', mode !== 'setup');
+          if (passwordEl)
+            passwordEl.autocomplete = mode === 'setup' ? 'new-password' : 'current-password';
+          showError('');
+        }
+
+        async function loadStatus() {
+          showError('');
+          try {
+            const res = await fetch('/api/v0/auth/status', { headers: { 'Content-Type': 'application/json' } });
+            const data = await res.json().catch(() => null);
+            if (!data || data.ok !== true) return;
+            if (data.authed === true) {
+              window.location.href = safeNext(nextRaw);
+              return;
+            }
+            setMode(data.needs_setup ? 'setup' : 'login');
+          } catch (e) {
+            showError('Unable to reach 5tratumOS auth service.');
+          }
+        }
+
+        refreshBtn &&
+          refreshBtn.addEventListener('click', () => {
+            loadStatus();
+          });
+
+        form &&
+          form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            showError('');
+            if (!usernameEl || !passwordEl || !submitBtn) return;
+            const username = String(usernameEl.value || '').trim();
+            const password = String(passwordEl.value || '');
+            if (!username || !password) {
+              showError('Username and password are required.');
+              return;
+            }
+
+            if (mode === 'setup') {
+              const confirm = String((password2El && password2El.value) || '');
+              if (password.length < 10) {
+                showError('Password must be at least 10 characters.');
+                return;
+              }
+              if (!confirm || confirm !== password) {
+                showError('Passwords do not match.');
+                return;
+              }
+            }
+
+            const endpoint = mode === 'setup' ? '/api/v0/auth/setup' : '/api/v0/auth/login';
+
+            submitBtn.disabled = true;
+            const prev = submitBtn.textContent;
+            submitBtn.textContent = mode === 'setup' ? 'Creating…' : 'Signing in…';
+
+            try {
+              const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+              });
+              const data = await res.json().catch(() => null);
+              if (!res.ok || !data || data.ok !== true) {
+                showError((data && data.error) || `HTTP ${res.status}`);
+                return;
+              }
+              window.location.href = safeNext(nextRaw);
+            } catch (e) {
+              showError('Login request failed.');
+            } finally {
+              submitBtn.disabled = false;
+              submitBtn.textContent = prev;
+            }
+          });
+
+        loadStatus();
+        usernameEl && usernameEl.focus();
+      })();
+    </script>
+  </body>
+</html>

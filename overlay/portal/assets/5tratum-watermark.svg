@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="g" x1="80" y1="420" x2="432" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00E5FF" />
+      <stop offset="0.55" stop-color="#FF2BD6" />
+      <stop offset="1" stop-color="#FF9A00" />
+    </linearGradient>
+    <linearGradient id="fl" x1="256" y1="70" x2="256" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE39A" />
+      <stop offset="0.45" stop-color="#FF9A00" />
+      <stop offset="1" stop-color="#FF2B2B" />
+    </linearGradient>
+  </defs>
+
+  <path
+    d="M256 70c56 74 56 118 0 206c-56-88-56-132 0-206Z"
+    fill="url(#fl)"
+    opacity="0.38"
+  />
+  <path
+    d="M256 156c28 37 28 58 0 100c-28-42-28-63 0-100Z"
+    fill="#FFF2C6"
+    opacity="0.18"
+  />
+
+  <text
+    x="256"
+    y="390"
+    text-anchor="middle"
+    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial"
+    font-size="320"
+    font-weight="900"
+    fill="url(#g)"
+    opacity="0.22"
+    letter-spacing="-10"
+  >
+    5
+  </text>
+</svg>
+
