@@ -400,10 +400,36 @@ body.forgeos-sidebar-auto .forgeos-app-item__logo {
   border-color: rgba(255, 255, 255, 0.06);
 }
 
-body.forgeos-sidebar-collapsed .forgeos-app-item--running .forgeos-app-item__logo,
-body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item--running .forgeos-app-item__logo {
-  border-color: rgba(0, 229, 255, 0.35);
-  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.1) inset, 0 0 18px rgba(0, 229, 255, 0.15);
+/* Collapsed app drawer: icon-only tiles that fill the card */
+body.forgeos-sidebar-collapsed .forgeos-app-item,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item {
+  padding: 0;
+  aspect-ratio: 1 / 1;
+}
+
+body.forgeos-sidebar-collapsed .forgeos-app-item__top,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__top {
+  height: 100%;
+}
+
+body.forgeos-sidebar-collapsed .forgeos-app-item__brand,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__brand {
+  width: 100%;
+  height: 100%;
+}
+
+body.forgeos-sidebar-collapsed .forgeos-app-item__logo,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__logo {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  border: 0;
+}
+
+body.forgeos-sidebar-collapsed .forgeos-app-item--running,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item--running {
+  border-color: rgba(0, 229, 255, 0.28);
+  box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.08) inset, 0 0 18px rgba(0, 229, 255, 0.14);
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-item__top,
