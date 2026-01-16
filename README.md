@@ -69,3 +69,27 @@ Or per install:
 ```bash
 sudo forgeos app install axelive --channel dev
 ```
+
+## OS updates (self-update)
+
+5tratumOS can self-update from a **public release feed** (default: `WillItMod/5tratum` GitHub Releases).
+
+- MAIN channel: latest non-prerelease (`/releases/latest`)
+- DEV channel: latest prerelease
+
+### Publish an update bundle
+
+From the private build repo (this repo), create a bundle:
+
+```bash
+./scripts/build-update-bundle.sh
+```
+
+Then create a GitHub Release in `WillItMod/5tratum` and upload:
+
+- `dist/5tratumos-update.tgz`
+- `dist/5tratumos-update.tgz.sha256`
+
+### Apply on a device
+
+In the UI: `Settings → Updates → Check updates → Update`.

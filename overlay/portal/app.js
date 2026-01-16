@@ -58,6 +58,15 @@
   const settingsWidgetsEl = document.getElementById('settings-widgets');
   const settingsWidgetsEmptyEl = document.getElementById('settings-widgets-empty');
   const settingSshToggle = document.getElementById('setting-ssh');
+  const updateInstalledEl = document.getElementById('update-installed');
+  const updateChannelEl = document.getElementById('update-channel');
+  const updateAvailableEl = document.getElementById('update-available');
+  const updateStatusEl = document.getElementById('update-status');
+  const updateProgressEl = document.getElementById('update-progress');
+  const updateProgressBarEl = document.getElementById('update-progress-bar');
+  const updateNotesEl = document.getElementById('update-notes');
+  const btnUpdateCheck = document.getElementById('btn-update-check');
+  const btnUpdateApply = document.getElementById('btn-update-apply');
 
   // Legacy "selected app" controls (removed from UI; keep null-safe until context menus land)
   const selectedControlsEl = document.getElementById('selected-app-controls');
@@ -103,6 +112,11 @@
     let refreshStoreInFlight = false;
     let refreshMetricsInFlight = false;
     let refreshWidgetsInFlight = false;
+    let systemUpdateCheckCache = null;
+    let systemUpdateStatusCache = null;
+    let systemUpdateCheckAt = 0;
+    let systemUpdatePollTimer = null;
+    let systemUpdatePollInFlight = false;
   let openAppIds = [];
   const OPEN_APPS_KEY = 'forgeos.openApps';
   const INSTALLED_CACHE_KEY = 'forgeos.installedCache.v1';
@@ -602,6 +616,8 @@
 
     if (viewKey === 'settings') {
       refreshSshStatus().catch(() => {});
+      refreshSystemUpdateStatus().catch(() => {});
+      refreshSystemUpdateCheck().catch(() => {});
       renderWidgetSettings();
     }
   }
@@ -1743,6 +1759,205 @@
         ? `${res.service || 'ssh'}: ${res.active ? 'active' : 'inactive'}`
         : 'SSH not available on this system';
     } catch {}
+  }
+
+  function systemUpdateState() {
+    const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
+    return st && st.state ? String(st.state).trim().toLowerCase() : 'idle';
+  }
+
+  function systemUpdateIsBusy(state) {
+    const s = String(state || '').trim().toLowerCase();
+    return ['downloading', 'extracting', 'deploying', 'restarting', 'restarting_daemon'].includes(s);
+  }
+
+  function systemUpdateProgressPct(state) {
+    const s = String(state || '').trim().toLowerCase();
+    if (s === 'downloading') return 22;
+    if (s === 'extracting') return 46;
+    if (s === 'deploying') return 72;
+    if (s === 'restarting') return 88;
+    if (s === 'restarting_daemon') return 94;
+    if (s === 'done') return 100;
+    if (s === 'error') return 100;
+    return 0;
+  }
+
+  function systemUpdateStateLabel(state, status) {
+    const s = String(state || '').trim().toLowerCase();
+    const st = status && typeof status === 'object' ? status : {};
+    const svc = st.service ? String(st.service) : '';
+    if (s === 'downloading') return 'Downloading update bundle…';
+    if (s === 'extracting') return 'Extracting update…';
+    if (s === 'deploying') return 'Deploying update…';
+    if (s === 'restarting') return `Restarting ${svc || 'services'}…`;
+    if (s === 'restarting_daemon') return `Restarting ${svc || 'daemon'}…`;
+    if (s === 'done') return 'Update complete.';
+    if (s === 'error') return `Update failed: ${st.error ? String(st.error) : 'unknown error'}`;
+    return 'Idle.';
+  }
+
+  function renderSystemUpdatePanel() {
+    const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
+    const status = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
+
+    const installedTag =
+      check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '-';
+    const channel = check && check.channel ? String(check.channel).toUpperCase() : '-';
+    const availableTag =
+      check && check.available && typeof check.available === 'object' && check.available.tag ? String(check.available.tag) : '';
+
+    if (updateInstalledEl) updateInstalledEl.textContent = installedTag || '-';
+    if (updateChannelEl) updateChannelEl.textContent = channel || '-';
+    if (updateAvailableEl) updateAvailableEl.textContent = availableTag || '-';
+    if (updateNotesEl) updateNotesEl.textContent = (check && check.available && check.available.notes ? String(check.available.notes) : '') || '';
+
+    const state = status && status.state ? String(status.state).trim().toLowerCase() : 'idle';
+    const busy = systemUpdateIsBusy(state);
+
+    if (btnUpdateCheck) btnUpdateCheck.disabled = busy;
+
+    const updateAvailable = !!(check && check.update_available === true);
+    if (btnUpdateApply) btnUpdateApply.disabled = busy || !updateAvailable;
+
+    if (updateStatusEl) {
+      let line = '-';
+      if (busy) {
+        line = systemUpdateStateLabel(state, status);
+      } else if (state === 'done') {
+        const tgt = status && status.target_tag ? String(status.target_tag) : availableTag || installedTag;
+        line = tgt ? `Updated to ${tgt}.` : 'Update complete.';
+      } else if (state === 'error') {
+        line = systemUpdateStateLabel(state, status);
+      } else if (updateAvailable) {
+        line = availableTag ? `Update available: ${availableTag}` : 'Update available.';
+      } else if (check && check.error) {
+        line = String(check.error);
+      } else if (check) {
+        line = 'Up to date.';
+      } else {
+        line = 'Loading update status…';
+      }
+      updateStatusEl.textContent = line;
+    }
+
+    if (updateProgressEl && updateProgressBarEl) {
+      const show = busy;
+      updateProgressEl.classList.toggle('hidden', !show);
+      updateProgressEl.setAttribute('aria-hidden', show ? 'false' : 'true');
+      updateProgressBarEl.style.width = `${systemUpdateProgressPct(state)}%`;
+    }
+  }
+
+  function stopSystemUpdatePoll() {
+    if (!systemUpdatePollTimer) return;
+    window.clearTimeout(systemUpdatePollTimer);
+    systemUpdatePollTimer = null;
+  }
+
+  function scheduleSystemUpdatePoll(delayMs) {
+    stopSystemUpdatePoll();
+    const ms = Math.max(750, Number(delayMs) || 1500);
+    systemUpdatePollTimer = window.setTimeout(() => systemUpdatePollTick().catch(() => {}), ms);
+  }
+
+  async function systemUpdatePollTick() {
+    if (systemUpdatePollInFlight) return;
+    systemUpdatePollInFlight = true;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) {
+        if (updateStatusEl) updateStatusEl.textContent = 'Reconnecting…';
+        scheduleSystemUpdatePoll(3500);
+        return;
+      }
+      const st = await apiJsonTimeout('/api/v0/system/update/status', {}, 5000);
+      if (st && typeof st === 'object') systemUpdateStatusCache = st;
+      renderSystemUpdatePanel();
+
+      const state = systemUpdateState();
+      if (systemUpdateIsBusy(state)) {
+        scheduleSystemUpdatePoll(1400);
+      } else {
+        stopSystemUpdatePoll();
+        if (state === 'done') refreshSystemUpdateCheck({ force: true }).catch(() => {});
+      }
+    } catch {
+      if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting…';
+      scheduleSystemUpdatePoll(4000);
+    } finally {
+      systemUpdatePollInFlight = false;
+    }
+  }
+
+  async function refreshSystemUpdateStatus() {
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const st = await apiJsonTimeout('/api/v0/system/update/status', {}, 2500).catch(() => null);
+      if (st && typeof st === 'object') systemUpdateStatusCache = st;
+      renderSystemUpdatePanel();
+
+      const state = systemUpdateState();
+      if (systemUpdateIsBusy(state)) scheduleSystemUpdatePoll(1200);
+      else stopSystemUpdatePoll();
+    } catch {}
+  }
+
+  async function refreshSystemUpdateCheck(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const force = !!options.force;
+    const now = Date.now();
+    if (!force && systemUpdateCheckAt && now - systemUpdateCheckAt < 60000) {
+      renderSystemUpdatePanel();
+      return;
+    }
+
+    systemUpdateCheckAt = now;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/update/check', {}, 20000);
+      if (res && typeof res === 'object') systemUpdateCheckCache = res;
+    } catch (e) {
+      systemUpdateCheckCache = {
+        ok: true,
+        channel: '-',
+        installed: { tag: '-' },
+        available: null,
+        update_available: false,
+        error: e && e.message ? e.message : String(e),
+      };
+    } finally {
+      renderSystemUpdatePanel();
+    }
+  }
+
+  async function applySystemUpdate() {
+    if (btnUpdateApply && btnUpdateApply.disabled) return;
+    if (!confirm('Apply system update now?')) return;
+    if (btnUpdateApply) btnUpdateApply.disabled = true;
+    if (btnUpdateCheck) btnUpdateCheck.disabled = true;
+
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) throw new Error('System service unavailable');
+      const ch = systemUpdateCheckCache && systemUpdateCheckCache.channel ? String(systemUpdateCheckCache.channel) : '';
+      const res = await apiJsonTimeout(
+        '/api/v0/system/update/apply',
+        { method: 'POST', body: JSON.stringify({ channel: ch }) },
+        60000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Update did not start');
+      showToast('Update started', null);
+      await refreshSystemUpdateStatus();
+      scheduleSystemUpdatePoll(1200);
+    } catch (e) {
+      showToast('Update failed', 'error');
+      alert(`Update failed: ${e && e.message ? e.message : e}`);
+    } finally {
+      renderSystemUpdatePanel();
+    }
   }
 
   async function refreshStore() {
@@ -3176,6 +3391,9 @@
     }
   });
 
+  btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true }).catch(() => {}));
+  btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
+
   btnRefresh?.addEventListener('click', refresh);
   btnMetrics?.addEventListener('click', openMetricsModal);
   btnWidgetsRefresh?.addEventListener('click', () => refreshWidgets().catch(() => {}));
@@ -3326,7 +3544,10 @@
     applyInstalled(cachedInstalled.apps, { fromCache: true });
   }
   refresh().catch(() => setStatus('UI only'));
+  refreshSystemUpdateStatus().catch(() => {});
+  window.setTimeout(() => refreshSystemUpdateCheck().catch(() => {}), 2500);
   window.setInterval(() => refreshMetrics().catch(() => {}), 5000);
   window.setInterval(() => refreshWidgets().catch(() => {}), 10000);
   window.setInterval(() => refreshInstalled().catch(() => {}), 30000);
+  window.setInterval(() => refreshSystemUpdateCheck().catch(() => {}), 3600000);
 })();

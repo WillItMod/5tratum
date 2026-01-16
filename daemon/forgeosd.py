@@ -10,6 +10,7 @@ import secrets
 import shlex
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import urllib.request
@@ -22,10 +23,14 @@ from urllib.parse import parse_qs, urlparse
 FORGEOS_ROOT = os.environ.get("FORGEOS_ROOT", "/opt/forgeos")
 APPS_DIR = os.path.join(FORGEOS_ROOT, "apps")
 FORGEOS_DATA_DIR = os.environ.get("FORGEOS_DATA_DIR", "/srv/forgeos-data")
+FORGEOS_STATE_DIR = os.environ.get("FORGEOS_STATE_DIR", "/var/lib/forgeos")
 FORGEOS_CHANNEL_FILE = os.environ.get("FORGEOS_CHANNEL_FILE", "/etc/forgeos/channel")
 FORGEOS_STORE_DIR = os.environ.get("FORGEOS_STORE_DIR", os.path.join(FORGEOS_ROOT, "store"))
 FORGEOS_AUTH_FILE = os.environ.get("FORGEOS_AUTH_FILE", "/etc/forgeos/auth.json")
 FORGEOS_FEATURES_FILE = os.environ.get("FORGEOS_FEATURES_FILE", "/etc/forgeos/features.json")
+FORGEOS_BUILD_FILE = os.environ.get("FORGEOS_BUILD_FILE", "/etc/forgeos/build.json")
+FORGEOS_UPDATE_REPO = os.environ.get("FORGEOS_UPDATE_REPO", "WillItMod/5tratum")
+FORGEOS_UPDATE_ALLOW_UNVERIFIED = os.environ.get("FORGEOS_UPDATE_ALLOW_UNVERIFIED", "0").strip() == "1"
 FORGEOS_SESSION_TTL_S = int(os.environ.get("FORGEOS_SESSION_TTL_S", "86400"))
 FORGEOS_SESSION_COOKIE = os.environ.get("FORGEOS_SESSION_COOKIE", "forgeos_session")
 _AUTH_LOCK = threading.Lock()
@@ -50,6 +55,500 @@ def run_cmd(args: list[str], *, cwd: str | None = None, timeout_s: int = 120) ->
         text=True,
         check=False,
     )
+
+
+def _write_json_atomic(path: str, obj: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp"
+    raw = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(raw)
+    os.replace(tmp, path)
+
+
+def _read_json(path: str) -> dict:
+    if not os.path.isfile(path):
+        return {}
+    try:
+        obj = json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def read_build_info() -> dict:
+    info = _read_json(FORGEOS_BUILD_FILE)
+    if info:
+        return info
+    return _read_json(os.path.join(FORGEOS_STATE_DIR, "build.json"))
+
+
+def write_build_info(info: dict) -> None:
+    try:
+        _write_json_atomic(FORGEOS_BUILD_FILE, info)
+    except Exception:
+        _write_json_atomic(os.path.join(FORGEOS_STATE_DIR, "build.json"), info)
+
+
+_UPDATE_LOCK = threading.Lock()
+_UPDATE_STATUS_PATH = os.path.join(FORGEOS_STATE_DIR, "update", "status.json")
+
+
+def update_status_read() -> dict:
+    st = _read_json(_UPDATE_STATUS_PATH)
+    if not st:
+        return {"ok": True, "state": "idle", "time": _now_iso()}
+
+    state = str(st.get("state") or "idle").strip().lower() or "idle"
+    target = str(st.get("target_tag") or "").strip()
+    build = read_build_info()
+    installed = str(build.get("tag") or build.get("version") or "").strip()
+
+    # If the last step was "restart daemon" and we are back online with the target tag, mark done.
+    if state in {"restarting_daemon", "restarting"} and target and installed == target:
+        st = {**st, "state": "done", "time": _now_iso(), "ok": True}
+        try:
+            _write_json_atomic(_UPDATE_STATUS_PATH, st)
+        except Exception:
+            pass
+    return st
+
+
+def update_status_write(state: str, **extra: object) -> None:
+    obj: dict = {"ok": True, "state": state, "time": _now_iso()}
+    obj.update({k: v for k, v in extra.items() if v is not None})
+    _write_json_atomic(_UPDATE_STATUS_PATH, obj)
+
+
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _tree_digest(path: str) -> str:
+    root = Path(path)
+    if not root.exists():
+        return ""
+    h = hashlib.sha256()
+    for p in sorted(root.rglob("*"), key=lambda it: str(it)):
+        if not p.is_file():
+            continue
+        if p.name.endswith(".pyc") or p.name == "__pycache__":
+            continue
+        rel = str(p.relative_to(root)).replace("\\", "/")
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        try:
+            h.update(p.read_bytes())
+        except Exception:
+            continue
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
+    dest = Path(dest_dir).resolve()
+    for member in tar.getmembers():
+        name = member.name or ""
+        if not name:
+            continue
+        member_path = (dest / name).resolve()
+        if not str(member_path).startswith(str(dest)):
+            raise ValueError(f"unsafe tar path: {name}")
+    tar.extractall(dest_dir)
+
+
+def _github_json(url: str, *, timeout_s: int = 15) -> dict | list | None:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "5tratumOS",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
+        raw = r.read().decode("utf-8", errors="replace")
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+def _github_bytes(url: str, *, timeout_s: int = 60) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "5tratumOS"})
+    with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
+        return r.read()
+
+
+def _select_release(channel: str) -> dict:
+    repo = str(FORGEOS_UPDATE_REPO or "").strip()
+    if not repo or "/" not in repo:
+        return {"ok": False, "error": f"invalid update repo: {repo}"}
+    ch = (channel or "main").strip().lower() or "main"
+
+    if ch == "main":
+        url = f"https://api.github.com/repos/{repo}/releases/latest"
+        data = _github_json(url, timeout_s=15)
+        if not isinstance(data, dict) or not data.get("tag_name"):
+            return {"ok": False, "error": "no releases published yet"}
+        return {"ok": True, "release": data}
+
+    if ch == "dev":
+        url = f"https://api.github.com/repos/{repo}/releases?per_page=30"
+        data = _github_json(url, timeout_s=15)
+        if not isinstance(data, list):
+            return {"ok": False, "error": "no releases published yet"}
+        for rel in data:
+            if not isinstance(rel, dict):
+                continue
+            if rel.get("draft"):
+                continue
+            if rel.get("prerelease") is True and rel.get("tag_name"):
+                return {"ok": True, "release": rel}
+        return {"ok": False, "error": "no dev (pre-release) builds published yet"}
+
+    return {"ok": False, "error": f"invalid update channel: {ch}"}
+
+
+def _pick_asset(assets: list[dict], names: list[str], ends: tuple[str, ...]) -> dict | None:
+    for want in names:
+        for a in assets:
+            if not isinstance(a, dict):
+                continue
+            if str(a.get("name") or "") == want:
+                return a
+    for a in assets:
+        if not isinstance(a, dict):
+            continue
+        n = str(a.get("name") or "")
+        if n.lower().endswith(ends):
+            return a
+    return None
+
+
+def _parse_sha256(text: str, bundle_name: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    # "<sha>  <file>" or "<sha> <file>"
+    for line in raw.splitlines():
+        ln = line.strip()
+        if not ln:
+            continue
+        parts = ln.split()
+        if not parts:
+            continue
+        if len(parts[0]) == 64 and all(c in "0123456789abcdefABCDEF" for c in parts[0]):
+            if len(parts) == 1:
+                return parts[0].lower()
+            if parts[-1] == bundle_name:
+                return parts[0].lower()
+    # fallback: first token if looks like sha256
+    tok = raw.split()[0] if raw.split() else ""
+    if len(tok) == 64 and all(c in "0123456789abcdefABCDEF" for c in tok):
+        return tok.lower()
+    return ""
+
+
+def system_update_check(channel: str | None = None) -> dict:
+    ch = (channel or read_default_channel() or "main").strip().lower() or "main"
+    sel = _select_release(ch)
+    build = read_build_info()
+    installed_tag = str(build.get("tag") or build.get("version") or "unknown").strip() or "unknown"
+    if not sel.get("ok"):
+        return {
+            "ok": True,
+            "channel": ch,
+            "installed": {"tag": installed_tag},
+            "available": None,
+            "update_available": False,
+            "error": sel.get("error") or "",
+        }
+
+    rel = sel.get("release") or {}
+    tag = str(rel.get("tag_name") or "").strip()
+    body = str(rel.get("body") or "").strip()
+    published_at = str(rel.get("published_at") or rel.get("created_at") or "").strip()
+    assets = rel.get("assets") if isinstance(rel.get("assets"), list) else []
+
+    bundle = _pick_asset(
+        assets,
+        names=["5tratumos-update.tgz", "5tratum-update.tgz", "update.tgz"],
+        ends=(".tgz", ".tar.gz"),
+    )
+    if not bundle:
+        return {
+            "ok": True,
+            "channel": ch,
+            "installed": {"tag": installed_tag},
+            "available": {"tag": tag, "published_at": published_at, "notes": body},
+            "update_available": False,
+            "error": "release has no update bundle asset (.tgz)",
+        }
+
+    bundle_name = str(bundle.get("name") or "").strip()
+    bundle_url = str(bundle.get("browser_download_url") or "").strip()
+
+    sha_asset = _pick_asset(
+        assets,
+        names=[f"{bundle_name}.sha256", f"{bundle_name}.sha256sum", "SHA256SUMS"],
+        ends=(".sha256", ".sha256sum"),
+    )
+    sha256 = ""
+    sha_url = ""
+    if sha_asset:
+        sha_url = str(sha_asset.get("browser_download_url") or "").strip()
+        try:
+            sha256 = _parse_sha256(_github_bytes(sha_url, timeout_s=30).decode("utf-8", errors="replace"), bundle_name)
+        except Exception:
+            sha256 = ""
+
+    verifiable = bool(sha256) or FORGEOS_UPDATE_ALLOW_UNVERIFIED
+    update_available = bool(tag and tag != installed_tag and verifiable)
+    return {
+        "ok": True,
+        "channel": ch,
+        "repo": str(FORGEOS_UPDATE_REPO),
+        "installed": {"tag": installed_tag},
+        "available": {
+            "tag": tag,
+            "published_at": published_at,
+            "notes": body,
+            "bundle": {"name": bundle_name, "url": bundle_url, "sha256": sha256 or ""},
+            "verifiable": bool(sha256),
+        },
+        "update_available": bool(update_available),
+        "unverified_allowed": bool(FORGEOS_UPDATE_ALLOW_UNVERIFIED),
+    }
+
+
+def _mirror_tree(src: str, dst: str) -> None:
+    src_p = Path(src)
+    dst_p = Path(dst)
+    if not src_p.is_dir():
+        return
+    dst_p.mkdir(parents=True, exist_ok=True)
+
+    src_children = {p.name for p in src_p.iterdir()}
+    for p in list(dst_p.iterdir()):
+        if p.name not in src_children:
+            if p.is_dir():
+                for sub in sorted(p.rglob("*"), reverse=True):
+                    try:
+                        if sub.is_file() or sub.is_symlink():
+                            sub.unlink()
+                        elif sub.is_dir():
+                            sub.rmdir()
+                    except Exception:
+                        pass
+                try:
+                    p.rmdir()
+                except Exception:
+                    pass
+            else:
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+
+    for p in src_p.iterdir():
+        s = p
+        d = dst_p / p.name
+        if s.is_dir():
+            _mirror_tree(str(s), str(d))
+        elif s.is_file():
+            d.parent.mkdir(parents=True, exist_ok=True)
+            data = s.read_bytes()
+            tmp = d.with_suffix(d.suffix + ".tmp")
+            tmp.write_bytes(data)
+            try:
+                os.chmod(tmp, s.stat().st_mode)
+            except Exception:
+                pass
+            os.replace(tmp, d)
+
+
+def system_update_apply(channel: str | None = None) -> dict:
+    ch = (channel or read_default_channel() or "main").strip().lower() or "main"
+    with _UPDATE_LOCK:
+        st = update_status_read()
+        if str(st.get("state") or "").strip().lower() in {"downloading", "extracting", "deploying", "restarting", "restarting_daemon"}:
+            return {"ok": False, "error": "update already in progress"}
+
+        check = system_update_check(ch)
+        if not check.get("ok"):
+            return {"ok": False, "error": "unable to check updates"}
+        if not check.get("available"):
+            return {"ok": False, "error": check.get("error") or "no updates available"}
+        if not check.get("update_available"):
+            return {"ok": False, "error": check.get("error") or "no verified update available"}
+
+        target = check.get("available") or {}
+        bundle = (target.get("bundle") or {}) if isinstance(target, dict) else {}
+        target_tag = str(target.get("tag") or "").strip()
+        bundle_url = str(bundle.get("url") or "").strip()
+        bundle_sha = str(bundle.get("sha256") or "").strip().lower()
+        if not target_tag or not bundle_url:
+            return {"ok": False, "error": "invalid release metadata"}
+        if not bundle_sha and not FORGEOS_UPDATE_ALLOW_UNVERIFIED:
+            return {"ok": False, "error": "no checksum for update bundle (refusing unverified update)"}
+
+        def worker() -> None:
+            try:
+                update_status_write("downloading", target_tag=target_tag)
+                os.makedirs(os.path.join(FORGEOS_STATE_DIR, "update"), exist_ok=True)
+                bundle_path = os.path.join(FORGEOS_STATE_DIR, "update", "bundle.tgz")
+                stage_dir = os.path.join(FORGEOS_STATE_DIR, "update", f"stage-{int(time.time())}")
+                tmp = bundle_path + ".tmp"
+                Path(tmp).write_bytes(_github_bytes(bundle_url, timeout_s=600))
+                os.replace(tmp, bundle_path)
+
+                if bundle_sha:
+                    got = _sha256_file(bundle_path)
+                    if got.lower() != bundle_sha.lower():
+                        update_status_write("error", target_tag=target_tag, error="checksum mismatch")
+                        return
+
+                update_status_write("extracting", target_tag=target_tag)
+                if os.path.isdir(stage_dir):
+                    for p in sorted(Path(stage_dir).rglob("*"), reverse=True):
+                        try:
+                            if p.is_file() or p.is_symlink():
+                                p.unlink()
+                            elif p.is_dir():
+                                p.rmdir()
+                        except Exception:
+                            pass
+                    try:
+                        Path(stage_dir).rmdir()
+                    except Exception:
+                        pass
+                os.makedirs(stage_dir, exist_ok=True)
+
+                with tarfile.open(bundle_path, "r:gz") as tar:
+                    _safe_extract_tar(tar, stage_dir)
+
+                stage_root = Path(stage_dir)
+                stage_overlay = stage_root / "overlay"
+                stage_daemon = stage_root / "daemon"
+                stage_systemd = stage_root / "systemd"
+                stage_bin = stage_root / "bin" / "forgeos"
+
+                cur_overlay = Path(FORGEOS_ROOT) / "overlay"
+                cur_daemon = Path(FORGEOS_ROOT) / "daemon"
+                cur_systemd = Path("/etc/systemd/system")
+
+                daemon_changed = stage_daemon.is_dir() and _tree_digest(str(stage_daemon)) != _tree_digest(str(cur_daemon))
+                overlay_cfg_changed = False
+                if stage_overlay.is_dir():
+                    stage_cfg = hashlib.sha256()
+                    for rel in ("docker-compose.yml", "nginx/default.conf"):
+                        p = stage_overlay / rel
+                        if p.is_file():
+                            stage_cfg.update(rel.encode("utf-8"))
+                            stage_cfg.update(b"\0")
+                            stage_cfg.update(p.read_bytes())
+                            stage_cfg.update(b"\0")
+                    cur_cfg = hashlib.sha256()
+                    for rel in ("docker-compose.yml", "nginx/default.conf"):
+                        p = cur_overlay / rel
+                        if p.is_file():
+                            cur_cfg.update(rel.encode("utf-8"))
+                            cur_cfg.update(b"\0")
+                            cur_cfg.update(p.read_bytes())
+                    cur_cfg.update(b"\0")
+                    overlay_cfg_changed = stage_cfg.hexdigest() != cur_cfg.hexdigest()
+
+                systemd_changed = _systemd_units_changed(stage_systemd, cur_systemd)
+
+                update_status_write(
+                    "deploying",
+                    target_tag=target_tag,
+                    restarts={
+                        "overlay": bool(overlay_cfg_changed),
+                        "daemon": bool(daemon_changed),
+                        "systemd": bool(systemd_changed),
+                    },
+                )
+
+                if stage_overlay.is_dir():
+                    _mirror_tree(str(stage_overlay), str(cur_overlay))
+                if stage_daemon.is_dir():
+                    _mirror_tree(str(stage_daemon), str(cur_daemon))
+                if (stage_root / "apps-available").is_dir():
+                    _mirror_tree(str(stage_root / "apps-available"), str(Path(FORGEOS_ROOT) / "apps-available"))
+                if (stage_root / "console").is_dir():
+                    _mirror_tree(str(stage_root / "console"), str(Path(FORGEOS_ROOT) / "console"))
+
+                if stage_bin.is_file():
+                    run_cmd(["install", "-m", "0755", str(stage_bin), "/usr/local/bin/forgeos"], timeout_s=60)
+
+                if stage_systemd.is_dir():
+                    for unit in sorted(stage_systemd.glob("*.service"), key=lambda it: it.name):
+                        run_cmd(["install", "-m", "0644", str(unit), str(cur_systemd / unit.name)], timeout_s=30)
+
+                write_build_info(
+                    {
+                        "tag": target_tag,
+                        "repo": str(FORGEOS_UPDATE_REPO),
+                        "channel": ch,
+                        "installed_at": _now_iso(),
+                    }
+                )
+
+                if systemd_changed:
+                    run_cmd(["systemctl", "daemon-reload"], timeout_s=60)
+
+                if overlay_cfg_changed:
+                    update_status_write("restarting", target_tag=target_tag, service="overlay")
+                    run_cmd(["systemctl", "restart", "forgeos-overlay.service"], timeout_s=180)
+
+                if daemon_changed:
+                    update_status_write("restarting_daemon", target_tag=target_tag, service="daemon")
+                    run_cmd(["systemctl", "restart", "forgeosd.service"], timeout_s=180)
+                    return
+
+                update_status_write("done", target_tag=target_tag)
+            except Exception as e:
+                update_status_write("error", target_tag=target_tag, error=str(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"ok": True, "started": True, "target_tag": target_tag}
+
+
+def _systemd_units_changed(stage_dir: Path, dest_dir: Path) -> bool:
+    if not stage_dir.is_dir():
+        return False
+    h_stage = hashlib.sha256()
+    h_dest = hashlib.sha256()
+    any_unit = False
+    for unit in sorted(stage_dir.glob("*.service"), key=lambda it: it.name):
+        if not unit.is_file():
+            continue
+        any_unit = True
+        h_stage.update(unit.name.encode("utf-8"))
+        h_stage.update(b"\0")
+        h_stage.update(unit.read_bytes())
+        h_stage.update(b"\0")
+
+        dest = dest_dir / unit.name
+        h_dest.update(unit.name.encode("utf-8"))
+        h_dest.update(b"\0")
+        if dest.is_file():
+            try:
+                h_dest.update(dest.read_bytes())
+            except Exception:
+                pass
+        h_dest.update(b"\0")
+    if not any_unit:
+        return False
+    return h_stage.hexdigest() != h_dest.hexdigest()
 
 
 def json_response(
@@ -1376,6 +1875,17 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, ssh_status())
             return
 
+        if path == "/api/v0/system/update/check":
+            channel = None
+            if "channel" in qs and qs["channel"]:
+                channel = qs["channel"][0]
+            json_response(self, HTTPStatus.OK, system_update_check(channel))
+            return
+
+        if path == "/api/v0/system/update/status":
+            json_response(self, HTTPStatus.OK, update_status_read())
+            return
+
         if path == "/api/v0/apps/installed":
             apps = []
             for app_id in list_installed_app_ids():
@@ -1544,6 +2054,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/system/ssh":
             enabled = bool(body.get("enabled")) if isinstance(body, dict) else False
             res = ssh_set_enabled(enabled)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/update/apply":
+            channel = str(body.get("channel") or "").strip().lower() if isinstance(body, dict) else ""
+            res = system_update_apply(channel or None)
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
