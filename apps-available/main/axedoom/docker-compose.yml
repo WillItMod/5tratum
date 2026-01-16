@@ -1,0 +1,13 @@
+services:
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    init: true
+    environment:
+      HOME: /data
+      RESOLUTION: 1280x720
+    ports:
+      - "5300:8080"
+    volumes:
+      - ${APP_DATA_DIR}/data:/data

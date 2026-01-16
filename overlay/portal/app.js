@@ -552,6 +552,14 @@
       logo: makeLogo('B', 'AxeBTC', '#ff9a00', '#ff2bd6'),
       screenshots: [makeShot('AxeBTC', 'Node + pool overview')],
     },
+    axedoom: {
+      id: 'axedoom',
+      name: 'AxeDoom',
+      desc: 'Play Doom in your browser (Freedoom). Optional install.',
+      tag: 'Fun',
+      logo: makeLogo('D', 'AxeDoom', '#00e5ff', '#ff2bd6'),
+      screenshots: [makeShot('AxeDoom', 'Freedoom + Chocolate Doom (noVNC)')],
+    },
   };
 
   function metaFor(id) {

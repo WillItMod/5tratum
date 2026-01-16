@@ -148,7 +148,7 @@ case "${cmd}" in
 
         main_url="https://github.com/WillItMod/umbrel-community-store/archive/refs/heads/main.tar.gz"
         dev_url="https://github.com/WillItMod/umbrel-dev-community-store/archive/refs/heads/main.tar.gz"
-        umbrel_repo="${FORGEOS_UMBREL_STORE_REPO:-getumbrel/umbrel-apps}"
+        umbrel_repo="${FORGEOS_UMBREL_STORE_REPO:-WillItMod/global-apps}"
         umbrel_branch="${FORGEOS_UMBREL_STORE_BRANCH:-master}"
         umbrel_url_default="https://github.com/${umbrel_repo}/archive/refs/heads/${umbrel_branch}.tar.gz"
         umbrel_url="${FORGEOS_UMBREL_STORE_URL:-${umbrel_url_default}}"

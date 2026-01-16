@@ -1187,6 +1187,31 @@ def list_store_apps(channel: str | None) -> dict:
         )
 
     if ch in {"main", "dev"}:
+        if not any(str(a.get("id") or "").strip().lower() == "axedoom" for a in apps):
+            apps.append(
+                {
+                    "id": "axedoom",
+                    "store_id": "axedoom",
+                    "channel": "main",
+                    "dir": "__builtin__",
+                    "name": "AxeDoom",
+                    "tagline": "Play Doom in your browser (Freedoom)",
+                    "description": "Optional install. Runs Chocolate Doom with the open-source Freedoom IWAD via a web-based noVNC session.",
+                    "version": "1.0.0",
+                    "category": "Fun",
+                    "developer": "5tratumOS",
+                    "website": "https://freedoom.github.io/",
+                    "repo": "",
+                    "support": "",
+                    "icon": "",
+                    "gallery": [],
+                    "port": 5300,
+                    "path": "",
+                    "widgets": [],
+                    "installable": True,
+                }
+            )
+
         apps.append(
             {
                 "id": "umbrel-store",
@@ -1199,8 +1224,8 @@ def list_store_apps(channel: str | None) -> dict:
                 "version": "1.0.0",
                 "category": "Integration",
                 "developer": "5tratumOS",
-                "website": "https://github.com/WillItMod/umbrel-apps",
-                "repo": "https://github.com/WillItMod/umbrel-apps",
+                "website": "https://github.com/WillItMod/global-apps",
+                "repo": "https://github.com/WillItMod/global-apps",
                 "support": "",
                 "icon": "/assets/5tratum-icon.png",
                 "gallery": ["/assets/watermark.png"],
@@ -1835,7 +1860,7 @@ def summarize_project_status(project: str) -> dict:
 
 def default_ui_ports(app_id: str) -> int | None:
     # Transitional: until apps are proxied via internal networks, we map known UIs.
-    return {"axelive": 5210, "axebench": 5000}.get(app_id)
+    return {"axelive": 5210, "axebench": 5000, "axedoom": 5300}.get(app_id)
 
 
 def list_available_app_ids(channel: str | None = None) -> dict:
@@ -2048,7 +2073,7 @@ class Handler(BaseHTTPRequestHandler):
                     apps.append(
                         {
                             "id": app_id,
-                            "name": str(store_meta.get("name") or "Umbrel Store"),
+                            "name": str(store_meta.get("name") or "Global App Store"),
                             "store": store_meta if store_meta else None,
                             "status": "running",
                             "installed_version": version,
