@@ -982,7 +982,7 @@ def map_store_id_to_app_id(store_id: str, channel: str) -> str:
     raw = (store_id or "").strip().lower()
     ch = (channel or "").strip().lower()
 
-    # Umbrel store uses canonical IDs like "bitcoin", "nextcloud", etc.
+    # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
     if ch == "umbrel":
         raw = raw.replace(" ", "-")
         raw = re.sub(r"[^a-z0-9_-]+", "", raw)
@@ -1097,6 +1097,19 @@ def _prefer_local_gallery(channel: str, app_dir_path: Path, app_dir_name: str, m
 
 _STORE_CACHE: dict[str, dict] = {}
 _WIDGET_CACHE: dict[str, dict] = {}
+_FLEET_CACHE: dict[str, dict] = {}
+
+
+def _has_pool_widget(store_meta: dict) -> bool:
+    widgets = store_meta.get("widgets")
+    if not isinstance(widgets, list):
+        return False
+    for item in widgets:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("id") or "").strip().lower() == "pool":
+            return True
+    return False
 
 
 def list_store_apps(channel: str | None) -> dict:
@@ -1435,6 +1448,133 @@ def list_app_widgets() -> dict:
 
     _WIDGET_CACHE["widgets"] = {"time": now, "apps": apps_out}
     return {"ok": True, "time": _now_iso(), "apps": apps_out}
+
+
+def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
+    now = time.time()
+    limit = int(limit_workers or 0)
+    cache = _FLEET_CACHE.get("summary") or {}
+    if cache.get("time") and now - float(cache.get("time") or 0) < 3 and int(cache.get("limit") or 0) == limit:
+        data = cache.get("data") or {}
+        if isinstance(data, dict) and data.get("ok") is True:
+            return data
+
+    pools: list[dict] = []
+    workers_out: list[dict] = []
+    total_hashrate_ths = 0.0
+    total_workers = 0
+
+    for app_id in list_installed_app_ids():
+        if app_id == "umbrel-store":
+            continue
+        store_meta = store_app_by_id(app_id) or {}
+        if not isinstance(store_meta, dict) or not _has_pool_widget(store_meta):
+            continue
+
+        name = str(store_meta.get("name") or app_id).strip() or app_id
+        coin = name[3:].strip().upper() if name.lower().startswith("axe") else name.strip().upper()
+        if not coin:
+            coin = app_id.upper()
+
+        port = default_ui_ports(app_id)
+        if port is None:
+            try:
+                sp = int(str(store_meta.get("port") or "").strip() or "0")
+            except Exception:
+                sp = 0
+            port = sp or None
+
+        project = docker_compose_project(app_id)
+        st = summarize_project_status(project)
+        status = str(st.get("status") or "unknown")
+
+        entry: dict = {
+            "id": app_id,
+            "name": name,
+            "coin": coin,
+            "status": status,
+            "port": port,
+            "ok": False,
+        }
+
+        if status != "running" or port is None:
+            entry["pool_error"] = "not running"
+            entry["workers_error"] = "not running"
+            pools.append(entry)
+            continue
+
+        pool_url = f"http://127.0.0.1:{port}/api/pool"
+        workers_url = f"http://127.0.0.1:{port}/api/pool/workers"
+
+        pool_data: dict | None = None
+        workers_data: dict | None = None
+
+        try:
+            pool_raw = _fetch_json(pool_url, timeout_s=2)
+            if isinstance(pool_raw, dict):
+                pool_data = pool_raw
+            else:
+                entry["pool_error"] = "invalid pool response"
+        except Exception as e:
+            entry["pool_error"] = str(e)
+
+        try:
+            workers_raw = _fetch_json(workers_url, timeout_s=2)
+            if isinstance(workers_raw, dict):
+                workers_data = workers_raw
+            else:
+                entry["workers_error"] = "invalid workers response"
+        except Exception as e:
+            entry["workers_error"] = str(e)
+
+        if pool_data is not None:
+            entry["pool"] = pool_data
+            try:
+                total_hashrate_ths += float(pool_data.get("hashrate_ths") or 0.0)
+            except Exception:
+                pass
+            try:
+                total_workers += int(pool_data.get("workers") or 0)
+            except Exception:
+                pass
+
+        if workers_data is not None:
+            entry["workers"] = workers_data
+            details = workers_data.get("workers_details")
+            if isinstance(details, list):
+                for w in details:
+                    if not isinstance(w, dict):
+                        continue
+                    workers_out.append({"app_id": app_id, "coin": coin, **w})
+
+        entry["ok"] = pool_data is not None
+        pools.append(entry)
+
+    def worker_hashrate_key(w: dict) -> float:
+        for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
+            try:
+                v = w.get(k)
+                if isinstance(v, (int, float)):
+                    return float(v)
+                if isinstance(v, str) and v.strip():
+                    return float(v.strip())
+            except Exception:
+                continue
+        return 0.0
+
+    workers_out.sort(key=worker_hashrate_key, reverse=True)
+    if limit > 0:
+        workers_out = workers_out[:limit]
+
+    res = {
+        "ok": True,
+        "time": _now_iso(),
+        "total": {"hashrate_ths": total_hashrate_ths, "workers": total_workers},
+        "pools": pools,
+        "workers": workers_out,
+    }
+    _FLEET_CACHE["summary"] = {"time": now, "limit": limit, "data": res}
+    return res
 
 
 def read_meminfo_bytes() -> dict[str, int]:
@@ -1955,7 +2095,23 @@ def terminal_run(command: str) -> dict:
             return forgeos_cmd(parts, timeout_s=timeout)
 
         cmd = parts[0]
-        safe_cmds = {"ls", "pwd", "whoami", "id", "uname", "uptime", "df", "free", "ip"}
+        safe_cmds = {
+            "ls",
+            "pwd",
+            "whoami",
+            "id",
+            "uname",
+            "uptime",
+            "df",
+            "free",
+            "ip",
+            "ps",
+            "ss",
+            "cat",
+            "tail",
+            "journalctl",
+            "systemctl",
+        }
         if cmd not in safe_cmds:
             return {"ok": False, "error": f"command not allowed: {cmd}", "code": 2}
 
@@ -1967,6 +2123,21 @@ def terminal_run(command: str) -> dict:
                     "error": "ip modification commands are disabled in the web terminal (try: ip a)",
                     "code": 2,
                 }
+
+        if cmd == "systemctl":
+            sub = str(parts[1] if len(parts) >= 2 else "").strip().lower()
+            allowed = {"status", "is-active", "is-enabled", "list-units", "list-unit-files"}
+            if sub not in allowed:
+                return {
+                    "ok": False,
+                    "error": "systemctl is restricted in the web terminal (try: systemctl status <service>)",
+                    "code": 2,
+                }
+
+        if cmd == "journalctl":
+            banned = {"--update-catalog", "--flush", "--sync"}
+            if any(str(p).strip().lower() in banned for p in parts[1:]):
+                return {"ok": False, "error": "journalctl action is disabled in the web terminal", "code": 2}
 
         proc = run_cmd(parts, timeout_s=30)
         return {
@@ -2142,6 +2313,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/apps/widgets":
             json_response(self, HTTPStatus.OK, list_app_widgets())
+            return
+
+        if path == "/api/v0/fleet/summary":
+            limit = None
+            if "limit" in qs and qs["limit"]:
+                try:
+                    limit = int(str(qs["limit"][0]).strip() or "0")
+                except Exception:
+                    limit = None
+            json_response(self, HTTPStatus.OK, axe_fleet_summary(limit_workers=limit))
             return
 
         if path == "/api/v0/apps/available":

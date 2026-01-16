@@ -6,8 +6,8 @@
     <title>5tratumOS</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/forgeos.css?v=16" />
-    <script defer src="/app.js?v=21"></script>
+    <link rel="stylesheet" href="/forgeos.css?v=17" />
+    <script defer src="/app.js?v=22"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <div class="forgeos-shell">
@@ -137,8 +137,53 @@
                 </div>
                 <div class="forgeos-home__sub">Click apps on the left to open them in a tiled workspace.</div>
 
-	                <div class="forgeos-home__grid">
-	                  <section class="axe-card forgeos-home-span">
+	                <div id="dashboard-grid" class="forgeos-home__grid">
+	                  <section id="dashboard-card-fleet" class="axe-card forgeos-dashboard-card" data-dashboard-card="fleet-hashrate">
+	                    <div class="forgeos-card-head">
+	                      <div class="forgeos-card-head__title">Fleet Hashrate</div>
+	                      <div class="forgeos-card-head__right">
+	                        <span id="fleet-updated" class="forgeos-card-head__sub">-</span>
+	                        <button id="btn-fleet-refresh" class="axe-btn forgeos-card-btn" type="button">Refresh</button>
+	                      </div>
+	                    </div>
+	                    <div class="mt-1 forgeos-muted">Total hashrate across AxeSuite pools.</div>
+	                    <div class="mt-3 forgeos-fleet">
+	                      <div class="forgeos-fleet__top">
+	                        <div class="forgeos-fleet__value">
+	                          <span id="fleet-hashrate" class="forgeos-mono">-</span>
+	                          <span class="forgeos-fleet__unit">TH/s</span>
+	                        </div>
+	                        <div class="forgeos-fleet__meta">
+	                          <span id="fleet-workers" class="forgeos-mono">-</span>
+	                          <span class="forgeos-fleet__meta-label">workers</span>
+	                        </div>
+	                      </div>
+	                      <svg id="fleet-spark" class="forgeos-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-label="Fleet hashrate history">
+	                        <defs>
+	                          <linearGradient id="sparkGradient" x1="0" y1="0" x2="1" y2="0">
+	                            <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.9" />
+	                            <stop offset="55%" stop-color="#9f7aea" stop-opacity="0.9" />
+	                            <stop offset="100%" stop-color="#ff2bd6" stop-opacity="0.9" />
+	                          </linearGradient>
+	                        </defs>
+	                        <polyline id="fleet-spark-line" fill="none" stroke="url(#sparkGradient)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="" />
+	                      </svg>
+	                      <div id="fleet-breakdown" class="mt-3 forgeos-fleet-breakdown"></div>
+	                    </div>
+	                  </section>
+
+	                  <section id="dashboard-card-workers" class="axe-card forgeos-dashboard-card" data-dashboard-card="fleet-workers">
+	                    <div class="forgeos-card-head">
+	                      <div class="forgeos-card-head__title">Workers</div>
+	                      <div class="forgeos-card-head__right">
+	                        <span id="fleet-workers-updated" class="forgeos-card-head__sub">-</span>
+	                      </div>
+	                    </div>
+	                    <div class="mt-1 forgeos-muted">Active workers detected by AxeSuite pools.</div>
+	                    <div id="fleet-workers-body" class="mt-3"></div>
+	                  </section>
+
+	                  <section id="dashboard-card-mining" class="axe-card forgeos-home-span forgeos-dashboard-card" data-dashboard-card="mining-overview">
 	                    <div class="forgeos-card-head">
 	                      <div class="forgeos-card-head__title">Mining Overview</div>
 	                      <div class="forgeos-card-head__right">
@@ -273,7 +318,24 @@
               <section class="axe-card">
                 <div class="text-sm text-slate-300">Widgets</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Dashboard Widgets</div>
-                <div class="mt-3 text-sm text-slate-300">Choose which installed apps contribute widgets to the Mining Overview.</div>
+                <div class="mt-3 text-sm text-slate-300">
+                  Toggle dashboard widgets and drag cards on the Dashboard to reorder them.
+                </div>
+                <div id="settings-dashboard-cards" class="mt-4 forgeos-form">
+                  <label class="forgeos-toggle" title="Show the Fleet Hashrate card on the Dashboard">
+                    <input id="setting-card-fleet-hashrate" type="checkbox" />
+                    <span>Fleet Hashrate</span>
+                  </label>
+                  <label class="forgeos-toggle" title="Show the Workers card on the Dashboard">
+                    <input id="setting-card-fleet-workers" type="checkbox" />
+                    <span>Workers</span>
+                  </label>
+                  <label class="forgeos-toggle" title="Show the Mining Overview card on the Dashboard">
+                    <input id="setting-card-mining-overview" type="checkbox" />
+                    <span>Mining Overview</span>
+                  </label>
+                </div>
+                <div class="mt-4 text-sm text-slate-300">Choose which installed apps contribute widgets to the Mining Overview.</div>
                 <div id="settings-widgets" class="mt-4 forgeos-form"></div>
                 <div id="settings-widgets-empty" class="mt-3 forgeos-muted">No widget-capable apps installed yet.</div>
               </section>

@@ -21,6 +21,18 @@
 	  const dashboardWidgetsEl = document.getElementById('dashboard-widgets');
 	  const dashboardWidgetsEmptyEl = document.getElementById('dashboard-widgets-empty');
     const dashboardWidgetsUpdatedEl = document.getElementById('dashboard-widgets-updated');
+    const dashboardGridEl = document.getElementById('dashboard-grid');
+    const fleetUpdatedEl = document.getElementById('fleet-updated');
+    const fleetHashrateEl = document.getElementById('fleet-hashrate');
+    const fleetWorkersEl = document.getElementById('fleet-workers');
+    const fleetSparkLineEl = document.getElementById('fleet-spark-line');
+    const fleetBreakdownEl = document.getElementById('fleet-breakdown');
+    const fleetWorkersUpdatedEl = document.getElementById('fleet-workers-updated');
+    const fleetWorkersBodyEl = document.getElementById('fleet-workers-body');
+    const btnFleetRefresh = document.getElementById('btn-fleet-refresh');
+    const settingCardFleetHashrate = document.getElementById('setting-card-fleet-hashrate');
+    const settingCardFleetWorkers = document.getElementById('setting-card-fleet-workers');
+    const settingCardMiningOverview = document.getElementById('setting-card-mining-overview');
 
   const views = {
     dashboard: document.getElementById('view-dashboard'),
@@ -125,11 +137,19 @@
     let systemUpdatePollInFlight = false;
   let openAppIds = [];
   let maximizedAppId = null;
+  let dashboardLayout = null;
+  let dashboardCards = new Map();
+  let draggingDashboardCardId = null;
+  let lastFleet = null;
+  let refreshFleetInFlight = false;
+  let fleetSeries = [];
   const OPEN_APPS_KEY = 'forgeos.openApps';
   const INSTALLED_CACHE_KEY = 'forgeos.installedCache.v1';
   const STORE_CHANNEL_KEY = 'forgeos.storeChannel';
   const SIDEBAR_MODE_KEY = 'forgeos.sidebarMode';
   const WIDGET_PREFS_KEY = 'forgeos.widgetPrefs';
+  const DASHBOARD_LAYOUT_KEY = 'forgeos.dashboardLayout.v1';
+  const FLEET_SERIES_KEY = 'forgeos.fleetHashrateSeries.v1';
   const STORE_RENDER_STEP = 72;
   let dragAppId = null;
   const openWindows = new Map();
@@ -235,6 +255,198 @@
     if (!widgetPrefs || typeof widgetPrefs !== 'object') widgetPrefs = {};
     widgetPrefs[id] = !!enabled;
     saveWidgetPrefs();
+  }
+
+  function defaultDashboardLayout() {
+    return { order: ['fleet-hashrate', 'fleet-workers', 'mining-overview'], hidden: {} };
+  }
+
+  function loadDashboardLayout() {
+    try {
+      const raw = String(window.localStorage.getItem(DASHBOARD_LAYOUT_KEY) || '').trim();
+      if (!raw) return defaultDashboardLayout();
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return defaultDashboardLayout();
+      const order = Array.isArray(parsed.order)
+        ? parsed.order.map((v) => String(v || '').trim()).filter(Boolean)
+        : defaultDashboardLayout().order;
+      const hidden = parsed.hidden && typeof parsed.hidden === 'object' ? parsed.hidden : {};
+      return { order, hidden };
+    } catch {
+      return defaultDashboardLayout();
+    }
+  }
+
+  function saveDashboardLayout() {
+    try {
+      window.localStorage.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(dashboardLayout || defaultDashboardLayout()));
+    } catch {}
+  }
+
+  function isDashboardCardVisible(cardId) {
+    const id = String(cardId || '').trim();
+    if (!id) return true;
+    const layout = dashboardLayout || defaultDashboardLayout();
+    const hidden = layout.hidden && typeof layout.hidden === 'object' ? layout.hidden : {};
+    return hidden[id] !== true;
+  }
+
+  function setDashboardCardVisible(cardId, visible) {
+    const id = String(cardId || '').trim();
+    if (!id) return;
+    if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
+    if (!dashboardLayout.hidden || typeof dashboardLayout.hidden !== 'object') dashboardLayout.hidden = {};
+    dashboardLayout.hidden[id] = visible ? false : true;
+    saveDashboardLayout();
+    applyDashboardLayout();
+  }
+
+  function applyDashboardLayout() {
+    if (!dashboardGridEl) return;
+    if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
+
+    const order = Array.isArray(dashboardLayout.order) ? dashboardLayout.order : defaultDashboardLayout().order;
+    const handled = new Set();
+
+    for (const id of order) {
+      const el = dashboardCards.get(id);
+      if (!el) continue;
+      dashboardGridEl.appendChild(el);
+      handled.add(id);
+    }
+
+    for (const [id, el] of dashboardCards.entries()) {
+      if (handled.has(id)) continue;
+      dashboardGridEl.appendChild(el);
+    }
+
+    for (const [id, el] of dashboardCards.entries()) {
+      el.classList.toggle('hidden', !isDashboardCardVisible(id));
+    }
+
+    if (settingCardFleetHashrate) settingCardFleetHashrate.checked = isDashboardCardVisible('fleet-hashrate');
+    if (settingCardFleetWorkers) settingCardFleetWorkers.checked = isDashboardCardVisible('fleet-workers');
+    if (settingCardMiningOverview) settingCardMiningOverview.checked = isDashboardCardVisible('mining-overview');
+  }
+
+  function attachDashboardDrag(cardEl, id) {
+    if (!(cardEl instanceof HTMLElement)) return;
+    const cardId = String(id || '').trim();
+    if (!cardId) return;
+    cardEl.setAttribute('draggable', 'true');
+
+    cardEl.addEventListener('dragstart', (e) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && t.closest('button, a, input, select, textarea, label')) {
+        e.preventDefault();
+        return;
+      }
+      draggingDashboardCardId = cardId;
+      cardEl.classList.add('forgeos-dashboard-card--dragging');
+      try {
+        e.dataTransfer?.setData('text/plain', cardId);
+        e.dataTransfer.effectAllowed = 'move';
+      } catch {}
+    });
+
+    cardEl.addEventListener('dragend', () => {
+      draggingDashboardCardId = null;
+      cardEl.classList.remove('forgeos-dashboard-card--dragging');
+      for (const el of dashboardCards.values()) el.classList.remove('forgeos-dashboard-card--drop');
+    });
+
+    cardEl.addEventListener('dragover', (e) => {
+      if (!draggingDashboardCardId) return;
+      e.preventDefault();
+      if (draggingDashboardCardId !== cardId) cardEl.classList.add('forgeos-dashboard-card--drop');
+    });
+
+    cardEl.addEventListener('dragleave', () => {
+      cardEl.classList.remove('forgeos-dashboard-card--drop');
+    });
+
+    cardEl.addEventListener('drop', (e) => {
+      e.preventDefault();
+      cardEl.classList.remove('forgeos-dashboard-card--drop');
+      const source = String(e.dataTransfer?.getData('text/plain') || draggingDashboardCardId || '').trim();
+      if (!source || source === cardId) return;
+      if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
+      const order = Array.isArray(dashboardLayout.order) ? dashboardLayout.order.slice() : defaultDashboardLayout().order.slice();
+      const next = order.filter((x) => x !== source);
+      const targetIdx = next.indexOf(cardId);
+      if (targetIdx < 0) next.push(source);
+      else next.splice(targetIdx, 0, source);
+      dashboardLayout.order = next;
+      saveDashboardLayout();
+      applyDashboardLayout();
+    });
+  }
+
+  function initDashboard() {
+    if (!dashboardGridEl) return;
+
+    dashboardCards = new Map();
+    const cards = Array.from(dashboardGridEl.querySelectorAll('[data-dashboard-card]'));
+    for (const el of cards) {
+      if (!(el instanceof HTMLElement)) continue;
+      const id = String(el.dataset.dashboardCard || '').trim();
+      if (!id) continue;
+      dashboardCards.set(id, el);
+      attachDashboardDrag(el, id);
+    }
+
+    dashboardLayout = loadDashboardLayout();
+
+    settingCardFleetHashrate?.addEventListener('change', () => {
+      setDashboardCardVisible('fleet-hashrate', !!settingCardFleetHashrate.checked);
+    });
+    settingCardFleetWorkers?.addEventListener('change', () => {
+      setDashboardCardVisible('fleet-workers', !!settingCardFleetWorkers.checked);
+    });
+    settingCardMiningOverview?.addEventListener('change', () => {
+      setDashboardCardVisible('mining-overview', !!settingCardMiningOverview.checked);
+    });
+
+    dashboardGridEl.addEventListener('dragover', (e) => {
+      if (!draggingDashboardCardId) return;
+      e.preventDefault();
+    });
+
+    dashboardGridEl.addEventListener('drop', (e) => {
+      if (!draggingDashboardCardId) return;
+      e.preventDefault();
+      const source = String(e.dataTransfer?.getData('text/plain') || draggingDashboardCardId || '').trim();
+      if (!source) return;
+      if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
+      const order = Array.isArray(dashboardLayout.order) ? dashboardLayout.order.slice() : defaultDashboardLayout().order.slice();
+      const next = order.filter((x) => x !== source);
+      next.push(source);
+      dashboardLayout.order = next;
+      saveDashboardLayout();
+      applyDashboardLayout();
+    });
+
+    applyDashboardLayout();
+  }
+
+  function loadFleetSeries() {
+    try {
+      const raw = String(window.localStorage.getItem(FLEET_SERIES_KEY) || '').trim();
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((p) => ({ t: Number(p && p.t), v: Number(p && p.v) }))
+        .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  function saveFleetSeries() {
+    try {
+      window.localStorage.setItem(FLEET_SERIES_KEY, JSON.stringify(fleetSeries.slice(-720)));
+    } catch {}
   }
 
   function applyInstalled(apps, opts) {
@@ -1504,7 +1716,7 @@
     btnMin.className = 'forgeos-tile__btn forgeos-tile__btn--min';
     btnMin.title = 'Restore';
     btnMin.setAttribute('aria-label', 'Restore');
-    btnMin.textContent = '–';
+    btnMin.textContent = '';
     btnMin.disabled = maximizedAppId !== id;
     btnMin.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1518,7 +1730,7 @@
     btnMax.className = 'forgeos-tile__btn forgeos-tile__btn--max';
     btnMax.title = 'Maximize';
     btnMax.setAttribute('aria-label', 'Maximize');
-    btnMax.textContent = '□';
+    btnMax.textContent = '';
     btnMax.disabled = maximizedAppId === id;
     btnMax.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1535,7 +1747,7 @@
     btnClose.type = 'button';
     btnClose.className = 'forgeos-tile__close';
     btnClose.title = 'Close';
-    btnClose.textContent = '×';
+    btnClose.textContent = 'x';
     btnClose.addEventListener('click', (e) => {
       e.stopPropagation();
       toggleAppOpen({ id });
@@ -1790,6 +2002,206 @@
     if (!dashboardWidgetsUpdatedEl) return;
     const t = formatTimeShort(iso);
     dashboardWidgetsUpdatedEl.textContent = t ? `Updated ${t}` : '-';
+  }
+
+  function formatHashrateThs(value) {
+    const v = Number(value);
+    if (!Number.isFinite(v) || v < 0) return '-';
+    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : v >= 1 ? 2 : 3;
+    return v.toFixed(decimals);
+  }
+
+  function setFleetUpdated(iso) {
+    const t = formatTimeShort(iso);
+    if (fleetUpdatedEl) fleetUpdatedEl.textContent = t ? `Updated ${t}` : '-';
+    if (fleetWorkersUpdatedEl) fleetWorkersUpdatedEl.textContent = t ? `Updated ${t}` : '-';
+  }
+
+  function updateFleetSeriesPoint(totalThs) {
+    const v = Number(totalThs);
+    if (!Number.isFinite(v)) return;
+    const now = Date.now();
+    const last = fleetSeries.length ? fleetSeries[fleetSeries.length - 1] : null;
+    if (last && Number.isFinite(last.t) && now - last.t < 8000) {
+      last.v = v;
+    } else {
+      fleetSeries.push({ t: now, v });
+    }
+    if (fleetSeries.length > 720) fleetSeries = fleetSeries.slice(-720);
+    saveFleetSeries();
+  }
+
+  function renderFleetSpark() {
+    if (!fleetSparkLineEl) return;
+    const points = fleetSeries.slice(-180);
+    if (points.length < 2) {
+      fleetSparkLineEl.setAttribute('points', '');
+      return;
+    }
+    const values = points.map((p) => Number(p.v)).filter((v) => Number.isFinite(v));
+    if (!values.length) {
+      fleetSparkLineEl.setAttribute('points', '');
+      return;
+    }
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    const h = 30;
+    const w = 100;
+    const pts = points.map((p, idx) => {
+      const x = (idx / (points.length - 1)) * w;
+      const y = h - ((Number(p.v) - min) / span) * (h - 4) - 2;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+    fleetSparkLineEl.setAttribute('points', pts.join(' '));
+  }
+
+  function renderFleetBreakdown(pools, totalThs) {
+    if (!fleetBreakdownEl) return;
+    fleetBreakdownEl.innerHTML = '';
+
+    const entries = Array.isArray(pools)
+      ? pools
+          .map((p) => {
+            const pool = p && typeof p === 'object' ? p.pool : null;
+            const coin = p && typeof p === 'object' ? String(p.coin || p.id || '').trim() : '';
+            const ok = !!(p && typeof p === 'object' && p.ok === true && pool && typeof pool === 'object');
+            const hashrate = ok ? Number(pool.hashrate_ths) : NaN;
+            const workers = ok ? Number(pool.workers) : NaN;
+            return { coin, ok, hashrate, workers };
+          })
+          .filter((x) => x.coin)
+      : [];
+
+    entries.sort((a, b) => (Number.isFinite(b.hashrate) ? b.hashrate : -1) - (Number.isFinite(a.hashrate) ? a.hashrate : -1));
+
+    const total = Number(totalThs);
+    for (const item of entries) {
+      const row = document.createElement('div');
+      row.className = 'forgeos-fleet-item';
+
+      const label = document.createElement('div');
+      label.className = 'forgeos-fleet-item__label';
+      label.textContent = item.coin;
+
+      const bar = document.createElement('div');
+      bar.className = 'forgeos-fleet-item__bar';
+      const fill = document.createElement('div');
+      fill.className = 'forgeos-fleet-item__fill';
+      const pct = item.ok && Number.isFinite(item.hashrate) && total > 0 ? Math.max(0, Math.min(100, (item.hashrate / total) * 100)) : 0;
+      fill.style.width = `${pct.toFixed(1)}%`;
+      bar.appendChild(fill);
+
+      const value = document.createElement('div');
+      value.className = 'forgeos-fleet-item__value';
+      if (!item.ok) {
+        value.textContent = 'offline';
+      } else {
+        const parts = [];
+        parts.push(`${formatHashrateThs(item.hashrate)} TH/s`);
+        if (Number.isFinite(item.workers)) parts.push(`${Math.max(0, Math.round(item.workers))} w`);
+        value.textContent = parts.join(' \u2022 ');
+      }
+
+      row.appendChild(label);
+      row.appendChild(bar);
+      row.appendChild(value);
+      fleetBreakdownEl.appendChild(row);
+    }
+  }
+
+  function renderFleetWorkers(payload) {
+    if (!fleetWorkersBodyEl) return;
+    fleetWorkersBodyEl.innerHTML = '';
+
+    const workers = payload && typeof payload === 'object' && Array.isArray(payload.workers) ? payload.workers : [];
+    if (!workers.length) {
+      const hint = document.createElement('div');
+      hint.className = 'forgeos-muted';
+      hint.textContent = 'No active workers reported yet.';
+      fleetWorkersBodyEl.appendChild(hint);
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'forgeos-table-wrap';
+    const table = document.createElement('table');
+    table.className = 'forgeos-table';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const label of ['Worker', 'Coin', 'Hashrate', 'Last share']) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    for (const raw of workers.slice(0, 200)) {
+      if (!raw || typeof raw !== 'object') continue;
+      const name = String(raw.worker || raw.name || raw.username || raw.id || '').trim() || '-';
+      const coin = String(raw.coin || '').trim() || '-';
+      const rate =
+        raw.hashrate_ths ?? raw.hashrate_1m_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
+      const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
+      const lastAgo = raw.lastshare_ago_s ?? raw.last_share_ago_s ?? raw.lastshareAgo ?? null;
+      const lastTxt =
+        lastAgo === null || lastAgo === undefined
+          ? '-'
+          : Number.isFinite(Number(lastAgo))
+            ? `${Math.max(0, Math.round(Number(lastAgo)))}s`
+            : String(lastAgo);
+
+      const tr = document.createElement('tr');
+      const cols = [name, coin, rateTxt, lastTxt];
+      for (const c of cols) {
+        const td = document.createElement('td');
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    fleetWorkersBodyEl.appendChild(wrap);
+  }
+
+  function renderFleet(payload) {
+    if (!payload || payload.ok !== true) return;
+    lastFleet = payload;
+    setFleetUpdated(payload.time);
+
+    const total = payload.total && typeof payload.total === 'object' ? payload.total : {};
+    const totalThs = Number(total.hashrate_ths);
+    const totalWorkers = Number(total.workers);
+
+    if (fleetHashrateEl) fleetHashrateEl.textContent = Number.isFinite(totalThs) ? formatHashrateThs(totalThs) : '-';
+    if (fleetWorkersEl) fleetWorkersEl.textContent = Number.isFinite(totalWorkers) ? String(Math.max(0, Math.round(totalWorkers))) : '-';
+
+    if (Number.isFinite(totalThs)) updateFleetSeriesPoint(totalThs);
+    renderFleetSpark();
+    renderFleetBreakdown(payload.pools, totalThs);
+    renderFleetWorkers(payload);
+  }
+
+  async function refreshFleet() {
+    if (refreshFleetInFlight) return;
+    refreshFleetInFlight = true;
+    if (btnFleetRefresh) btnFleetRefresh.disabled = true;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/fleet/summary?limit=200', {}, 7000).catch(() => null);
+      if (!res || res.ok !== true) return;
+      renderFleet(res);
+    } finally {
+      refreshFleetInFlight = false;
+      if (btnFleetRefresh) btnFleetRefresh.disabled = false;
+    }
   }
 
   async function refreshMetrics() {
@@ -2222,7 +2634,7 @@
     const ok = await ensureHealthy();
     if (!ok) return;
 
-    await Promise.allSettled([refreshInstalled(), refreshStore(), refreshMetrics(), refreshWidgets()]);
+    await Promise.allSettled([refreshInstalled(), refreshStore(), refreshMetrics(), refreshWidgets(), refreshFleet()]);
   }
 
   function openInstalledAppMenu(app, x, y) {
@@ -2356,15 +2768,44 @@
       sub.className = 'forgeos-app-item__sub';
 
       const res = app.resources || null;
+      sub.textContent = meta.desc || 'Open';
+
       if (res && typeof res === 'object') {
         const cpu = Number(res.cpu_perc);
         const mem = Number(res.mem_used_bytes);
-        const cpuText = Number.isFinite(cpu) ? `CPU ${cpu.toFixed(cpu < 10 ? 2 : 1)}%` : null;
-        const memText = Number.isFinite(mem) ? `MEM ${formatBytes(mem)}` : null;
-        const metricsText = [cpuText, memText].filter(Boolean).join(' • ');
-        sub.textContent = metricsText || meta.desc || 'Open';
-      } else {
-        sub.textContent = meta.desc || 'Open';
+
+        const stats = document.createElement('div');
+        stats.className = 'forgeos-app-item__stats';
+
+        if (Number.isFinite(cpu)) {
+          const el = document.createElement('span');
+          el.className = 'forgeos-stat';
+          const k = document.createElement('span');
+          k.className = 'forgeos-stat__label';
+          k.textContent = 'CPU';
+          const v = document.createElement('span');
+          v.className = 'forgeos-stat__value';
+          v.textContent = `${cpu.toFixed(cpu < 10 ? 2 : 1)}%`;
+          el.appendChild(k);
+          el.appendChild(v);
+          stats.appendChild(el);
+        }
+
+        if (Number.isFinite(mem)) {
+          const el = document.createElement('span');
+          el.className = 'forgeos-stat';
+          const k = document.createElement('span');
+          k.className = 'forgeos-stat__label';
+          k.textContent = 'MEM';
+          const v = document.createElement('span');
+          v.className = 'forgeos-stat__value';
+          v.textContent = formatBytes(mem);
+          el.appendChild(k);
+          el.appendChild(v);
+          stats.appendChild(el);
+        }
+
+        if (stats.children.length) right.appendChild(stats);
       }
 
       const pill = document.createElement('span');
@@ -3118,7 +3559,8 @@
 
     const desc = document.createElement('div');
     desc.className = 'text-sm text-slate-300';
-    desc.textContent = 'Run ForgeOS commands + basic diagnostics (Ctrl+Enter). Examples: forgeos app installed, ip a, ls -la';
+    desc.textContent =
+      'Run 5tratumOS commands + safe diagnostics (Ctrl+Enter). Examples: forgeos app installed, ip a, ls -la, systemctl status forgeosd.service';
 
     const form = document.createElement('div');
     form.className = 'forgeos-terminal__form';
@@ -3126,8 +3568,8 @@
     const input = document.createElement('textarea');
     input.className = 'forgeos-terminal__input';
     input.rows = 2;
-    input.placeholder = 'ip a';
-    input.value = 'ip a\nforgeos app installed';
+    input.placeholder = 'ls -la';
+    input.value = 'ip a\nls -la\nforgeos app installed';
 
     const actions = document.createElement('div');
     actions.className = 'forgeos-terminal__actions';
@@ -3552,6 +3994,7 @@
   btnRefresh?.addEventListener('click', refresh);
   btnMetrics?.addEventListener('click', openMetricsModal);
   btnWidgetsRefresh?.addEventListener('click', () => refreshWidgets().catch(() => {}));
+  btnFleetRefresh?.addEventListener('click', () => refreshFleet().catch(() => {}));
   btnSelectedStart?.addEventListener('click', () => runSelectedAppAction('up'));
   btnSelectedStop?.addEventListener('click', () => runSelectedAppAction('down'));
   btnSelectedRestart?.addEventListener('click', () => runSelectedAppAction('restart'));
@@ -3691,6 +4134,8 @@
   applyStoreChannelUi();
   dashboardShowHome = true;
   applySidebarMode(loadSidebarMode());
+  fleetSeries = loadFleetSeries();
+  initDashboard();
   updateClock();
   window.setInterval(updateClock, 15000);
   const cachedInstalled = loadInstalledCache();
@@ -3703,6 +4148,7 @@
   refreshSystemUpdateConfig().catch(() => {});
   window.setTimeout(() => refreshSystemUpdateCheck().catch(() => {}), 2500);
   window.setInterval(() => refreshMetrics().catch(() => {}), 5000);
+  window.setInterval(() => refreshFleet().catch(() => {}), 10000);
   window.setInterval(() => refreshWidgets().catch(() => {}), 10000);
   window.setInterval(() => refreshInstalled().catch(() => {}), 30000);
   window.setInterval(() => refreshSystemUpdateCheck().catch(() => {}), 3600000);
