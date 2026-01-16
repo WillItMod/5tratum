@@ -232,21 +232,7 @@ def _select_release(channel: str) -> dict:
         return {"ok": False, "error": f"invalid update repo: {repo}"}
     ch = (channel or "main").strip().lower() or "main"
 
-    if ch == "main":
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
-        try:
-            data = _github_json(url, timeout_s=15)
-        except urllib.error.HTTPError as e:
-            if e.code in (401, 403, 404):
-                return {"ok": False, "error": "unauthorized (private repo?) or not found"}
-            return {"ok": False, "error": f"github http {e.code}"}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-        if not isinstance(data, dict) or not data.get("tag_name"):
-            return {"ok": False, "error": "no releases published yet"}
-        return {"ok": True, "release": data}
-
-    if ch == "dev":
+    if ch in {"main", "dev"}:
         url = f"https://api.github.com/repos/{repo}/releases?per_page=30"
         try:
             data = _github_json(url, timeout_s=15)
@@ -256,16 +242,27 @@ def _select_release(channel: str) -> dict:
             return {"ok": False, "error": f"github http {e.code}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
         if not isinstance(data, list):
             return {"ok": False, "error": "no releases published yet"}
+
         for rel in data:
             if not isinstance(rel, dict):
                 continue
             if rel.get("draft"):
                 continue
-            if rel.get("prerelease") is True and rel.get("tag_name"):
-                return {"ok": True, "release": rel}
-        return {"ok": False, "error": "no dev (pre-release) builds published yet"}
+            if not rel.get("tag_name"):
+                continue
+            prerelease = rel.get("prerelease") is True
+            if ch == "main" and prerelease:
+                continue
+            if ch == "dev" and not prerelease:
+                continue
+            return {"ok": True, "release": rel}
+
+        if ch == "dev":
+            return {"ok": False, "error": "no dev (pre-release) builds published yet"}
+        return {"ok": False, "error": "no main releases published yet"}
 
     return {"ok": False, "error": f"invalid update channel: {ch}"}
 
