@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
     <link rel="stylesheet" href="/forgeos.css?v=15" />
-    <script defer src="/app.js?v=18"></script>
+    <script defer src="/app.js?v=19"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <div class="forgeos-shell">
@@ -319,6 +319,25 @@
                     <div class="forgeos-mini-card__k">Available</div>
                     <div class="forgeos-mini-card__v"><span id="update-available" class="forgeos-mono">-</span></div>
                   </div>
+                </div>
+
+                <div class="mt-4 forgeos-form">
+                  <label class="forgeos-label" for="update-repo">Update repo</label>
+                  <input id="update-repo" class="forgeos-input" type="text" placeholder="WillItMod/5tratum" autocomplete="off" />
+                  <div class="mt-3 text-xs text-slate-300">
+                    Private repos require a GitHub access token (fine-grained PAT with read access to the repo + releases).
+                  </div>
+                  <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-end">
+                    <div class="sm:col-span-2">
+                      <label class="forgeos-label" for="update-token">GitHub token</label>
+                      <input id="update-token" class="forgeos-input" type="password" placeholder="ghp_…" autocomplete="off" />
+                    </div>
+                    <div class="flex gap-2">
+                      <button id="btn-update-save" class="axe-btn" type="button">Save</button>
+                      <button id="btn-update-token-clear" class="axe-btn" type="button">Clear</button>
+                    </div>
+                  </div>
+                  <div id="update-auth-status" class="forgeos-muted mt-2">-</div>
                 </div>
 
                 <div class="mt-4">

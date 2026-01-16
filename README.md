@@ -93,3 +93,5 @@ Then create a GitHub Release in `WillItMod/5tratum` and upload:
 ### Apply on a device
 
 In the UI: `Settings → Updates → Check updates → Update`.
+
+If the update repo is private, set a GitHub token in `Settings → Updates` (fine‑grained PAT with read access).

@@ -13,6 +13,7 @@ import sys
 import tarfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,8 @@ FORGEOS_AUTH_FILE = os.environ.get("FORGEOS_AUTH_FILE", "/etc/forgeos/auth.json"
 FORGEOS_FEATURES_FILE = os.environ.get("FORGEOS_FEATURES_FILE", "/etc/forgeos/features.json")
 FORGEOS_BUILD_FILE = os.environ.get("FORGEOS_BUILD_FILE", "/etc/forgeos/build.json")
 FORGEOS_UPDATE_REPO = os.environ.get("FORGEOS_UPDATE_REPO", "WillItMod/5tratum")
+FORGEOS_UPDATE_CONFIG_FILE = os.environ.get("FORGEOS_UPDATE_CONFIG_FILE", "/etc/forgeos/update.json")
+FORGEOS_UPDATE_TOKEN_ENV = os.environ.get("FORGEOS_UPDATE_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
 FORGEOS_UPDATE_ALLOW_UNVERIFIED = os.environ.get("FORGEOS_UPDATE_ALLOW_UNVERIFIED", "0").strip() == "1"
 FORGEOS_SESSION_TTL_S = int(os.environ.get("FORGEOS_SESSION_TTL_S", "86400"))
 FORGEOS_SESSION_COOKIE = os.environ.get("FORGEOS_SESSION_COOKIE", "forgeos_session")
@@ -90,8 +93,37 @@ def write_build_info(info: dict) -> None:
         _write_json_atomic(os.path.join(FORGEOS_STATE_DIR, "build.json"), info)
 
 
+def _read_update_config() -> dict:
+    cfg = _read_json(FORGEOS_UPDATE_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_update_config(cfg: dict) -> None:
+    _write_json_atomic(FORGEOS_UPDATE_CONFIG_FILE, cfg)
+    try:
+        os.chmod(FORGEOS_UPDATE_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def update_repo() -> str:
+    repo = str(_read_update_config().get("repo") or "").strip()
+    if repo:
+        return repo
+    return str(FORGEOS_UPDATE_REPO or "").strip()
+
+
+def update_token() -> str:
+    cfg = _read_update_config()
+    tok = str(cfg.get("token") or cfg.get("github_token") or "").strip()
+    if tok:
+        return tok
+    return str(FORGEOS_UPDATE_TOKEN_ENV or "").strip()
+
+
 _UPDATE_LOCK = threading.Lock()
 _UPDATE_STATUS_PATH = os.path.join(FORGEOS_STATE_DIR, "update", "status.json")
+_UPDATE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def update_status_read() -> dict:
@@ -165,13 +197,15 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
 
 
 def _github_json(url: str, *, timeout_s: int = 15) -> dict | list | None:
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "5tratumOS",
-            "Accept": "application/vnd.github+json",
-        },
-    )
+    token = update_token()
+    headers = {
+        "User-Agent": "5tratumOS",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
         raw = r.read().decode("utf-8", errors="replace")
     try:
@@ -181,27 +215,47 @@ def _github_json(url: str, *, timeout_s: int = 15) -> dict | list | None:
 
 
 def _github_bytes(url: str, *, timeout_s: int = 60) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "5tratumOS"})
+    token = update_token()
+    headers = {"User-Agent": "5tratumOS"}
+    if "/releases/assets/" in url:
+        headers["Accept"] = "application/octet-stream"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
         return r.read()
 
 
 def _select_release(channel: str) -> dict:
-    repo = str(FORGEOS_UPDATE_REPO or "").strip()
+    repo = str(update_repo() or "").strip()
     if not repo or "/" not in repo:
         return {"ok": False, "error": f"invalid update repo: {repo}"}
     ch = (channel or "main").strip().lower() or "main"
 
     if ch == "main":
         url = f"https://api.github.com/repos/{repo}/releases/latest"
-        data = _github_json(url, timeout_s=15)
+        try:
+            data = _github_json(url, timeout_s=15)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403, 404):
+                return {"ok": False, "error": "unauthorized (private repo?) or not found"}
+            return {"ok": False, "error": f"github http {e.code}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
         if not isinstance(data, dict) or not data.get("tag_name"):
             return {"ok": False, "error": "no releases published yet"}
         return {"ok": True, "release": data}
 
     if ch == "dev":
         url = f"https://api.github.com/repos/{repo}/releases?per_page=30"
-        data = _github_json(url, timeout_s=15)
+        try:
+            data = _github_json(url, timeout_s=15)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403, 404):
+                return {"ok": False, "error": "unauthorized (private repo?) or not found"}
+            return {"ok": False, "error": f"github http {e.code}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
         if not isinstance(data, list):
             return {"ok": False, "error": "no releases published yet"}
         for rel in data:
@@ -256,6 +310,49 @@ def _parse_sha256(text: str, bundle_name: str) -> str:
     return ""
 
 
+def system_update_config_get() -> dict:
+    cfg = _read_update_config()
+    repo_cfg = str(cfg.get("repo") or "").strip()
+    tok_cfg = str(cfg.get("token") or cfg.get("github_token") or "").strip()
+    tok_env = str(FORGEOS_UPDATE_TOKEN_ENV or "").strip()
+    token_present = bool(tok_cfg or tok_env)
+    return {
+        "ok": True,
+        "repo": str(update_repo()),
+        "repo_source": "config" if repo_cfg else "env",
+        "token_configured": token_present,
+        "token_source": "config" if tok_cfg else ("env" if tok_env else "none"),
+        "allow_unverified": bool(FORGEOS_UPDATE_ALLOW_UNVERIFIED),
+    }
+
+
+def system_update_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    cfg = _read_update_config()
+
+    if "repo" in body:
+        repo = str(body.get("repo") or "").strip()
+        if not repo:
+            cfg.pop("repo", None)
+        else:
+            if not _UPDATE_REPO_RE.fullmatch(repo):
+                return {"ok": False, "error": "repo must look like 'owner/repo'"}
+            cfg["repo"] = repo
+
+    if "token" in body or "github_token" in body:
+        token = str(body.get("token") or body.get("github_token") or "").strip()
+        if not token:
+            cfg.pop("token", None)
+            cfg.pop("github_token", None)
+        else:
+            cfg["token"] = token
+
+    _write_update_config(cfg)
+    return {**system_update_config_get(), "saved": True}
+
+
 def system_update_check(channel: str | None = None) -> dict:
     ch = (channel or read_default_channel() or "main").strip().lower() or "main"
     sel = _select_release(ch)
@@ -293,7 +390,7 @@ def system_update_check(channel: str | None = None) -> dict:
         }
 
     bundle_name = str(bundle.get("name") or "").strip()
-    bundle_url = str(bundle.get("browser_download_url") or "").strip()
+    bundle_url = str(bundle.get("url") or bundle.get("browser_download_url") or "").strip()
 
     sha_asset = _pick_asset(
         assets,
@@ -303,7 +400,7 @@ def system_update_check(channel: str | None = None) -> dict:
     sha256 = ""
     sha_url = ""
     if sha_asset:
-        sha_url = str(sha_asset.get("browser_download_url") or "").strip()
+        sha_url = str(sha_asset.get("url") or sha_asset.get("browser_download_url") or "").strip()
         try:
             sha256 = _parse_sha256(_github_bytes(sha_url, timeout_s=30).decode("utf-8", errors="replace"), bundle_name)
         except Exception:
@@ -314,7 +411,7 @@ def system_update_check(channel: str | None = None) -> dict:
     return {
         "ok": True,
         "channel": ch,
-        "repo": str(FORGEOS_UPDATE_REPO),
+        "repo": str(update_repo()),
         "installed": {"tag": installed_tag},
         "available": {
             "tag": tag,
@@ -496,7 +593,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                 write_build_info(
                     {
                         "tag": target_tag,
-                        "repo": str(FORGEOS_UPDATE_REPO),
+                        "repo": str(update_repo()),
                         "channel": ch,
                         "installed_at": _now_iso(),
                     }
@@ -1882,6 +1979,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_update_check(channel))
             return
 
+        if path == "/api/v0/system/update/config":
+            json_response(self, HTTPStatus.OK, system_update_config_get())
+            return
+
         if path == "/api/v0/system/update/status":
             json_response(self, HTTPStatus.OK, update_status_read())
             return
@@ -2037,6 +2138,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/v0/") and not current_user(self):
             json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
+            return
+
+        if path == "/api/v0/system/update/config":
+            res = system_update_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
         if path == "/api/v0/terminal/run":

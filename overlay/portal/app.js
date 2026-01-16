@@ -67,6 +67,11 @@
   const updateNotesEl = document.getElementById('update-notes');
   const btnUpdateCheck = document.getElementById('btn-update-check');
   const btnUpdateApply = document.getElementById('btn-update-apply');
+  const updateRepoInput = document.getElementById('update-repo');
+  const updateTokenInput = document.getElementById('update-token');
+  const updateAuthStatusEl = document.getElementById('update-auth-status');
+  const btnUpdateSave = document.getElementById('btn-update-save');
+  const btnUpdateTokenClear = document.getElementById('btn-update-token-clear');
 
   // Legacy "selected app" controls (removed from UI; keep null-safe until context menus land)
   const selectedControlsEl = document.getElementById('selected-app-controls');
@@ -112,6 +117,7 @@
     let refreshStoreInFlight = false;
     let refreshMetricsInFlight = false;
     let refreshWidgetsInFlight = false;
+    let systemUpdateConfigCache = null;
     let systemUpdateCheckCache = null;
     let systemUpdateStatusCache = null;
     let systemUpdateCheckAt = 0;
@@ -617,6 +623,7 @@
     if (viewKey === 'settings') {
       refreshSshStatus().catch(() => {});
       refreshSystemUpdateStatus().catch(() => {});
+      refreshSystemUpdateConfig().catch(() => {});
       refreshSystemUpdateCheck().catch(() => {});
       renderWidgetSettings();
     }
@@ -1761,6 +1768,31 @@
     } catch {}
   }
 
+  async function refreshSystemUpdateConfig() {
+    if (!updateRepoInput && !updateAuthStatusEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/update/config', {}, 5000).catch(() => null);
+      if (!res || res.ok !== true) return;
+      systemUpdateConfigCache = res;
+      if (updateRepoInput && res.repo) updateRepoInput.value = String(res.repo);
+
+      if (updateAuthStatusEl) {
+        const tokenConfigured = !!res.token_configured;
+        const tokenSource = res.token_source ? String(res.token_source) : 'none';
+        const repoSource = res.repo_source ? String(res.repo_source) : 'env';
+        const allowUnverified = !!res.allow_unverified;
+        const parts = [
+          tokenConfigured ? `Token: set (${tokenSource})` : 'Token: not set',
+          `Repo: ${repoSource}`,
+          allowUnverified ? 'Unverified: allowed' : 'Unverified: blocked',
+        ];
+        updateAuthStatusEl.textContent = parts.join(' • ');
+      }
+    } catch {}
+  }
+
   function systemUpdateState() {
     const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
     return st && st.state ? String(st.state).trim().toLowerCase() : 'idle';
@@ -1930,6 +1962,62 @@
       };
     } finally {
       renderSystemUpdatePanel();
+    }
+  }
+
+  async function saveSystemUpdateConfig() {
+    if (!btnUpdateSave) return;
+    const repo = updateRepoInput ? String(updateRepoInput.value || '').trim() : '';
+    const token = updateTokenInput ? String(updateTokenInput.value || '').trim() : '';
+
+    btnUpdateSave.disabled = true;
+    const prev = btnUpdateSave.textContent;
+    btnUpdateSave.textContent = 'Saving...';
+
+    try {
+      const body = { repo };
+      if (token) body.token = token;
+      const res = await apiJsonTimeout('/api/v0/system/update/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
+      systemUpdateConfigCache = res;
+      if (updateTokenInput) updateTokenInput.value = '';
+      showToast('Update settings saved', null);
+      await refreshSystemUpdateConfig();
+      await refreshSystemUpdateCheck({ force: true });
+    } catch (e) {
+      showToast('Save failed', 'error');
+      alert(`Save failed: ${e && e.message ? e.message : e}`);
+    } finally {
+      btnUpdateSave.disabled = false;
+      btnUpdateSave.textContent = prev;
+    }
+  }
+
+  async function clearSystemUpdateToken() {
+    if (!btnUpdateTokenClear) return;
+    if (!confirm('Clear the saved GitHub token on this device?')) return;
+    btnUpdateTokenClear.disabled = true;
+    const prev = btnUpdateTokenClear.textContent;
+    btnUpdateTokenClear.textContent = 'Clearing...';
+
+    try {
+      const res = await apiJsonTimeout(
+        '/api/v0/system/update/config',
+        { method: 'POST', body: JSON.stringify({ token: '' }) },
+        8000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'clear failed');
+      systemUpdateConfigCache = res;
+      if (updateTokenInput) updateTokenInput.value = '';
+      showToast('Token cleared', null);
+      await refreshSystemUpdateConfig();
+      await refreshSystemUpdateCheck({ force: true });
+    } catch (e) {
+      showToast('Clear failed', 'error');
+      alert(`Clear failed: ${e && e.message ? e.message : e}`);
+    } finally {
+      btnUpdateTokenClear.disabled = false;
+      btnUpdateTokenClear.textContent = prev;
     }
   }
 
@@ -3393,6 +3481,8 @@
 
   btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true }).catch(() => {}));
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
+  btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
+  btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
 
   btnRefresh?.addEventListener('click', refresh);
   btnMetrics?.addEventListener('click', openMetricsModal);
@@ -3545,6 +3635,7 @@
   }
   refresh().catch(() => setStatus('UI only'));
   refreshSystemUpdateStatus().catch(() => {});
+  refreshSystemUpdateConfig().catch(() => {});
   window.setTimeout(() => refreshSystemUpdateCheck().catch(() => {}), 2500);
   window.setInterval(() => refreshMetrics().catch(() => {}), 5000);
   window.setInterval(() => refreshWidgets().catch(() => {}), 10000);
