@@ -1866,47 +1866,84 @@ def forgeos_cmd(args: list[str], *, timeout_s: int = 1800) -> dict:
 
 
 def terminal_run(command: str) -> dict:
-    raw = str(command or "").strip()
-    if not raw:
+    raw_all = str(command or "").strip()
+    if not raw_all:
         return {"ok": False, "error": "missing command"}
-    if len(raw) > 2000:
+    if len(raw_all) > 2000:
         return {"ok": False, "error": "command too long"}
 
-    raw = raw.splitlines()[0].strip()
-    try:
-        parts = shlex.split(raw)
-    except ValueError:
-        parts = raw.split()
-
-    if not parts:
+    lines = [ln.strip() for ln in raw_all.splitlines() if ln.strip()]
+    if not lines:
         return {"ok": False, "error": "missing command"}
+    if len(lines) > 40:
+        return {"ok": False, "error": "too many lines (max 40)"}
 
-    if parts[0] == "forgeos":
-        parts = parts[1:]
-    if not parts:
-        return {"ok": False, "error": "missing forgeos args"}
+    stdout_parts: list[str] = []
+    stderr_parts: list[str] = []
+    last_code = 0
 
-    top = parts[0]
-    allowed = {"channel", "store", "overlay", "app", "help"}
-    if top not in allowed:
-        return {"ok": False, "error": f"command not allowed: {top}"}
+    def run_one(raw: str) -> dict:
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            parts = raw.split()
 
-    if parts[:2] == ["overlay", "logs"]:
-        return {"ok": False, "error": "overlay logs is not supported in the web terminal (use app logs or the Logs tab)."}
+        if not parts:
+            return {"ok": False, "error": "missing command", "code": 2}
 
-    if parts[:2] == ["app", "logs"] and len(parts) >= 3:
-        app_id = str(parts[2] or "").strip()
-        if not app_id:
-            return {"ok": False, "error": "missing app id"}
-        app_dir = os.path.join(APPS_DIR, app_id)
-        if not os.path.isdir(app_dir):
-            return {"ok": False, "error": f"app not installed: {app_id}"}
-        project = docker_compose_project(app_id)
-        proc = run_cmd(
-            ["docker", "compose", "--project-name", project, "logs", "--no-color", "--tail=200"],
-            cwd=app_dir,
-            timeout_s=30,
-        )
+        if parts[0] == "forgeos":
+            parts = parts[1:]
+        if parts and parts[0] in {"channel", "store", "overlay", "app", "help"}:
+            if parts[:2] == ["overlay", "logs"]:
+                return {
+                    "ok": False,
+                    "error": "overlay logs is not supported in the web terminal (use app logs or the Logs tab).",
+                    "code": 2,
+                }
+
+            if parts[:2] == ["app", "logs"] and len(parts) >= 3:
+                app_id = str(parts[2] or "").strip()
+                if not app_id:
+                    return {"ok": False, "error": "missing app id", "code": 2}
+                app_dir = os.path.join(APPS_DIR, app_id)
+                if not os.path.isdir(app_dir):
+                    return {"ok": False, "error": f"app not installed: {app_id}", "code": 2}
+                project = docker_compose_project(app_id)
+                proc = run_cmd(
+                    ["docker", "compose", "--project-name", project, "logs", "--no-color", "--tail=200"],
+                    cwd=app_dir,
+                    timeout_s=30,
+                )
+                return {
+                    "ok": proc.returncode == 0,
+                    "code": proc.returncode,
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                }
+
+            timeout = 120
+            if parts[:2] in (["store", "sync"], ["app", "install"], ["app", "update"], ["app", "pull"]):
+                timeout = 1800
+            if parts[:2] in (["app", "up"],):
+                timeout = 900
+
+            return forgeos_cmd(parts, timeout_s=timeout)
+
+        cmd = parts[0]
+        safe_cmds = {"ls", "pwd", "whoami", "id", "uname", "uptime", "df", "free", "ip"}
+        if cmd not in safe_cmds:
+            return {"ok": False, "error": f"command not allowed: {cmd}", "code": 2}
+
+        if cmd == "ip":
+            banned = {"add", "del", "delete", "set", "flush", "replace", "change", "chg"}
+            if any(str(p).strip().lower() in banned for p in parts[1:]):
+                return {
+                    "ok": False,
+                    "error": "ip modification commands are disabled in the web terminal (try: ip a)",
+                    "code": 2,
+                }
+
+        proc = run_cmd(parts, timeout_s=30)
         return {
             "ok": proc.returncode == 0,
             "code": proc.returncode,
@@ -1914,13 +1951,31 @@ def terminal_run(command: str) -> dict:
             "stderr": proc.stderr,
         }
 
-    timeout = 120
-    if parts[:2] in (["store", "sync"], ["app", "install"], ["app", "update"], ["app", "pull"]):
-        timeout = 1800
-    if parts[:2] in (["app", "up"],):
-        timeout = 900
+    for ln in lines:
+        res = run_one(ln)
+        ok = bool(res.get("ok"))
+        last_code = int(res.get("code") or 0) if isinstance(res.get("code"), int) else last_code
+        if ok:
+            stdout_parts.append(str(res.get("stdout") or "").rstrip())
+            if res.get("stderr"):
+                stderr_parts.append(str(res.get("stderr") or "").rstrip())
+            continue
 
-    return forgeos_cmd(parts, timeout_s=timeout)
+        err = str(res.get("error") or "").strip() or "error"
+        stderr_parts.append(err)
+        return {
+            "ok": False,
+            "code": int(res.get("code") or 2),
+            "stdout": "\n".join([p for p in stdout_parts if p != ""]),
+            "stderr": "\n".join([p for p in stderr_parts if p != ""]),
+        }
+
+    return {
+        "ok": True,
+        "code": last_code,
+        "stdout": "\n".join([p for p in stdout_parts if p != ""]),
+        "stderr": "\n".join([p for p in stderr_parts if p != ""]),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):

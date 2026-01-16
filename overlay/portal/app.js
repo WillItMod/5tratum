@@ -3059,7 +3059,7 @@
 
     const desc = document.createElement('div');
     desc.className = 'text-sm text-slate-300';
-    desc.textContent = 'Run forgeos commands on this host (Ctrl+Enter to run).';
+    desc.textContent = 'Run ForgeOS commands + basic diagnostics (Ctrl+Enter). Examples: forgeos app installed, ip a, ls -la';
 
     const form = document.createElement('div');
     form.className = 'forgeos-terminal__form';
@@ -3067,8 +3067,8 @@
     const input = document.createElement('textarea');
     input.className = 'forgeos-terminal__input';
     input.rows = 2;
-    input.placeholder = 'forgeos store sync umbrel';
-    input.value = 'forgeos app installed';
+    input.placeholder = 'ip a';
+    input.value = 'ip a\nforgeos app installed';
 
     const actions = document.createElement('div');
     actions.className = 'forgeos-terminal__actions';
@@ -3093,7 +3093,13 @@
       btnRun.disabled = true;
       const prev = btnRun.textContent;
       btnRun.textContent = 'Running...';
-      output.textContent = `$ ${cmd}\n`;
+      const shown = cmd
+        .split(/\r?\n/)
+        .map((ln) => String(ln || '').trim())
+        .filter(Boolean)
+        .map((ln) => `$ ${ln}`)
+        .join('\n');
+      output.textContent = `${shown}\n`;
       try {
         const res = await apiJsonTimeout(
           '/api/v0/terminal/run',
