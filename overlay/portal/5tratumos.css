@@ -12,9 +12,9 @@
   --forgeos-card-glow-opacity: 0.06;
   --forgeos-card-glow-blur: 8px;
   /* Reserve enough space so the sidebar nav doesn't "bump" between states. */
-  --forgeos-brand-reserve: 96px;
-  --forgeos-brand-height-expanded: 96px;
-  --forgeos-brand-height-collapsed: 60px;
+  --forgeos-brand-reserve: 72px;
+  --forgeos-brand-height-expanded: 72px;
+  --forgeos-brand-height-collapsed: 72px;
   --forgeos-rainbow: linear-gradient(
     135deg,
     rgba(0, 229, 255, 0.62) 0%,
@@ -27,6 +27,8 @@
   --forgeos-watermark-y: 84%;
   --forgeos-watermark-size: 86vmin;
   --forgeos-footer-tile: 60px;
+  --forgeos-topbar-logo-width: 420px;
+  --forgeos-topbar-logo-height: 120px;
 }
 
 html,
@@ -311,8 +313,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) {
   min-width: 0;
   position: absolute;
   top: 12px;
-  left: 12px;
-  right: 12px;
+  left: 6px;
+  right: 6px;
   height: var(--forgeos-brand-height-expanded);
 }
 
@@ -1213,27 +1215,31 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 }
 
 .forgeos-desktop-topbar__brand {
-  flex: 1 1 0;
+  flex: 0 1 var(--forgeos-topbar-logo-width);
+  width: min(var(--forgeos-topbar-logo-width), 100%);
+  height: var(--forgeos-topbar-logo-height);
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding-left: 4px;
   padding-right: 14px;
+  overflow: hidden;
 }
 
 .forgeos-desktop-topbar__brand-mark {
-  width: min(900px, 100%);
-  height: 120px;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   object-position: center;
   opacity: 0.9;
   filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
 }
 
 @media (max-width: 900px) {
-  .forgeos-desktop-topbar__brand-mark {
-    height: 86px;
+  :root {
+    --forgeos-topbar-logo-width: 300px;
+    --forgeos-topbar-logo-height: 86px;
   }
 }
 

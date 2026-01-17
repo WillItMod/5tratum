@@ -4243,6 +4243,7 @@
     btnUpdateSave.disabled = true;
     const prev = btnUpdateSave.textContent;
     btnUpdateSave.textContent = 'Saving...';
+    if (updateAuthStatusEl) updateAuthStatusEl.textContent = 'Saving update settings...';
 
     try {
       const body = { repo };
@@ -4252,10 +4253,14 @@
       systemUpdateConfigCache = res;
       if (updateTokenInput) updateTokenInput.value = '';
       showToast('Update settings saved', null);
+      if (updateAuthStatusEl) updateAuthStatusEl.textContent = 'Saved. Refreshing...';
       await refreshSystemUpdateConfig();
       await refreshSystemUpdateCheck({ force: true });
     } catch (e) {
       showToast('Save failed', 'error');
+      if (updateAuthStatusEl) {
+        updateAuthStatusEl.textContent = `Save failed: ${e && e.message ? String(e.message) : String(e)}`;
+      }
       await openNoticeModal({
         kind: 'Error',
         title: 'Save failed',
