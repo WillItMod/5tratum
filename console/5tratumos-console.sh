@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${FORGEOS_CONSOLE_URL:-http://127.0.0.1/}"
-HEALTH_URL="${FORGEOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/api/v0/health}"
-WAIT_SECS="${FORGEOS_CONSOLE_WAIT_SECS:-90}"
+URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/}"
+HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/api/v0/health}"
+WAIT_SECS="${TRATUMOS_CONSOLE_WAIT_SECS:-90}"
 
 if command -v curl >/dev/null 2>&1; then
   for _ in $(seq 1 "${WAIT_SECS}"); do
@@ -28,4 +28,3 @@ exec /usr/bin/cage -- /usr/bin/chromium \
   --disable-features=TranslateUI \
   --disable-translate \
   --autoplay-policy=no-user-gesture-required
-

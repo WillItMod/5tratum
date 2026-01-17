@@ -61,36 +61,49 @@ else
 fi
 
 echo "[3/6] Installing 5tratumOS overlay + AxeSuite templates..."
-install -d -m 0755 /opt/forgeos
-rm -rf /opt/forgeos/overlay /opt/forgeos/apps-available /opt/forgeos/daemon /opt/forgeos/console
-cp -a "${SRC_ROOT}/overlay" /opt/forgeos/overlay
-cp -a "${SRC_ROOT}/apps-available" /opt/forgeos/apps-available
-cp -a "${SRC_ROOT}/daemon" /opt/forgeos/daemon
-cp -a "${SRC_ROOT}/console" /opt/forgeos/console
-install -d -m 0755 /opt/forgeos/apps
-install -d -m 0755 /var/lib/forgeos/apps
+install -d -m 0755 /opt/5tratumos
+rm -rf /opt/5tratumos/overlay /opt/5tratumos/apps-available /opt/5tratumos/daemon /opt/5tratumos/console
+cp -a "${SRC_ROOT}/overlay" /opt/5tratumos/overlay
+cp -a "${SRC_ROOT}/apps-available" /opt/5tratumos/apps-available
+cp -a "${SRC_ROOT}/daemon" /opt/5tratumos/daemon
+cp -a "${SRC_ROOT}/console" /opt/5tratumos/console
+install -d -m 0755 /opt/5tratumos/apps
+install -d -m 0755 /var/lib/5tratumos/apps
 
-echo "[4/6] Installing forgeos CLI + systemd unit..."
-install -m 0755 "${SRC_ROOT}/bin/forgeos" /usr/local/bin/forgeos
+echo "[4/6] Installing 5tratumos CLI + systemd unit..."
+install -m 0755 "${SRC_ROOT}/bin/5tratumos" /usr/local/bin/5tratumos
 
-install -d -m 0755 /etc/forgeos
-if [ ! -f /etc/forgeos/channel ]; then
-  echo "main" >/etc/forgeos/channel
+install -d -m 0755 /etc/5tratumos
+if [ ! -f /etc/5tratumos/channel ]; then
+  echo "main" >/etc/5tratumos/channel
 fi
 
-install -m 0644 "${SRC_ROOT}/systemd/forgeos-overlay.service" /etc/systemd/system/forgeos-overlay.service
-install -m 0644 "${SRC_ROOT}/systemd/forgeosd.service" /etc/systemd/system/forgeosd.service
+install -m 0644 "${SRC_ROOT}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
+install -m 0644 "${SRC_ROOT}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 systemctl daemon-reload
-systemctl enable --now forgeosd.service
-systemctl enable --now forgeos-overlay.service
+systemctl enable --now 5tratumosd.service
+systemctl enable --now 5tratumos-overlay.service
 
-echo "[5/6] Syncing WillItMod app store (optional)..."
-if /usr/local/bin/forgeos store sync >/dev/null 2>&1; then
+echo "[5/7] Disabling sleep/suspend..."
+install -d -m 0755 /etc/systemd/logind.conf.d
+cat >/etc/systemd/logind.conf.d/5tratumos.conf <<'EOF'
+[Login]
+IdleAction=ignore
+IdleActionSec=0
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+EOF
+systemctl restart systemd-logind || true
+systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target || true
+
+echo "[6/7] Syncing Global App Store (optional)..."
+if /usr/local/bin/5tratumos store sync >/dev/null 2>&1; then
   echo "Store synced."
 else
-  echo "warn: store sync failed (run: sudo forgeos store sync)" >&2
+  echo "warn: store sync failed (run: sudo 5tratumos store sync)" >&2
 fi
 
-echo "[6/6] Done."
+echo "[7/7] Done."
 echo "Overlay: http://<host>:80"
-echo "Next: sudo forgeos app install axelive && sudo forgeos app up axelive"
+echo "Next: sudo 5tratumos app install axelive && sudo 5tratumos app up axelive"

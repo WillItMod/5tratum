@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 COPY start.sh /usr/local/bin/start.sh
+COPY index.html /usr/share/novnc/index.html
 RUN chmod +x /usr/local/bin/start.sh \
   && useradd -m -u 1000 -s /bin/bash app \
   && mkdir -p /data \

@@ -1,12 +1,12 @@
 ---
 - name: Provision 5tratumOS base (Docker + overlay)
-  hosts: forgeos
+  hosts: 5tratumos
   become: true
   vars:
-    forgeos_root: /opt/forgeos
-    forgeos_state_dir: /var/lib/forgeos
-    forgeos_channel: main
-    local_forgeos_dir: "{{ playbook_dir }}/../.."
+    tratumos_root: /opt/5tratumos
+    tratumos_state_dir: /var/lib/5tratumos
+    tratumos_channel: main
+    local_tratumos_dir: "{{ playbook_dir }}/../.."
 
   tasks:
     - name: Install base packages
@@ -75,47 +75,47 @@
         state: directory
         mode: "0755"
       loop:
-        - "{{ forgeos_root }}"
-        - "{{ forgeos_root }}/apps"
-        - "{{ forgeos_state_dir }}/apps"
-        - /etc/forgeos
+        - "{{ tratumos_root }}"
+        - "{{ tratumos_root }}/apps"
+        - "{{ tratumos_state_dir }}/apps"
+        - /etc/5tratumos
 
     - name: Copy overlay
       ansible.builtin.copy:
-        src: "{{ local_forgeos_dir }}/overlay/"
-        dest: "{{ forgeos_root }}/overlay/"
+        src: "{{ local_tratumos_dir }}/overlay/"
+        dest: "{{ tratumos_root }}/overlay/"
         owner: root
         group: root
         mode: "0755"
 
     - name: Copy app templates
       ansible.builtin.copy:
-        src: "{{ local_forgeos_dir }}/apps-available/"
-        dest: "{{ forgeos_root }}/apps-available/"
+        src: "{{ local_tratumos_dir }}/apps-available/"
+        dest: "{{ tratumos_root }}/apps-available/"
         owner: root
         group: root
         mode: "0755"
 
-    - name: Install forgeos CLI
+    - name: Install 5tratumos CLI
       ansible.builtin.copy:
-        src: "{{ local_forgeos_dir }}/bin/forgeos"
-        dest: /usr/local/bin/forgeos
+        src: "{{ local_tratumos_dir }}/bin/5tratumos"
+        dest: /usr/local/bin/5tratumos
         owner: root
         group: root
         mode: "0755"
 
     - name: Set default channel
       ansible.builtin.copy:
-        content: "{{ forgeos_channel }}\n"
-        dest: /etc/forgeos/channel
+        content: "{{ tratumos_channel }}\n"
+        dest: /etc/5tratumos/channel
         owner: root
         group: root
         mode: "0644"
 
     - name: Install systemd unit
       ansible.builtin.copy:
-        src: "{{ local_forgeos_dir }}/systemd/forgeos-overlay.service"
-        dest: /etc/systemd/system/forgeos-overlay.service
+        src: "{{ local_tratumos_dir }}/systemd/5tratumos-overlay.service"
+        dest: /etc/systemd/system/5tratumos-overlay.service
         owner: root
         group: root
         mode: "0644"
@@ -123,6 +123,6 @@
     - name: Enable overlay service
       ansible.builtin.systemd:
         daemon_reload: true
-        name: forgeos-overlay.service
+        name: 5tratumos-overlay.service
         enabled: true
         state: started

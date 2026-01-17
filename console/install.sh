@@ -12,7 +12,7 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   die "run as root (try: sudo $0)"
 fi
 
-CONSOLE_USER="${FORGEOS_CONSOLE_USER:-forge}"
+CONSOLE_USER="${FIVETRATUMOS_CONSOLE_USER:-${TRATUMOS_CONSOLE_USER:-forge}}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
@@ -33,11 +33,11 @@ done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-install -m 0755 "${SCRIPT_DIR}/forgeos-console.sh" /usr/local/bin/forgeos-console
-install -m 0644 "${SCRIPT_DIR}/forgeos-console@.service" /etc/systemd/system/forgeos-console@.service
+install -m 0755 "${SCRIPT_DIR}/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+install -m 0644 "${SCRIPT_DIR}/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
 
 systemctl daemon-reload
-systemctl enable --now "forgeos-console@${CONSOLE_USER}.service"
+systemctl enable --now "5tratumos-console@${CONSOLE_USER}.service"
 
 echo "5tratumOS Console enabled for user: ${CONSOLE_USER}"
 echo "If you don't see a display, ensure the machine has a DRM GPU (/dev/dri/card0)."

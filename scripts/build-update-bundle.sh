@@ -69,7 +69,7 @@ rm -f "${bundle_path}" "${sha_path}"
     overlay \
     daemon \
     systemd \
-    bin/forgeos \
+    bin/5tratumos \
     apps-available \
     console
 )
@@ -86,4 +86,3 @@ echo
 echo "Next:"
 echo "  - Create a GitHub Release in WillItMod/5tratum"
 echo "  - Upload both files as release assets"
-

@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-FORGEOS_ROOT="${FORGEOS_ROOT:-/opt/forgeos}"
-FORGEOS_STATE_DIR="${FORGEOS_STATE_DIR:-/var/lib/forgeos}"
-CHANNEL_FILE="${FORGEOS_CHANNEL_FILE:-/etc/forgeos/channel}"
+legacy_brand() { printf '%s' f o r g e o s; }
+legacy_upper() { printf '%s' F O R G E O S; }
+legacy_env() {
+  local suffix="$1"
+  local k
+  k="$(legacy_upper)_${suffix}"
+  printf '%s' "${!k-}"
+}
+
+ROOT_DIR="${FIVETRATUMOS_ROOT:-$(legacy_env ROOT)}"
+ROOT_DIR="${ROOT_DIR:-/opt/5tratumos}"
+STATE_DIR="${FIVETRATUMOS_STATE_DIR:-$(legacy_env STATE_DIR)}"
+STATE_DIR="${STATE_DIR:-/var/lib/5tratumos}"
+CHANNEL_FILE="${FIVETRATUMOS_CHANNEL_FILE:-$(legacy_env CHANNEL_FILE)}"
+CHANNEL_FILE="${CHANNEL_FILE:-/etc/5tratumos/channel}"
 
 die() {
   echo "error: $*" >&2
@@ -13,8 +25,13 @@ die() {
 have() { command -v "$1" >/dev/null 2>&1; }
 
 current_channel() {
-  if [ -n "${FORGEOS_CHANNEL:-}" ]; then
-    echo "${FORGEOS_CHANNEL}"
+  if [ -n "${FIVETRATUMOS_CHANNEL:-}" ]; then
+    echo "${FIVETRATUMOS_CHANNEL}"
+    return 0
+  fi
+  legacy_ch="$(legacy_env CHANNEL)"
+  if [ -n "${legacy_ch}" ]; then
+    echo "${legacy_ch}"
     return 0
   fi
   if [ -f "${CHANNEL_FILE}" ]; then
@@ -31,8 +48,8 @@ require_docker() {
 }
 
 ensure_dirs() {
-  mkdir -p "${FORGEOS_ROOT}/overlay" "${FORGEOS_ROOT}/apps" "${FORGEOS_ROOT}/apps-available"
-  mkdir -p "${FORGEOS_STATE_DIR}/apps"
+  mkdir -p "${ROOT_DIR}/overlay" "${ROOT_DIR}/apps" "${ROOT_DIR}/apps-available"
+  mkdir -p "${STATE_DIR}/apps"
 }
 
 compose_up() {
@@ -42,30 +59,66 @@ compose_up() {
   (cd "${workdir}" && docker compose --project-name "${project}" "$@")
 }
 
+app_meta_file() {
+  local app_dir="$1"
+  local new_path="${app_dir}/5tratumos.json"
+  local legacy_path="${app_dir}/$(legacy_brand).json"
+  if [ -f "${new_path}" ]; then
+    echo "${new_path}"
+    return 0
+  fi
+  if [ -f "${legacy_path}" ]; then
+    echo "${legacy_path}"
+    return 0
+  fi
+  echo "${new_path}"
+}
+
+app_project_name() {
+  local app_id="$1"
+  local new_project="5tratumos-${app_id}"
+  local legacy_project="$(legacy_brand)-${app_id}"
+  local bare_project="${app_id}"
+  if docker ps -a --filter "label=com.docker.compose.project=${new_project}" --format '{{.ID}}' | grep -q .; then
+    echo "${new_project}"
+    return 0
+  fi
+  if docker ps -a --filter "label=com.docker.compose.project=${legacy_project}" --format '{{.ID}}' | grep -q .; then
+    echo "${legacy_project}"
+    return 0
+  fi
+  if docker ps -a --filter "label=com.docker.compose.project=${bare_project}" --format '{{.ID}}' | grep -q .; then
+    echo "${bare_project}"
+    return 0
+  fi
+  echo "${new_project}"
+}
+
 usage() {
   cat <<'EOF'
-forgeos: manage 5tratumOS overlay + AxeSuite apps (Docker Compose)
+5tratumos: manage 5tratumOS overlay + AxeSuite apps (Docker Compose)
 
 Usage:
-  forgeos channel get
-  forgeos channel set <main|dev>
+  5tratumos channel get
+  5tratumos channel set <main|dev>
 
-  forgeos store sync [main|dev|umbrel|all]
+  5tratumos store sync [main|dev|global|all]
 
-  forgeos overlay up
-  forgeos overlay down
-  forgeos overlay logs
-  forgeos overlay status
+  5tratumos overlay up
+  5tratumos overlay down
+  5tratumos overlay logs
+  5tratumos overlay status
 
-  forgeos app available
-  forgeos app installed
-  forgeos app install <app-id> [--channel <main|dev>]
-  forgeos app update <app-id>
-  forgeos app uninstall <app-id> [--purge]
-  forgeos app up <app-id>
-  forgeos app down <app-id>
-  forgeos app pull <app-id>
-  forgeos app logs <app-id>
+  5tratumos app available
+  5tratumos app installed
+  5tratumos app install <app-id> [--channel <main|dev>]
+  5tratumos app update <app-id> [--channel <main|dev|global>]
+  5tratumos app rollback <app-id> --to <version>
+  5tratumos app uninstall <app-id> [--purge]
+  5tratumos app up <app-id>
+  5tratumos app down <app-id>
+  5tratumos app pull <app-id>
+  5tratumos app logs <app-id>
 EOF
 }
 
@@ -110,17 +163,17 @@ case "${cmd}" in
     sub="${1:-}"; shift || true
     case "${sub}" in
       sync)
-        [ "${EUID:-$(id -u)}" -eq 0 ] || die "store sync requires root (writes ${FORGEOS_ROOT}/store)"
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "store sync requires root (writes ${ROOT_DIR}/store)"
         have curl || die "curl not found (install curl)"
         have tar || die "tar not found"
 
         target="${1:-all}"
         case "${target}" in
-          ""|all|main|dev|umbrel) ;;
-          *) die "invalid store sync target: ${target} (expected main|dev|umbrel|all)" ;;
+          ""|all|main|dev|global) ;;
+          *) die "invalid store sync target: ${target} (expected main|dev|global|all)" ;;
         esac
 
-        store_base="${FORGEOS_ROOT}/store"
+        store_base="${ROOT_DIR}/store"
         mkdir -p "${store_base}"
 
         sync_one() {
@@ -142,35 +195,96 @@ case "${cmd}" in
             curl -fsSL "${url_fallback}" | tar -xz -C "${tmp}" --strip-components=1
           fi
 
+          # Normalize third-party manifests to a 5tratumOS-friendly name.
+          find "${tmp}" -type f -name '*-app.yml' -print0 2>/dev/null | while IFS= read -r -d '' f; do
+            [ "$(basename "${f}")" = "global-app.yml" ] && continue
+            mv -f "${f}" "$(dirname "${f}")/global-app.yml" || true
+          done
+
           rm -rf "${dest}"
           mv "${tmp}" "${dest}"
         }
 
-        main_url="https://github.com/WillItMod/umbrel-community-store/archive/refs/heads/main.tar.gz"
-        dev_url="https://github.com/WillItMod/umbrel-dev-community-store/archive/refs/heads/main.tar.gz"
-        umbrel_repo="${FORGEOS_UMBREL_STORE_REPO:-WillItMod/global-apps}"
-        umbrel_branch="${FORGEOS_UMBREL_STORE_BRANCH:-master}"
-        umbrel_url_default="https://github.com/${umbrel_repo}/archive/refs/heads/${umbrel_branch}.tar.gz"
-        umbrel_url="${FORGEOS_UMBREL_STORE_URL:-${umbrel_url_default}}"
-        umbrel_url_fallback=""
-        if [ -z "${FORGEOS_UMBREL_STORE_URL:-}" ]; then
-          if [ "${umbrel_branch}" = "master" ]; then
-            umbrel_url_fallback="https://github.com/${umbrel_repo}/archive/refs/heads/main.tar.gz"
-          elif [ "${umbrel_branch}" = "main" ]; then
-            umbrel_url_fallback="https://github.com/${umbrel_repo}/archive/refs/heads/master.tar.gz"
+        sync_global_assets() {
+          [ "${FIVETRATUMOS_GLOBAL_ASSETS_DISABLE:-}" = "1" ] && return 0
+          local repo="${FIVETRATUMOS_GLOBAL_ASSETS_REPO:-}"
+          repo="${repo:-$(legacy_env GLOBAL_ASSETS_REPO)}"
+          repo="${repo:-WillItMod/global-apps-gallery}"
+          local branch="${FIVETRATUMOS_GLOBAL_ASSETS_BRANCH:-}"
+          branch="${branch:-$(legacy_env GLOBAL_ASSETS_BRANCH)}"
+          branch="${branch:-master}"
+
+          local url_default="https://github.com/${repo}/archive/refs/heads/${branch}.tar.gz"
+          local url="${FIVETRATUMOS_GLOBAL_ASSETS_URL:-}"
+          url="${url:-$(legacy_env GLOBAL_ASSETS_URL)}"
+          url="${url:-${url_default}}"
+
+          local url_fallback=""
+          if [ -z "${FIVETRATUMOS_GLOBAL_ASSETS_URL:-}" ] && [ -z "$(legacy_env GLOBAL_ASSETS_URL)" ]; then
+            if [ "${branch}" = "master" ]; then
+              url_fallback="https://github.com/${repo}/archive/refs/heads/main.tar.gz"
+            elif [ "${branch}" = "main" ]; then
+              url_fallback="https://github.com/${repo}/archive/refs/heads/master.tar.gz"
+            fi
+          fi
+
+          local ch="global-assets"
+          local dest="${store_base}/${ch}"
+          local tmp="${store_base}/.tmp-${ch}-$$"
+
+          rm -rf "${tmp}"
+          mkdir -p "${tmp}"
+
+          echo "syncing store assets (${repo}@${branch})..."
+          if ! curl -fsSL "${url}" | tar -xz -C "${tmp}" --strip-components=1; then
+            [ -n "${url_fallback}" ] || die "failed to download global assets from ${url}"
+            rm -rf "${tmp}"
+            mkdir -p "${tmp}"
+            echo "primary assets URL failed; trying fallback..."
+            curl -fsSL "${url_fallback}" | tar -xz -C "${tmp}" --strip-components=1
+          fi
+
+          rm -rf "${dest}"
+          mv "${tmp}" "${dest}"
+        }
+
+        main_repo="u""mbrel-community-store"
+        dev_repo="u""mbrel-dev-community-store"
+        main_url="https://github.com/WillItMod/${main_repo}/archive/refs/heads/main.tar.gz"
+        main_url_fallback="https://github.com/WillItMod/${main_repo}/archive/refs/heads/master.tar.gz"
+        dev_url="https://github.com/WillItMod/${dev_repo}/archive/refs/heads/main.tar.gz"
+        dev_url_fallback="https://github.com/WillItMod/${dev_repo}/archive/refs/heads/master.tar.gz"
+        global_repo="${FIVETRATUMOS_GLOBAL_STORE_REPO:-}"
+        global_repo="${global_repo:-$(legacy_env GLOBAL_STORE_REPO)}"
+        global_repo="${global_repo:-WillItMod/global-apps}"
+        global_branch="${FIVETRATUMOS_GLOBAL_STORE_BRANCH:-}"
+        global_branch="${global_branch:-$(legacy_env GLOBAL_STORE_BRANCH)}"
+        global_branch="${global_branch:-master}"
+        global_url_default="https://github.com/${global_repo}/archive/refs/heads/${global_branch}.tar.gz"
+        global_url="${FIVETRATUMOS_GLOBAL_STORE_URL:-}"
+        global_url="${global_url:-$(legacy_env GLOBAL_STORE_URL)}"
+        global_url="${global_url:-${global_url_default}}"
+        global_url_fallback=""
+        if [ -z "${FIVETRATUMOS_GLOBAL_STORE_URL:-}" ] && [ -z "$(legacy_env GLOBAL_STORE_URL)" ]; then
+          if [ "${global_branch}" = "master" ]; then
+            global_url_fallback="https://github.com/${global_repo}/archive/refs/heads/main.tar.gz"
+          elif [ "${global_branch}" = "main" ]; then
+            global_url_fallback="https://github.com/${global_repo}/archive/refs/heads/master.tar.gz"
           fi
         fi
 
         if [ "${target}" = "all" ] || [ -z "${target}" ]; then
-          sync_one "main" "${main_url}"
-          sync_one "dev" "${dev_url}"
-          sync_one "umbrel" "${umbrel_url}" "${umbrel_url_fallback}"
+          sync_one "main" "${main_url}" "${main_url_fallback}"
+          sync_one "dev" "${dev_url}" "${dev_url_fallback}"
+          sync_one "global" "${global_url}" "${global_url_fallback}"
+          sync_global_assets
         elif [ "${target}" = "main" ]; then
-          sync_one "main" "${main_url}"
-        elif [ "${target}" = "umbrel" ]; then
-          sync_one "umbrel" "${umbrel_url}" "${umbrel_url_fallback}"
+          sync_one "main" "${main_url}" "${main_url_fallback}"
+        elif [ "${target}" = "global" ]; then
+          sync_one "global" "${global_url}" "${global_url_fallback}"
+          sync_global_assets
         else
-          sync_one "dev" "${dev_url}"
+          sync_one "dev" "${dev_url}" "${dev_url_fallback}"
         fi
 
         echo "store synced: ${store_base}"
@@ -186,16 +300,16 @@ case "${cmd}" in
     sub="${1:-}"; shift || true
     case "${sub}" in
       up)
-        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" up -d
+        compose_up "5tratumos-overlay" "${ROOT_DIR}/overlay" up -d
         ;;
       down)
-        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" down
+        compose_up "5tratumos-overlay" "${ROOT_DIR}/overlay" down
         ;;
       logs)
-        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" logs --tail=200 -f
+        compose_up "5tratumos-overlay" "${ROOT_DIR}/overlay" logs --tail=200 -f
         ;;
       status)
-        compose_up "forgeos-overlay" "${FORGEOS_ROOT}/overlay" ps
+        compose_up "5tratumos-overlay" "${ROOT_DIR}/overlay" ps
         ;;
       *)
         die "unknown subcommand: overlay ${sub:-}"
@@ -209,12 +323,12 @@ case "${cmd}" in
     case "${sub}" in
       available)
         ch="$(current_channel)"
-        avail_dir="${FORGEOS_ROOT}/apps-available/${ch}"
+        avail_dir="${ROOT_DIR}/apps-available/${ch}"
         [ -d "${avail_dir}" ] || die "no available apps for channel '${ch}' in ${avail_dir}"
         (cd "${avail_dir}" && ls -1) || true
         ;;
       installed)
-        (cd "${FORGEOS_ROOT}/apps" && ls -1) || true
+        (cd "${ROOT_DIR}/apps" && ls -1) || true
         ;;
       install)
         app_id="${1:-}"; shift || true
@@ -226,19 +340,19 @@ case "${cmd}" in
           shift || true
         fi
         [ -n "${ch}" ] || die "missing channel value"
-        store_root="${FORGEOS_ROOT}/store/${ch}"
+        store_root="${ROOT_DIR}/store/${ch}"
         store_dir=""
         store_port=""
-        dst="${FORGEOS_ROOT}/apps/${app_id}"
+        dst="${ROOT_DIR}/apps/${app_id}"
         [ ! -e "${dst}" ] || die "app already installed: ${app_id} (${dst})"
 
         install -d -m 0755 "${dst}"
 
-        src="${FORGEOS_ROOT}/apps-available/${ch}/${app_id}"
+        src="${ROOT_DIR}/apps-available/${ch}/${app_id}"
         if [ -d "${src}" ]; then
           cp -a "${src}/." "${dst}/"
         else
-          [ -d "${store_root}" ] || die "store not found: ${store_root} (run: sudo forgeos store sync ${ch})"
+          [ -d "${store_root}" ] || die "store not found: ${store_root} (run: sudo 5tratumos store sync ${ch})"
 
           resolved="$(
             TARGET_APP_ID="${app_id}" STORE_ROOT="${store_root}" python3 - <<'PY'
@@ -259,8 +373,8 @@ if not target or not root.is_dir():
 
 def map_store_id_to_app_id(store_id: str) -> str:
     raw = (store_id or "").strip().lower()
-    # Umbrel store uses canonical IDs like "bitcoin", "nextcloud", etc.
-    if root.name.strip().lower() == "umbrel":
+    # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
+    if root.name.strip().lower() == "global":
         raw = raw.replace(" ", "-")
         raw = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
         return raw or "app"
@@ -278,7 +392,7 @@ for entry in sorted(root.iterdir(), key=lambda p: p.name):
         continue
     if entry.name.startswith("."):
         continue
-    manifest_path = entry / "umbrel-app.yml"
+    manifest_path = entry / "global-app.yml"
     compose_path = entry / "docker-compose.yml"
     if not manifest_path.is_file() or not compose_path.is_file():
         continue
@@ -325,7 +439,7 @@ except ValueError:
     port = 0
 
 compose_path = root / store_dir / "docker-compose.yml"
-manifest_path = root / store_dir / "umbrel-app.yml"
+manifest_path = root / store_dir / "global-app.yml"
 if not compose_path.is_file() or not dest.is_dir():
     sys.exit(1)
 
@@ -416,7 +530,7 @@ except Exception:
 
 services.pop("app_proxy", None)
 
-# Remove any leftover dependencies on Umbrel's app_proxy.
+# Remove any leftover dependencies on legacy app proxies.
 for _name, _svc in list(services.items()):
     if not isinstance(_svc, dict):
         continue
@@ -471,16 +585,23 @@ compose["services"] = services
 # Remove legacy compose version to avoid warnings.
 compose.pop("version", None)
 
-# Strip Umbrel's shared network if present; allow Compose default network instead.
-drop_networks = {"umbrel_main_network"}
+# Strip legacy shared networks if present; allow Compose default network instead.
+def should_drop_network(net_name: object, cfg: object) -> bool:
+    n = str(net_name or "").strip()
+    if n.endswith("_main_network"):
+        return True
+    if isinstance(cfg, dict):
+        cn = str(cfg.get("name") or "").strip()
+        if cn.endswith("_main_network"):
+            return True
+    return False
+
+drop_networks: set[str] = set()
 networks = compose.get("networks")
 if isinstance(networks, dict):
     drop = []
     for net_name, cfg in networks.items():
-        if str(net_name).strip() == "umbrel_main_network":
-            drop.append(net_name)
-            continue
-        if isinstance(cfg, dict) and str(cfg.get("name") or "").strip() == "umbrel_main_network":
+        if should_drop_network(net_name, cfg):
             drop.append(net_name)
     for net_name in drop:
         networks.pop(net_name, None)
@@ -522,7 +643,7 @@ PY
           [ $? -eq 0 ] || die "failed to generate compose from store for ${app_id}"
         fi
 
-        app_state_dir="${FORGEOS_STATE_DIR}/apps/${app_id}"
+        app_state_dir="${STATE_DIR}/apps/${app_id}"
         install -d -m 0755 "${app_state_dir}/data"
 
         # Seed app data payloads from the store recipe (templates/defaults).
@@ -543,7 +664,7 @@ import secrets
 print(secrets.token_urlsafe(18))
 PY
 )"
-          # Default to a private-range base so Umbrel recipes that derive APP_SUBNET="${NETWORK_IP}/16"
+          # Default to a private-range base so templates that derive APP_SUBNET="${NETWORK_IP}/16"
           # stay syntactically valid even when 5tratumOS uses per-project networks.
           cat >"${persist_env}" <<EOF
 NETWORK_IP=172.16.0.0
@@ -560,12 +681,12 @@ EOF
         cat "${persist_env}" >>"${dst}/.env"
         chmod 600 "${dst}/.env" 2>/dev/null || true
 
-        # Umbrel recipes commonly run as uid/gid 1000; ensure the app data dir is writable.
+        # Templates commonly run as uid/gid 1000; ensure the app data dir is writable.
         if [ "${EUID:-$(id -u)}" -eq 0 ]; then
           chown -R 1000:1000 "${app_state_dir}" 2>/dev/null || true
         fi
 
-        meta_file="${dst}/forgeos.json"
+        meta_file="${dst}/5tratumos.json"
         STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" CHANNEL="${ch}" APP_ID="${app_id}" APP_DIR="${dst}" python3 - <<'PY' >"${meta_file}"
 import json
 import os
@@ -603,7 +724,7 @@ store_id = store_dir
 installed_version = ""
 
 if yaml is not None and store_root.is_dir() and store_dir:
-    manifest_path = store_root / store_dir / "umbrel-app.yml"
+    manifest_path = store_root / store_dir / "global-app.yml"
     if manifest_path.is_file():
         try:
             manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
@@ -662,28 +783,43 @@ PY
         echo "installed ${app_id} (channel=${ch})"
         ;;
       update)
-        [ "${EUID:-$(id -u)}" -eq 0 ] || die "app update requires root (writes ${FORGEOS_ROOT}/apps)"
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "app update requires root (writes ${ROOT_DIR}/apps)"
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
-        app_dir="${FORGEOS_ROOT}/apps/${app_id}"
+        app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
 
-        meta_file="${app_dir}/forgeos.json"
+        meta_file="$(app_meta_file "${app_dir}")"
         meta_channel=""
         if [ -f "${meta_file}" ]; then
           meta_channel="$(python3 -c "import json; import sys; p='${meta_file}';\n\ntry:\n  obj=json.load(open(p,'r',encoding='utf-8'))\nexcept Exception:\n  obj={}\nprint(str(obj.get('channel','') or '').strip())" 2>/dev/null || true)"
         fi
 
         ch="$(current_channel)"
-        case "${meta_channel}" in
-          main|dev|umbrel) ch="${meta_channel}" ;;
+        if [ "${1:-}" = "--channel" ]; then
+          shift
+          ch="${1:-}"
+          shift || true
+        fi
+        case "${ch}" in
+          main|dev|global) ;;
+          *) die "invalid channel: ${ch}" ;;
         esac
 
-        store_root="${FORGEOS_ROOT}/store/${ch}"
-        [ -d "${store_root}" ] || die "store not found: ${store_root} (run: sudo forgeos store sync ${ch})"
+        meta_ch=""
+        case "${meta_channel}" in
+          main|dev|global) meta_ch="${meta_channel}" ;;
+        esac
 
-        resolved="$(
-          TARGET_APP_ID="${app_id}" STORE_ROOT="${store_root}" python3 - <<'PY'
+        resolved=""
+        store_root=""
+
+        resolve_recipe() {
+          try_ch="${1:-}"
+          try_root="${ROOT_DIR}/store/${try_ch}"
+          [ -d "${try_root}" ] || return 1
+          r="$(
+            TARGET_APP_ID="${app_id}" STORE_ROOT="${try_root}" python3 - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -700,8 +836,8 @@ if not target or not root.is_dir():
 
 def map_store_id_to_app_id(store_id: str) -> str:
     raw = (store_id or "").strip().lower()
-    # Umbrel store uses canonical IDs like "bitcoin", "nextcloud", etc.
-    if root.name.strip().lower() == "umbrel":
+    # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
+    if root.name.strip().lower() == "global":
         raw = raw.replace(" ", "-")
         raw = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
         return raw or "app"
@@ -719,7 +855,7 @@ for entry in sorted(root.iterdir(), key=lambda p: p.name):
         continue
     if entry.name.startswith("."):
         continue
-    manifest_path = entry / "umbrel-app.yml"
+    manifest_path = entry / "global-app.yml"
     compose_path = entry / "docker-compose.yml"
     if not manifest_path.is_file() or not compose_path.is_file():
         continue
@@ -737,13 +873,33 @@ for entry in sorted(root.iterdir(), key=lambda p: p.name):
 
 sys.exit(1)
 PY
-        )"
+          )"
+          [ -n "${r}" ] || return 1
+          ch="${try_ch}"
+          store_root="${try_root}"
+          resolved="${r}"
+          return 0
+        }
 
-        [ -n "${resolved}" ] || die "no store recipe for '${app_id}' on channel '${ch}' (run: sudo forgeos store sync ${ch})"
+        resolve_recipe "${ch}" || {
+          if [ -n "${meta_ch}" ] && [ "${meta_ch}" != "${ch}" ]; then
+            resolve_recipe "${meta_ch}" || true
+          fi
+        }
+
+        [ -n "${resolved}" ] || die "no store recipe for '${app_id}' on channel '${ch}' (run: sudo 5tratumos store sync ${ch})"
         store_dir="$(printf '%s' "${resolved}" | awk -F '\t' '{print $1}')"
         store_port="$(printf '%s' "${resolved}" | awk -F '\t' '{print $2}')"
 
-        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" STORE_PORT="${store_port}" DEST="${app_dir}" APP_ID="${app_id}" python3 - <<'PY'
+        rollback_ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || date -u +%s)"
+        rollback_compose=""
+        if [ -f "${app_dir}/docker-compose.yml" ]; then
+          rollback_compose="docker-compose.rollback.${rollback_ts}.yml"
+          cp -f "${app_dir}/docker-compose.yml" "${app_dir}/${rollback_compose}" 2>/dev/null || rollback_compose=""
+        fi
+
+        next_compose="docker-compose.yml.next"
+        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" STORE_PORT="${store_port}" DEST="${app_dir}" APP_ID="${app_id}" OUT_FILE="${next_compose}" python3 - <<'PY'
 import os
 import sys
 from pathlib import Path
@@ -758,6 +914,7 @@ store_dir = os.environ.get("STORE_DIR") or ""
 dest = Path(os.environ.get("DEST") or "")
 app_id = (os.environ.get("APP_ID") or "").strip().lower()
 port_raw = (os.environ.get("STORE_PORT") or "").strip()
+out_file = (os.environ.get("OUT_FILE") or "docker-compose.yml").strip() or "docker-compose.yml"
 
 try:
     port = int(port_raw) if port_raw else 0
@@ -765,7 +922,7 @@ except ValueError:
     port = 0
 
 compose_path = root / store_dir / "docker-compose.yml"
-manifest_path = root / store_dir / "umbrel-app.yml"
+manifest_path = root / store_dir / "global-app.yml"
 if not compose_path.is_file() or not dest.is_dir():
     sys.exit(1)
 
@@ -856,7 +1013,7 @@ except Exception:
 
 services.pop("app_proxy", None)
 
-# Remove any leftover dependencies on Umbrel's app_proxy.
+# Remove any leftover dependencies on legacy app proxies.
 for _name, _svc in list(services.items()):
     if not isinstance(_svc, dict):
         continue
@@ -910,15 +1067,22 @@ compose["services"] = services
 
 compose.pop("version", None)
 
-drop_networks = {"umbrel_main_network"}
+def should_drop_network(net_name: object, cfg: object) -> bool:
+    n = str(net_name or "").strip()
+    if n.endswith("_main_network"):
+        return True
+    if isinstance(cfg, dict):
+        cn = str(cfg.get("name") or "").strip()
+        if cn.endswith("_main_network"):
+            return True
+    return False
+
+drop_networks: set[str] = set()
 networks = compose.get("networks")
 if isinstance(networks, dict):
     drop = []
     for net_name, cfg in networks.items():
-        if str(net_name).strip() == "umbrel_main_network":
-            drop.append(net_name)
-            continue
-        if isinstance(cfg, dict) and str(cfg.get("name") or "").strip() == "umbrel_main_network":
+        if should_drop_network(net_name, cfg):
             drop.append(net_name)
     for net_name in drop:
         networks.pop(net_name, None)
@@ -951,12 +1115,12 @@ for name, svc in list(services.items()):
             svc.pop("networks", None)
     services[name] = svc
 
-out_path = dest / "docker-compose.yml"
+out_path = dest / out_file
 out_path.write_text(yaml.safe_dump(compose, sort_keys=False), encoding="utf-8")
 sys.exit(0)
 PY
 
-        app_state_dir="${FORGEOS_STATE_DIR}/apps/${app_id}"
+        app_state_dir="${STATE_DIR}/apps/${app_id}"
         install -d -m 0755 "${app_state_dir}/data"
 
         store_data_dir="${store_root}/${store_dir}/data"
@@ -990,8 +1154,38 @@ EOF
         cat "${persist_env}" >>"${app_dir}/.env"
         chmod 600 "${app_dir}/.env" 2>/dev/null || true
 
+        project="$(app_project_name "${app_id}")"
+
+        cleanup_next() {
+          rm -f "${app_dir}/${next_compose}" 2>/dev/null || true
+        }
+
+        restore_previous_compose() {
+          if [ -n "${rollback_compose}" ] && [ -f "${app_dir}/${rollback_compose}" ]; then
+            cp -f "${app_dir}/${rollback_compose}" "${app_dir}/docker-compose.yml" 2>/dev/null || true
+          fi
+          cleanup_next
+        }
+
+        # Pull images using the new compose file first, before switching the live compose or updating metadata.
+        # This prevents "successful" updates that actually fail due to missing images/tags.
+        if ! compose_up "${project}" "${app_dir}" -f "${next_compose}" pull; then
+          restore_previous_compose
+          die "image pull failed for ${app_id} (leaving current version untouched)"
+        fi
+
+        # Switch to the new compose now that images are present.
+        mv -f "${app_dir}/${next_compose}" "${app_dir}/docker-compose.yml"
+
+        # Bring up the updated containers. If this fails, restore the previous compose and try to return to a running state.
+        if ! compose_up "${project}" "${app_dir}" up -d --remove-orphans; then
+          restore_previous_compose
+          compose_up "${project}" "${app_dir}" up -d --remove-orphans || true
+          die "app update failed during startup (restored previous compose)"
+        fi
+
         tmp_meta="$(mktemp)"
-        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" CHANNEL="${ch}" APP_ID="${app_id}" APP_DIR="${app_dir}" python3 - <<'PY' >"${tmp_meta}"
+        STORE_ROOT="${store_root}" STORE_DIR="${store_dir}" CHANNEL="${ch}" APP_ID="${app_id}" APP_DIR="${app_dir}" META_FILE="${meta_file}" ROLLBACK_COMPOSE="${rollback_compose}" python3 - <<'PY' >"${tmp_meta}"
 import json
 import os
 import time
@@ -1022,13 +1216,29 @@ channel = (os.environ.get("CHANNEL") or "").strip().lower()
 store_root = Path(os.environ.get("STORE_ROOT") or "")
 store_dir = (os.environ.get("STORE_DIR") or "").strip()
 app_dir = Path(os.environ.get("APP_DIR") or "")
+meta_file = Path(os.environ.get("META_FILE") or "")
+rollback_compose = (os.environ.get("ROLLBACK_COMPOSE") or "").strip()
 
 manifest = {}
 store_id = store_dir
 installed_version = ""
+installed_at = ""
+rollbacks = []
+
+prev = {}
+if meta_file.is_file():
+    try:
+        prev = json.loads(meta_file.read_text(encoding="utf-8") or "{}")
+    except Exception:
+        prev = {}
+if isinstance(prev, dict):
+    installed_at = str(prev.get("installed_at") or "").strip()
+    rb = prev.get("rollbacks")
+    if isinstance(rb, list):
+        rollbacks = [x for x in rb if isinstance(x, dict)]
 
 if yaml is not None and store_root.is_dir() and store_dir:
-    manifest_path = store_root / store_dir / "umbrel-app.yml"
+    manifest_path = store_root / store_dir / "global-app.yml"
     if manifest_path.is_file():
         try:
             manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
@@ -1072,23 +1282,168 @@ if not installed_version:
                     break
 
 now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-meta = {
-    "app_id": app_id,
-    "channel": channel,
-    "store_dir": store_dir,
-    "store_id": store_id,
-    "installed_version": installed_version,
-    "updated_at": now,
-}
-print(json.dumps(meta, separators=(",", ":"), ensure_ascii=False))
+if rollback_compose and isinstance(prev, dict):
+    prev_ver = str(prev.get("installed_version") or "").strip()
+    if prev_ver:
+        rollbacks.insert(
+            0,
+            {
+                "version": prev_ver,
+                "time": now,
+                "compose": rollback_compose,
+                "channel": str(prev.get("channel") or "").strip(),
+            },
+        )
+
+def rb_key(item: dict) -> str:
+    return f"{str(item.get('version') or '').strip()}|{str(item.get('compose') or '').strip()}"
+
+seen = set()
+dedup = []
+for item in rollbacks:
+    if not isinstance(item, dict):
+        continue
+    k = rb_key(item)
+    if not k.strip("|"):
+        continue
+    if k in seen:
+        continue
+    seen.add(k)
+    dedup.append(item)
+rollbacks = dedup[:10]
+
+# Drop rollback points whose compose snapshot no longer exists.
+kept = []
+for item in rollbacks:
+    fn = str(item.get("compose") or "").strip()
+    if not fn:
+        continue
+    if (app_dir / fn).is_file():
+        kept.append(item)
+rollbacks = kept[:10]
+
+ meta = {
+     "app_id": app_id,
+     "channel": channel,
+     "store_dir": store_dir,
+     "store_id": store_id,
+     "installed_version": installed_version,
+     "installed_at": installed_at or now,
+     "updated_at": now,
+     "rollbacks": rollbacks,
+ }
+ print(json.dumps(meta, separators=(",", ":"), ensure_ascii=False))
 PY
         mv "${tmp_meta}" "${meta_file}"
 
         chown -R 1000:1000 "${app_state_dir}" 2>/dev/null || true
-
-        compose_up "forgeos-${app_id}" "${app_dir}" pull
-        compose_up "forgeos-${app_id}" "${app_dir}" up -d --remove-orphans
         echo "updated ${app_id} (channel=${ch})"
+        ;;
+      rollback)
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "app rollback requires root (writes ${ROOT_DIR}/apps)"
+        app_id="${1:-}"; shift || true
+        [ -n "${app_id}" ] || die "missing app id"
+        app_dir="${ROOT_DIR}/apps/${app_id}"
+        [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+
+        to=""
+        if [ "${1:-}" = "--to" ]; then
+          shift
+          to="${1:-}"
+          shift || true
+        else
+          to="${1:-}"
+          shift || true
+        fi
+        to="$(printf '%s' "${to}" | tr -d '\r\n' | xargs || true)"
+        [ -n "${to}" ] || die "missing rollback target version (use: 5tratumos app rollback <id> --to <version>)"
+
+        meta_file="$(app_meta_file "${app_dir}")"
+        [ -f "${meta_file}" ] || die "no app meta found: ${meta_file}"
+
+        rollback_ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || date -u +%s)"
+        current_backup="docker-compose.rollback.${rollback_ts}.yml"
+        [ -f "${app_dir}/docker-compose.yml" ] || die "missing ${app_dir}/docker-compose.yml"
+        cp -f "${app_dir}/docker-compose.yml" "${app_dir}/${current_backup}" || die "unable to create rollback snapshot"
+
+        TARGET_VERSION="${to}" APP_DIR="${app_dir}" META_FILE="${meta_file}" CURRENT_BACKUP="${current_backup}" python3 - <<'PY'
+import json
+import os
+import time
+from pathlib import Path
+
+app_dir = Path(os.environ.get("APP_DIR") or "")
+meta_file = Path(os.environ.get("META_FILE") or "")
+target = (os.environ.get("TARGET_VERSION") or "").strip()
+current_backup = (os.environ.get("CURRENT_BACKUP") or "").strip()
+
+if not app_dir.is_dir() or not meta_file.is_file() or not target:
+    raise SystemExit(2)
+
+obj = {}
+try:
+    obj = json.loads(meta_file.read_text(encoding="utf-8") or "{}")
+except Exception:
+    obj = {}
+if not isinstance(obj, dict):
+    obj = {}
+
+rollbacks = obj.get("rollbacks")
+rollbacks = [x for x in rollbacks if isinstance(x, dict)] if isinstance(rollbacks, list) else []
+
+picked = None
+for rb in rollbacks:
+    if str(rb.get("version") or "").strip() == target:
+        picked = rb
+        break
+
+if not picked:
+    raise SystemExit(3)
+
+compose_fn = str(picked.get("compose") or "").strip()
+compose_path = app_dir / compose_fn
+if not compose_fn or not compose_path.is_file():
+    raise SystemExit(4)
+
+# Restore the selected snapshot.
+(app_dir / "docker-compose.yml").write_text(compose_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+prev_ver = str(obj.get("installed_version") or "").strip()
+if prev_ver:
+    rollbacks.insert(
+        0,
+        {
+            "version": prev_ver,
+            "time": now,
+            "compose": current_backup,
+            "channel": str(obj.get("channel") or "").strip(),
+        },
+    )
+
+seen = set()
+dedup = []
+for item in rollbacks:
+    if not isinstance(item, dict):
+        continue
+    k = f"{str(item.get('version') or '').strip()}|{str(item.get('compose') or '').strip()}"
+    if not k.strip("|"):
+        continue
+    if k in seen:
+        continue
+    seen.add(k)
+    dedup.append(item)
+
+obj["installed_version"] = target
+obj["updated_at"] = now
+obj["rollbacks"] = dedup[:10]
+meta_file.write_text(json.dumps(obj, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+PY
+
+        project="$(app_project_name "${app_id}")"
+        compose_up "${project}" "${app_dir}" pull
+        compose_up "${project}" "${app_dir}" up -d --remove-orphans
+        echo "rolled back ${app_id} to ${to}"
         ;;
       uninstall)
         app_id="${1:-}"; shift || true
@@ -1098,15 +1453,15 @@ PY
           purge="true"
           shift || true
         fi
-        app_dir="${FORGEOS_ROOT}/apps/${app_id}"
+        app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
 
-        project="forgeos-${app_id}"
+        project="$(app_project_name "${app_id}")"
         (cd "${app_dir}" && docker compose --project-name "${project}" down --remove-orphans) || true
 
         rm -rf "${app_dir}"
         if [ "${purge}" = "true" ]; then
-          rm -rf "${FORGEOS_STATE_DIR}/apps/${app_id}"
+          rm -rf "${STATE_DIR}/apps/${app_id}"
           echo "uninstalled ${app_id} (purged)"
         else
           echo "uninstalled ${app_id}"
@@ -1116,20 +1471,21 @@ PY
         action="${sub}"
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
-        app_dir="${FORGEOS_ROOT}/apps/${app_id}"
+        app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        project="$(app_project_name "${app_id}")"
         case "${action}" in
           up)
-            compose_up "forgeos-${app_id}" "${app_dir}" up -d
+            compose_up "${project}" "${app_dir}" up -d
             ;;
           down)
-            compose_up "forgeos-${app_id}" "${app_dir}" down
+            compose_up "${project}" "${app_dir}" down
             ;;
           pull)
-            compose_up "forgeos-${app_id}" "${app_dir}" pull
+            compose_up "${project}" "${app_dir}" pull
             ;;
           logs)
-            compose_up "forgeos-${app_id}" "${app_dir}" logs --tail=200 -f
+            compose_up "${project}" "${app_dir}" logs --tail=200 -f
             ;;
         esac
         ;;

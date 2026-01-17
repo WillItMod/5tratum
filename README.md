@@ -7,8 +7,6 @@ This folder is a first-pass "appliance OS" foundation for running AxeSuite apps:
 - Overlay: a small landing page on port `80`
 - Apps: templated Docker Compose stacks (currently `axelive`, `axebench`)
 
-Note: the CLI/service names are still `forgeos` for now (rebrand-friendly, can be renamed later).
-
 ## Proxmox approach (recommended)
 
 1) Create a fresh VM (Ubuntu Server 24.04 LTS or Debian 12), enable SSH, and make sure you can `ssh` in.
@@ -34,15 +32,15 @@ On a device with a GPU/DRM console (`/dev/dri/card0`), you can boot straight int
 sudo ./console/install.sh
 ```
 
-This enables `forgeos-console@forge.service` (change user via `FORGEOS_CONSOLE_USER=<user>`).
+This enables `5tratumos-console@forge.service` (change user via `FIVETRATUMOS_CONSOLE_USER=<user>` or `TRATUMOS_CONSOLE_USER=<user>`).
 
 Install/start apps:
 
 ```bash
-sudo forgeos store sync
-sudo forgeos app available
-sudo forgeos app install axelive
-sudo forgeos app up axelive
+sudo 5tratumos store sync
+sudo 5tratumos app available
+sudo 5tratumos app install axelive
+sudo 5tratumos app up axelive
 ```
 
 ## Option B: Ansible from your workstation
@@ -60,14 +58,14 @@ ansible-playbook -i inventory.ini site.yml
 Set the default channel (used for choosing app templates under `apps-available/<channel>/...`):
 
 ```bash
-sudo forgeos channel set main
-sudo forgeos channel set dev
+sudo 5tratumos channel set main
+sudo 5tratumos channel set dev
 ```
 
 Or per install:
 
 ```bash
-sudo forgeos app install axelive --channel dev
+sudo 5tratumos app install axelive --channel dev
 ```
 
 ## OS updates (self-update)

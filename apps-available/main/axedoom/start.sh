@@ -5,6 +5,7 @@ export DISPLAY="${DISPLAY:-:0}"
 export HOME="${HOME:-/data}"
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-dummy}"
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
+export PATH="${PATH}:/usr/games"
 
 RESOLUTION="${RESOLUTION:-1280x720}"
 DEPTH="${DEPTH:-24}"
@@ -28,7 +29,10 @@ ensure_iwad() {
     fi
   done
 
-  found="$(find /usr/share -maxdepth 5 -type f \\( -name 'freedoom2.wad' -o -name 'freedoom1.wad' \\) 2>/dev/null | head -n 1 || true)"
+  found="$(find /usr/share -maxdepth 5 -type f -name 'freedoom2.wad' -print -quit 2>/dev/null || true)"
+  if [ -z "${found}" ]; then
+    found="$(find /usr/share -maxdepth 5 -type f -name 'freedoom1.wad' -print -quit 2>/dev/null || true)"
+  fi
   if [ -n "${found}" ] && [ -f "${found}" ]; then
     echo "${found}"
     return 0

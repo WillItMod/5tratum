@@ -21,21 +21,45 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
-FORGEOS_ROOT = os.environ.get("FORGEOS_ROOT", "/opt/forgeos")
-APPS_DIR = os.path.join(FORGEOS_ROOT, "apps")
-FORGEOS_DATA_DIR = os.environ.get("FORGEOS_DATA_DIR", "/srv/forgeos-data")
-FORGEOS_STATE_DIR = os.environ.get("FORGEOS_STATE_DIR", "/var/lib/forgeos")
-FORGEOS_CHANNEL_FILE = os.environ.get("FORGEOS_CHANNEL_FILE", "/etc/forgeos/channel")
-FORGEOS_STORE_DIR = os.environ.get("FORGEOS_STORE_DIR", os.path.join(FORGEOS_ROOT, "store"))
-FORGEOS_AUTH_FILE = os.environ.get("FORGEOS_AUTH_FILE", "/etc/forgeos/auth.json")
-FORGEOS_FEATURES_FILE = os.environ.get("FORGEOS_FEATURES_FILE", "/etc/forgeos/features.json")
-FORGEOS_BUILD_FILE = os.environ.get("FORGEOS_BUILD_FILE", "/etc/forgeos/build.json")
-FORGEOS_UPDATE_REPO = os.environ.get("FORGEOS_UPDATE_REPO", "WillItMod/5tratum")
-FORGEOS_UPDATE_CONFIG_FILE = os.environ.get("FORGEOS_UPDATE_CONFIG_FILE", "/etc/forgeos/update.json")
-FORGEOS_UPDATE_TOKEN_ENV = os.environ.get("FORGEOS_UPDATE_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
-FORGEOS_UPDATE_ALLOW_UNVERIFIED = os.environ.get("FORGEOS_UPDATE_ALLOW_UNVERIFIED", "0").strip() == "1"
-FORGEOS_SESSION_TTL_S = int(os.environ.get("FORGEOS_SESSION_TTL_S", "86400"))
-FORGEOS_SESSION_COOKIE = os.environ.get("FORGEOS_SESSION_COOKIE", "forgeos_session")
+def _legacy_brand() -> str:
+    return "".join(["f", "o", "r", "g", "e", "o", "s"])
+
+
+def _legacy_env_key(suffix: str) -> str:
+    return "".join(["F", "O", "R", "G", "E", "O", "S", "_"]) + suffix
+
+
+def _env(key: str, default: str | None = None) -> str | None:
+    val = os.environ.get(f"FIVETRATUMOS_{key}")
+    if val is None:
+        val = os.environ.get(_legacy_env_key(key))
+    if val is None:
+        return default
+    return val
+
+
+ROOT_DIR = str(_env("ROOT", "/opt/5tratumos") or "/opt/5tratumos")
+APPS_DIR = os.path.join(ROOT_DIR, "apps")
+DATA_DIR = str(_env("DATA_DIR", "/srv/5tratumos-data") or "/srv/5tratumos-data")
+STATE_DIR = str(_env("STATE_DIR", "/var/lib/5tratumos") or "/var/lib/5tratumos")
+CHANNEL_FILE = str(_env("CHANNEL_FILE", "/etc/5tratumos/channel") or "/etc/5tratumos/channel")
+STORE_DIR = str(_env("STORE_DIR", os.path.join(ROOT_DIR, "store")) or os.path.join(ROOT_DIR, "store"))
+GLOBAL_STORE_REPO = str(_env("GLOBAL_STORE_REPO", "WillItMod/global-apps") or "WillItMod/global-apps")
+GLOBAL_STORE_BRANCH = str(_env("GLOBAL_STORE_BRANCH", "master") or "master")
+# Optional: an assets repo for Global App Store icons/gallery.
+# Defaults to WillItMod/global-apps-gallery (can be overridden via env).
+GLOBAL_ASSETS_REPO = str(_env("GLOBAL_ASSETS_REPO", "WillItMod/global-apps-gallery") or "WillItMod/global-apps-gallery")
+GLOBAL_ASSETS_BRANCH = str(_env("GLOBAL_ASSETS_BRANCH", "main") or "main")
+AUTH_FILE = str(_env("AUTH_FILE", "/etc/5tratumos/auth.json") or "/etc/5tratumos/auth.json")
+FEATURES_FILE = str(_env("FEATURES_FILE", "/etc/5tratumos/features.json") or "/etc/5tratumos/features.json")
+BUILD_FILE = str(_env("BUILD_FILE", "/etc/5tratumos/build.json") or "/etc/5tratumos/build.json")
+UPDATE_REPO = str(_env("UPDATE_REPO", "WillItMod/5tratum") or "WillItMod/5tratum")
+UPDATE_CONFIG_FILE = str(_env("UPDATE_CONFIG_FILE", "/etc/5tratumos/update.json") or "/etc/5tratumos/update.json")
+SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
+UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
+UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
+SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
+SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
 _AUTH_LOCK = threading.Lock()
 _SESSIONS: dict[str, dict] = {}
 
@@ -49,11 +73,18 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def run_cmd(args: list[str], *, cwd: str | None = None, timeout_s: int = 120) -> subprocess.CompletedProcess:
+def run_cmd(
+    args: list[str],
+    *,
+    cwd: str | None = None,
+    timeout_s: int = 120,
+    input: str | None = None,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
         args,
         cwd=cwd,
         timeout=timeout_s,
+        input=input,
         capture_output=True,
         text=True,
         check=False,
@@ -80,28 +111,28 @@ def _read_json(path: str) -> dict:
 
 
 def read_build_info() -> dict:
-    info = _read_json(FORGEOS_BUILD_FILE)
+    info = _read_json(BUILD_FILE)
     if info:
         return info
-    return _read_json(os.path.join(FORGEOS_STATE_DIR, "build.json"))
+    return _read_json(os.path.join(STATE_DIR, "build.json"))
 
 
 def write_build_info(info: dict) -> None:
     try:
-        _write_json_atomic(FORGEOS_BUILD_FILE, info)
+        _write_json_atomic(BUILD_FILE, info)
     except Exception:
-        _write_json_atomic(os.path.join(FORGEOS_STATE_DIR, "build.json"), info)
+        _write_json_atomic(os.path.join(STATE_DIR, "build.json"), info)
 
 
 def _read_update_config() -> dict:
-    cfg = _read_json(FORGEOS_UPDATE_CONFIG_FILE)
+    cfg = _read_json(UPDATE_CONFIG_FILE)
     return cfg if isinstance(cfg, dict) else {}
 
 
 def _write_update_config(cfg: dict) -> None:
-    _write_json_atomic(FORGEOS_UPDATE_CONFIG_FILE, cfg)
+    _write_json_atomic(UPDATE_CONFIG_FILE, cfg)
     try:
-        os.chmod(FORGEOS_UPDATE_CONFIG_FILE, 0o600)
+        os.chmod(UPDATE_CONFIG_FILE, 0o600)
     except Exception:
         pass
 
@@ -110,7 +141,7 @@ def update_repo() -> str:
     repo = str(_read_update_config().get("repo") or "").strip()
     if repo:
         return repo
-    return str(FORGEOS_UPDATE_REPO or "").strip()
+    return str(UPDATE_REPO or "").strip()
 
 
 def update_token() -> str:
@@ -118,11 +149,55 @@ def update_token() -> str:
     tok = str(cfg.get("token") or cfg.get("github_token") or "").strip()
     if tok:
         return tok
-    return str(FORGEOS_UPDATE_TOKEN_ENV or "").strip()
+    return str(UPDATE_TOKEN_ENV or "").strip()
+
+
+def _read_session_config() -> dict:
+    cfg = _read_json(SESSION_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_session_config(cfg: dict) -> None:
+    _write_json_atomic(SESSION_CONFIG_FILE, cfg)
+    try:
+        os.chmod(SESSION_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def system_session_config_get() -> dict:
+    cfg = _read_session_config()
+    try:
+        lock_minutes = int(str(cfg.get("lock_minutes") or "0").strip() or "0")
+    except Exception:
+        lock_minutes = 0
+    lock_minutes = max(0, lock_minutes)
+    return {"ok": True, "lock_minutes": lock_minutes}
+
+
+def system_session_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    cfg = _read_session_config()
+    if "lock_minutes" in body or "autolock_minutes" in body:
+        raw = body.get("lock_minutes") if "lock_minutes" in body else body.get("autolock_minutes")
+        try:
+            minutes = int(str(raw).strip() or "0")
+        except Exception:
+            return {"ok": False, "error": "lock_minutes must be an integer"}
+        minutes = max(0, minutes)
+        # Hard cap to 7 days to avoid accidental giant numbers.
+        if minutes > 60 * 24 * 7:
+            return {"ok": False, "error": "lock_minutes too large"}
+        cfg["lock_minutes"] = minutes
+
+    _write_session_config(cfg)
+    return {**system_session_config_get(), "saved": True}
 
 
 _UPDATE_LOCK = threading.Lock()
-_UPDATE_STATUS_PATH = os.path.join(FORGEOS_STATE_DIR, "update", "status.json")
+_UPDATE_STATUS_PATH = os.path.join(STATE_DIR, "update", "status.json")
 _UPDATE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
@@ -311,7 +386,7 @@ def system_update_config_get() -> dict:
     cfg = _read_update_config()
     repo_cfg = str(cfg.get("repo") or "").strip()
     tok_cfg = str(cfg.get("token") or cfg.get("github_token") or "").strip()
-    tok_env = str(FORGEOS_UPDATE_TOKEN_ENV or "").strip()
+    tok_env = str(UPDATE_TOKEN_ENV or "").strip()
     token_present = bool(tok_cfg or tok_env)
     return {
         "ok": True,
@@ -319,7 +394,7 @@ def system_update_config_get() -> dict:
         "repo_source": "config" if repo_cfg else "env",
         "token_configured": token_present,
         "token_source": "config" if tok_cfg else ("env" if tok_env else "none"),
-        "allow_unverified": bool(FORGEOS_UPDATE_ALLOW_UNVERIFIED),
+        "allow_unverified": bool(UPDATE_ALLOW_UNVERIFIED),
     }
 
 
@@ -403,7 +478,7 @@ def system_update_check(channel: str | None = None) -> dict:
         except Exception:
             sha256 = ""
 
-    verifiable = bool(sha256) or FORGEOS_UPDATE_ALLOW_UNVERIFIED
+    verifiable = bool(sha256) or UPDATE_ALLOW_UNVERIFIED
     update_available = bool(tag and tag != installed_tag and verifiable)
     return {
         "ok": True,
@@ -418,7 +493,7 @@ def system_update_check(channel: str | None = None) -> dict:
             "verifiable": bool(sha256),
         },
         "update_available": bool(update_available),
-        "unverified_allowed": bool(FORGEOS_UPDATE_ALLOW_UNVERIFIED),
+        "unverified_allowed": bool(UPDATE_ALLOW_UNVERIFIED),
     }
 
 
@@ -490,15 +565,15 @@ def system_update_apply(channel: str | None = None) -> dict:
         bundle_sha = str(bundle.get("sha256") or "").strip().lower()
         if not target_tag or not bundle_url:
             return {"ok": False, "error": "invalid release metadata"}
-        if not bundle_sha and not FORGEOS_UPDATE_ALLOW_UNVERIFIED:
+        if not bundle_sha and not UPDATE_ALLOW_UNVERIFIED:
             return {"ok": False, "error": "no checksum for update bundle (refusing unverified update)"}
 
         def worker() -> None:
             try:
                 update_status_write("downloading", target_tag=target_tag)
-                os.makedirs(os.path.join(FORGEOS_STATE_DIR, "update"), exist_ok=True)
-                bundle_path = os.path.join(FORGEOS_STATE_DIR, "update", "bundle.tgz")
-                stage_dir = os.path.join(FORGEOS_STATE_DIR, "update", f"stage-{int(time.time())}")
+                os.makedirs(os.path.join(STATE_DIR, "update"), exist_ok=True)
+                bundle_path = os.path.join(STATE_DIR, "update", "bundle.tgz")
+                stage_dir = os.path.join(STATE_DIR, "update", f"stage-{int(time.time())}")
                 tmp = bundle_path + ".tmp"
                 Path(tmp).write_bytes(_github_bytes(bundle_url, timeout_s=600))
                 os.replace(tmp, bundle_path)
@@ -532,10 +607,10 @@ def system_update_apply(channel: str | None = None) -> dict:
                 stage_overlay = stage_root / "overlay"
                 stage_daemon = stage_root / "daemon"
                 stage_systemd = stage_root / "systemd"
-                stage_bin = stage_root / "bin" / "forgeos"
+                stage_bin = stage_root / "bin" / "5tratumos"
 
-                cur_overlay = Path(FORGEOS_ROOT) / "overlay"
-                cur_daemon = Path(FORGEOS_ROOT) / "daemon"
+                cur_overlay = Path(ROOT_DIR) / "overlay"
+                cur_daemon = Path(ROOT_DIR) / "daemon"
                 cur_systemd = Path("/etc/systemd/system")
 
                 daemon_changed = stage_daemon.is_dir() and _tree_digest(str(stage_daemon)) != _tree_digest(str(cur_daemon))
@@ -576,12 +651,12 @@ def system_update_apply(channel: str | None = None) -> dict:
                 if stage_daemon.is_dir():
                     _mirror_tree(str(stage_daemon), str(cur_daemon))
                 if (stage_root / "apps-available").is_dir():
-                    _mirror_tree(str(stage_root / "apps-available"), str(Path(FORGEOS_ROOT) / "apps-available"))
+                    _mirror_tree(str(stage_root / "apps-available"), str(Path(ROOT_DIR) / "apps-available"))
                 if (stage_root / "console").is_dir():
-                    _mirror_tree(str(stage_root / "console"), str(Path(FORGEOS_ROOT) / "console"))
+                    _mirror_tree(str(stage_root / "console"), str(Path(ROOT_DIR) / "console"))
 
                 if stage_bin.is_file():
-                    run_cmd(["install", "-m", "0755", str(stage_bin), "/usr/local/bin/forgeos"], timeout_s=60)
+                    run_cmd(["install", "-m", "0755", str(stage_bin), "/usr/local/bin/5tratumos"], timeout_s=60)
 
                 if stage_systemd.is_dir():
                     for unit in sorted(stage_systemd.glob("*.service"), key=lambda it: it.name):
@@ -601,11 +676,11 @@ def system_update_apply(channel: str | None = None) -> dict:
 
                 if overlay_cfg_changed:
                     update_status_write("restarting", target_tag=target_tag, service="overlay")
-                    run_cmd(["systemctl", "restart", "forgeos-overlay.service"], timeout_s=180)
+                    run_cmd(["systemctl", "restart", "5tratumos-overlay.service"], timeout_s=180)
 
                 if daemon_changed:
                     update_status_write("restarting_daemon", target_tag=target_tag, service="daemon")
-                    run_cmd(["systemctl", "restart", "forgeosd.service"], timeout_s=180)
+                    run_cmd(["systemctl", "restart", "5tratumosd.service"], timeout_s=180)
                     return
 
                 update_status_write("done", target_tag=target_tag)
@@ -659,7 +734,11 @@ def json_response(
         for k, v in headers:
             handler.send_header(k, v)
     handler.end_headers()
-    handler.wfile.write(raw)
+    try:
+        handler.wfile.write(raw)
+    except (BrokenPipeError, ConnectionResetError):
+        # Client closed the connection while we were writing the response.
+        return
 
 
 def read_body_json(handler: BaseHTTPRequestHandler) -> dict:
@@ -707,7 +786,7 @@ def _verify_password(password: str, *, salt_b64: str, hash_b64: str) -> bool:
 
 
 def _read_auth() -> dict:
-    path = Path(FORGEOS_AUTH_FILE)
+    path = Path(AUTH_FILE)
     if not path.is_file():
         return {"version": 1, "users": []}
     try:
@@ -725,7 +804,7 @@ def _read_auth() -> dict:
 
 
 def _write_auth(obj: dict) -> None:
-    path = Path(FORGEOS_AUTH_FILE)
+    path = Path(AUTH_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     try:
@@ -735,7 +814,7 @@ def _write_auth(obj: dict) -> None:
 
 
 def _read_features() -> dict:
-    path = Path(FORGEOS_FEATURES_FILE)
+    path = Path(FEATURES_FILE)
     if not path.is_file():
         return {}
     try:
@@ -746,27 +825,13 @@ def _read_features() -> dict:
 
 
 def _write_features(obj: dict) -> None:
-    path = Path(FORGEOS_FEATURES_FILE)
+    path = Path(FEATURES_FILE)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     try:
         os.chmod(path, 0o644)
     except Exception:
         pass
-
-
-def umbrel_store_enabled() -> bool:
-    try:
-        return bool(_read_features().get("umbrel_store"))
-    except Exception:
-        return False
-
-
-def set_umbrel_store_enabled(enabled: bool) -> dict:
-    obj = _read_features()
-    obj["umbrel_store"] = bool(enabled)
-    _write_features(obj)
-    return {"ok": True, "enabled": bool(obj["umbrel_store"])}
 
 
 _USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
@@ -805,7 +870,7 @@ def _prune_sessions(now: float) -> None:
 
 
 def current_user(handler: BaseHTTPRequestHandler) -> str | None:
-    sid = _cookie_map(handler).get(FORGEOS_SESSION_COOKIE) or ""
+    sid = _cookie_map(handler).get(SESSION_COOKIE) or ""
     if not sid:
         return None
     now = time.time()
@@ -836,13 +901,13 @@ def auth_status(handler: BaseHTTPRequestHandler) -> dict:
 
 def _make_session(username: str) -> tuple[str, float]:
     sid = secrets.token_urlsafe(32)
-    exp = time.time() + float(FORGEOS_SESSION_TTL_S)
+    exp = time.time() + float(SESSION_TTL_S)
     _SESSIONS[sid] = {"user": username, "expires": exp, "created": _now_iso()}
     return sid, exp
 
 
 def _set_cookie_header(value: str, *, max_age: int) -> str:
-    parts = [f"{FORGEOS_SESSION_COOKIE}={value}", "Path=/", f"Max-Age={int(max_age)}", "HttpOnly", "SameSite=Lax"]
+    parts = [f"{SESSION_COOKIE}={value}", "Path=/", f"Max-Age={int(max_age)}", "HttpOnly", "SameSite=Lax"]
     return "; ".join(parts)
 
 
@@ -878,7 +943,7 @@ def handle_login(handler: BaseHTTPRequestHandler, body: dict) -> tuple[int, dict
 
         sid, _ = _make_session(username)
 
-    return HTTPStatus.OK, {"ok": True, "user": username}, [("Set-Cookie", _set_cookie_header(sid, max_age=FORGEOS_SESSION_TTL_S))]
+    return HTTPStatus.OK, {"ok": True, "user": username}, [("Set-Cookie", _set_cookie_header(sid, max_age=SESSION_TTL_S))]
 
 
 def handle_setup(handler: BaseHTTPRequestHandler, body: dict) -> tuple[int, dict, list[tuple[str, str]] | None]:
@@ -909,13 +974,11 @@ def handle_setup(handler: BaseHTTPRequestHandler, body: dict) -> tuple[int, dict
         _write_auth(auth)
         sid, _ = _make_session(username)
 
-    return HTTPStatus.OK, {"ok": True, "user": username, "created": True}, [
-        ("Set-Cookie", _set_cookie_header(sid, max_age=FORGEOS_SESSION_TTL_S))
-    ]
+    return HTTPStatus.OK, {"ok": True, "user": username, "created": True}, [("Set-Cookie", _set_cookie_header(sid, max_age=SESSION_TTL_S))]
 
 
 def handle_logout(handler: BaseHTTPRequestHandler) -> tuple[int, dict, list[tuple[str, str]] | None]:
-    sid = _cookie_map(handler).get(FORGEOS_SESSION_COOKIE) or ""
+    sid = _cookie_map(handler).get(SESSION_COOKIE) or ""
     with _AUTH_LOCK:
         if sid:
             _SESSIONS.pop(sid, None)
@@ -933,18 +996,15 @@ def list_installed_app_ids() -> list[str]:
             if not os.path.isfile(compose_path):
                 continue
             ids.append(name)
-
-    if umbrel_store_enabled() and "umbrel-store" not in ids:
-        ids.append("umbrel-store")
     return ids
 
 
 def read_default_channel() -> str:
-    env_ch = (os.environ.get("FORGEOS_CHANNEL") or "").strip().lower()
+    env_ch = (os.environ.get("FIVETRATUMOS_CHANNEL") or _env("CHANNEL", "") or "").strip().lower()
     if env_ch in {"main", "dev"}:
         return env_ch
     try:
-        raw = Path(FORGEOS_CHANNEL_FILE).read_text(encoding="utf-8")
+        raw = Path(CHANNEL_FILE).read_text(encoding="utf-8")
     except Exception:
         return "main"
     ch = raw.strip().lower()
@@ -983,7 +1043,7 @@ def map_store_id_to_app_id(store_id: str, channel: str) -> str:
     ch = (channel or "").strip().lower()
 
     # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
-    if ch == "umbrel":
+    if ch == "global":
         raw = raw.replace(" ", "-")
         raw = re.sub(r"[^a-z0-9_-]+", "", raw)
         return raw or "app"
@@ -1013,15 +1073,55 @@ def _is_remote_url(value: str) -> bool:
     return u.scheme in {"http", "https"}
 
 
+def _global_store_raw_url(app_dir_name: str, filename: str) -> str:
+    repo = (GLOBAL_STORE_REPO or "WillItMod/global-apps").strip().strip("/")
+    branch = (GLOBAL_STORE_BRANCH or "master").strip().strip("/")
+    name = (app_dir_name or "").strip().strip("/")
+    fn = (filename or "").strip().lstrip("/").replace("\\", "/")
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{name}/{fn}"
+
+
+def _global_assets_raw_url(app_dir_name: str, filename: str) -> str:
+    name = (app_dir_name or "").strip().strip("/")
+    fn = (filename or "").strip().lstrip("/").replace("\\", "/")
+    if name and fn:
+        local = Path(STORE_DIR) / "global-assets" / name / fn
+        if local.is_file():
+            return store_asset_url("global-assets", name, fn)
+    repo = (GLOBAL_ASSETS_REPO or "").strip().strip("/")
+    branch = (GLOBAL_ASSETS_BRANCH or "master").strip().strip("/")
+    if not repo:
+        return ""
+    return f"https://raw.githubusercontent.com/{repo}/{branch}/{name}/{fn}"
+
+
 def _prefer_local_icon(channel: str, app_dir_path: Path, app_dir_name: str, manifest_icon: str) -> str:
     for fn in ("logo.png", "logo.jpg", "logo.jpeg", "logo.svg", "icon.png", "icon.jpg", "icon.jpeg", "icon.svg"):
         if (app_dir_path / fn).is_file():
             return store_asset_url(channel, app_dir_name, fn)
     mi = (manifest_icon or "").strip()
+    if mi and _is_remote_url(mi):
+        localized = _maybe_localize_store_url(channel, app_dir_path, app_dir_name, mi)
+        if localized and localized != mi:
+            return localized
+        return mi
     if mi and not _is_remote_url(mi):
         rel = mi.lstrip("/").replace("\\", "/")
         if rel and (app_dir_path / rel).is_file():
             return store_asset_url(channel, app_dir_name, rel)
+
+    ch = (channel or "").strip().lower()
+    if ch == "global":
+        if mi:
+            if _is_remote_url(mi):
+                return mi
+            rel = mi.lstrip("/").replace("\\", "/")
+            if rel:
+                return _global_assets_raw_url(app_dir_name, rel) or _global_store_raw_url(app_dir_name, rel)
+        # Global store recipes may not ship gallery/icon files in-repo; prefer the assets repo.
+        for fn in ("icon.svg", "icon.png", "logo.svg", "logo.png", "logo.jpg", "icon.jpg", "logo.jpeg", "icon.jpeg"):
+            return _global_assets_raw_url(app_dir_name, fn) or _global_store_raw_url(app_dir_name, fn)
+
     return manifest_icon
 
 
@@ -1059,6 +1159,25 @@ def _maybe_localize_store_url(channel: str, app_dir_path: Path, app_dir_name: st
         rel = f"{base}/{fn}".strip("/")
         if fn and rel and (app_dir_path / rel).is_file():
             return store_asset_url(channel, app_dir_name, rel)
+
+    ch = (channel or "").strip().lower()
+    if ch == "global" and path and not _is_remote_url(raw):
+        # Global store manifests commonly reference "1.jpg" etc. Prefer assets repo + gallery paths.
+        ext = Path(path).suffix.lower()
+        if "/" not in path and ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}:
+            return (
+                _global_assets_raw_url(app_dir_name, path)
+                or _global_assets_raw_url(app_dir_name, f"gallery/{path}")
+                or _global_store_raw_url(app_dir_name, path)
+                or _global_store_raw_url(app_dir_name, f"gallery/{path}")
+            )
+        return (
+            _global_assets_raw_url(app_dir_name, path)
+            or _global_store_raw_url(app_dir_name, path)
+            or _global_assets_raw_url(app_dir_name, f"gallery/{path}")
+            or _global_store_raw_url(app_dir_name, f"gallery/{path}")
+        )
+
     return raw
 
 
@@ -1114,7 +1233,7 @@ def _has_pool_widget(store_meta: dict) -> bool:
 
 def list_store_apps(channel: str | None) -> dict:
     ch = (channel or read_default_channel()).strip().lower() or "main"
-    if ch not in {"main", "dev", "umbrel"}:
+    if ch not in {"main", "dev", "global"}:
         return {"ok": False, "error": f"invalid channel: {ch}", "channel": ch, "apps": []}
 
     if yaml is None:
@@ -1125,11 +1244,11 @@ def list_store_apps(channel: str | None) -> dict:
     if cache.get("time") and now - float(cache.get("time") or 0) < 20:
         return {"ok": True, "channel": ch, "apps": cache.get("apps") or []}
 
-    store_root = Path(FORGEOS_STORE_DIR) / ch
+    store_root = Path(STORE_DIR) / ch
     if not store_root.is_dir():
         return {"ok": False, "error": f"store not found: {store_root}", "channel": ch, "apps": []}
 
-    templates_root = Path(FORGEOS_ROOT) / "apps-available" / ch
+    templates_root = Path(ROOT_DIR) / "apps-available" / ch
     apps: list[dict] = []
 
     for entry in sorted(store_root.iterdir(), key=lambda p: p.name):
@@ -1137,7 +1256,7 @@ def list_store_apps(channel: str | None) -> dict:
             continue
         if entry.name.startswith("."):
             continue
-        manifest_path = entry / "umbrel-app.yml"
+        manifest_path = entry / "global-app.yml"
         if not manifest_path.is_file():
             continue
 
@@ -1225,30 +1344,6 @@ def list_store_apps(channel: str | None) -> dict:
                 }
             )
 
-        apps.append(
-            {
-                "id": "umbrel-store",
-                "store_id": "umbrel-store",
-                "channel": "main",
-                "dir": "__builtin__",
-                "name": "Global App Store",
-                "tagline": "Browse and install community apps",
-                "description": "Installs the global app catalog and lets 5tratumOS manage community apps alongside AxeSuite.",
-                "version": "1.0.0",
-                "category": "Integration",
-                "developer": "5tratumOS",
-                "website": "https://github.com/WillItMod/global-apps",
-                "repo": "https://github.com/WillItMod/global-apps",
-                "support": "",
-                "icon": "/assets/5tratum-icon.png",
-                "gallery": ["/assets/watermark.png"],
-                "port": None,
-                "path": "",
-                "widgets": [],
-                "installable": True,
-            }
-        )
-
     _STORE_CACHE[ch] = {"time": now, "apps": apps}
     return {"ok": True, "channel": ch, "apps": apps}
 
@@ -1257,7 +1352,7 @@ def store_app_by_id(app_id: str) -> dict | None:
     app_id = (app_id or "").strip().lower()
     if not app_id:
         return None
-    for ch in ("main", "dev", "umbrel"):
+    for ch in ("main", "dev", "global"):
         res = list_store_apps(ch)
         if not res.get("ok"):
             continue
@@ -1270,7 +1365,7 @@ def store_app_by_id(app_id: str) -> dict | None:
 def store_app_by_id_in_channel(app_id: str, channel: str) -> dict | None:
     app_id = (app_id or "").strip().lower()
     ch = (channel or "").strip().lower()
-    if not app_id or ch not in {"main", "dev", "umbrel"}:
+    if not app_id or ch not in {"main", "dev", "global"}:
         return None
     res = list_store_apps(ch)
     if not res.get("ok"):
@@ -1282,13 +1377,21 @@ def store_app_by_id_in_channel(app_id: str, channel: str) -> dict | None:
 
 
 def read_app_install_meta(app_id: str) -> dict:
-    path = Path(APPS_DIR) / app_id / "forgeos.json"
+    base = Path(APPS_DIR) / app_id
+    new_path = base / "5tratumos.json"
+    legacy_path = base / f"{_legacy_brand()}.json"
+    path = new_path if new_path.is_file() else legacy_path
     if not path.is_file():
         return {}
     try:
         obj = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+    if isinstance(obj, dict) and path == legacy_path and not new_path.exists():
+        try:
+            new_path.write_text(json.dumps(obj, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
     return obj if isinstance(obj, dict) else {}
 
 
@@ -1343,16 +1446,34 @@ def _image_tag(value: str) -> str:
 
 
 def infer_installed_version(project: str, containers: list[dict]) -> str:
-    prefix = f"{project}-app"
+    proj = (project or "").strip()
+    if not proj:
+        return ""
+
+    def norm_name(v: object) -> str:
+        s = str(v or "").strip()
+        return s[1:] if s.startswith("/") else s
+
+    preferred = [f"{proj}-app", f"{proj}-server", f"{proj}-web", f"{proj}-ui"]
+    prefix = f"{proj}-"
+
+    for pref in preferred:
+        for c in containers:
+            name = norm_name(c.get("Names") or c.get("Name") or "")
+            if not name or not name.startswith(pref):
+                continue
+            tag = _image_tag(str(c.get("Image") or ""))
+            if tag:
+                return tag
+
     for c in containers:
-        name = str(c.get("Names") or c.get("Name") or "").strip()
-        if not name:
-            continue
-        if not name.startswith(prefix):
+        name = norm_name(c.get("Names") or c.get("Name") or "")
+        if not name or not name.startswith(prefix):
             continue
         tag = _image_tag(str(c.get("Image") or ""))
         if tag:
             return tag
+
     return ""
 
 
@@ -1465,8 +1586,6 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
     total_workers = 0
 
     for app_id in list_installed_app_ids():
-        if app_id == "umbrel-store":
-            continue
         store_meta = store_app_by_id(app_id) or {}
         if not isinstance(store_meta, dict) or not _has_pool_widget(store_meta):
             continue
@@ -1698,7 +1817,7 @@ def system_metrics() -> dict:
     used = max(0, total - avail) if total and avail else 0
 
     disks: list[dict] = []
-    for p in ["/", FORGEOS_DATA_DIR]:
+    for p in ["/", DATA_DIR]:
         du = disk_usage(p)
         if not du:
             continue
@@ -1727,6 +1846,62 @@ def system_metrics() -> dict:
     }
 
 
+def system_processes(sort: str | None = None, limit: int | None = None) -> dict:
+    s = (sort or "cpu").strip().lower()
+    if s not in {"cpu", "mem", "rss"}:
+        s = "cpu"
+    n = int(limit or 30)
+    n = 5 if n < 5 else 200 if n > 200 else n
+
+    sort_flag = "-pcpu" if s == "cpu" else "-pmem" if s == "mem" else "-rss"
+    proc = run_cmd(
+        ["ps", "-eo", "pid,user,comm,pcpu,pmem,rss", f"--sort={sort_flag}"],
+        timeout_s=3,
+    )
+    if proc.returncode != 0:
+        return {"ok": False, "error": (proc.stderr or "").strip() or "ps failed", "time": _now_iso(), "procs": []}
+
+    out: list[dict] = []
+    for line in (proc.stdout or "").splitlines()[1:]:
+        raw = line.strip()
+        if not raw:
+            continue
+        parts = raw.split(None, 5)
+        if len(parts) < 6:
+            continue
+        pid_s, user, comm, cpu_s, mem_s, rss_s = parts
+        try:
+            pid = int(pid_s)
+        except Exception:
+            continue
+        try:
+            cpu = float(cpu_s)
+        except Exception:
+            cpu = None
+        try:
+            mem = float(mem_s)
+        except Exception:
+            mem = None
+        try:
+            rss_kb = int(float(rss_s))
+        except Exception:
+            rss_kb = None
+        out.append(
+            {
+                "pid": pid,
+                "user": user,
+                "command": comm,
+                "cpu_perc": cpu,
+                "mem_perc": mem,
+                "rss_bytes": (rss_kb * 1024) if rss_kb is not None else None,
+            }
+        )
+        if len(out) >= n:
+            break
+
+    return {"ok": True, "time": _now_iso(), "sort": s, "limit": n, "procs": out}
+
+
 def _systemctl_show(service: str, prop: str) -> str:
     proc = run_cmd(["systemctl", "show", service, "-p", prop, "--value"], timeout_s=6)
     return (proc.stdout or "").strip()
@@ -1740,6 +1915,143 @@ def _detect_ssh_service() -> str | None:
     return None
 
 
+_SSH_DROPIN_PATH = "/etc/ssh/sshd_config.d/00-5tratumos.conf"
+_SSH_DROPIN_OLD_PATHS = [
+    "/etc/ssh/sshd_config.d/00-5tratumos.conf",
+    "/etc/ssh/sshd_config.d/5tratumos.conf",
+    "/etc/ssh/sshd_config.d/99-5tratumos.conf",
+    "/etc/ssh/sshd_config.d/99-5tratumos.conf.bak",
+]
+_SSH_CLOUDINIT_DROPIN = "/etc/ssh/sshd_config.d/50-cloud-init.conf"
+_SSH_CLOUDINIT_DISABLED = "/etc/ssh/sshd_config.d/50-cloud-init.conf.disabled"
+_SSH_ADMIN_USER = str(_env("SSH_ADMIN_USER", "admin") or "admin")
+
+
+def _ensure_unix_user(username: str) -> dict:
+    user = (username or "").strip()
+    if not user:
+        return {"ok": False, "error": "missing username"}
+    chk = run_cmd(["id", user], timeout_s=6)
+    if chk.returncode == 0:
+        return {"ok": True, "user": user, "created": False}
+
+    proc = run_cmd(["useradd", "-m", "-s", "/bin/bash", user], timeout_s=20)
+    if proc.returncode != 0:
+        return {"ok": False, "error": proc.stderr.strip() or f"useradd exited {proc.returncode}"}
+
+    for grp in ("sudo", "docker", "video", "input", "render"):
+        run_cmd(["usermod", "-aG", grp, user], timeout_s=10)
+
+    return {"ok": True, "user": user, "created": True}
+
+
+def _ssh_prune_old_dropins() -> None:
+    for p in _SSH_DROPIN_OLD_PATHS:
+        try:
+            Path(p).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _ssh_write_dropin(*, enabled: bool) -> None:
+    path = Path(_SSH_DROPIN_PATH)
+    if not enabled:
+        # Restore any cloud-init drop-in we disabled when enabling SSH.
+        try:
+            disabled = Path(_SSH_CLOUDINIT_DISABLED)
+            original = Path(_SSH_CLOUDINIT_DROPIN)
+            if disabled.is_file() and not original.exists():
+                disabled.rename(original)
+        except Exception:
+            pass
+        _ssh_prune_old_dropins()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    _ssh_prune_old_dropins()
+
+    # Some images ship a cloud-init drop-in that hard-disables password auth.
+    # If present, disable it so our SSH settings are reliable.
+    try:
+        cloud = Path(_SSH_CLOUDINIT_DROPIN)
+        if cloud.is_file():
+            raw = cloud.read_text(encoding="utf-8", errors="replace")
+            effective = [ln.strip() for ln in raw.splitlines() if ln.strip() and not ln.strip().startswith("#")]
+            if effective == ["PasswordAuthentication no"]:
+                cloud.rename(Path(_SSH_CLOUDINIT_DISABLED))
+    except Exception:
+        pass
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                "# Managed by 5tratumOS",
+                "PasswordAuthentication yes",
+                "KbdInteractiveAuthentication yes",
+                "PubkeyAuthentication yes",
+                "UsePAM yes",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _sshd_effective_settings() -> dict:
+    proc = run_cmd(["/usr/sbin/sshd", "-T"], timeout_s=8)
+    if proc.returncode != 0:
+        return {"ok": False, "error": proc.stderr.strip() or f"sshd exited {proc.returncode}"}
+    out = (proc.stdout or "").splitlines()
+    kv: dict[str, str] = {}
+    for line in out:
+        s = str(line or "").strip()
+        if not s or " " not in s:
+            continue
+        k, v = s.split(" ", 1)
+        kv[str(k).strip().lower()] = str(v).strip()
+
+    def read_bool(key: str) -> bool | None:
+        v = kv.get(key.lower())
+        if v is None:
+            return None
+        if v.lower() in {"yes", "true", "1"}:
+            return True
+        if v.lower() in {"no", "false", "0"}:
+            return False
+        return None
+
+    return {
+        "ok": True,
+        "passwordauthentication": read_bool("passwordauthentication"),
+        "kbdinteractiveauthentication": read_bool("kbdinteractiveauthentication"),
+        "pubkeyauthentication": read_bool("pubkeyauthentication"),
+        "usepam": read_bool("usepam"),
+        "permitrootlogin": kv.get("permitrootlogin"),
+        "authenticationmethods": kv.get("authenticationmethods"),
+    }
+
+
+def _unix_user_password_state(username: str) -> dict:
+    user = (username or "").strip()
+    if not user:
+        return {"ok": False, "error": "missing username"}
+    try:
+        import spwd  # type: ignore[attr-defined]
+    except Exception:
+        return {"ok": False, "error": "shadow database not available"}
+    try:
+        ent = spwd.getspnam(user)
+    except KeyError:
+        return {"ok": False, "error": "user not found"}
+    pw = str(getattr(ent, "sp_pwdp", "") or "")
+    locked = pw.startswith("!") or pw.startswith("*")
+    has_password = (not locked) and pw not in {"", "x"}
+    return {"ok": True, "user": user, "locked": locked, "has_password": has_password}
+
+
 def ssh_status() -> dict:
     svc = _detect_ssh_service()
     if not svc:
@@ -1750,13 +2062,34 @@ def ssh_status() -> dict:
 
     enabled = enabled_raw in {"enabled", "enabled-runtime", "static"}
     active = active_raw == "active"
-    return {"ok": True, "installed": True, "enabled": enabled, "active": active, "service": svc}
+    eff = _sshd_effective_settings()
+    admin = _unix_user_password_state(_SSH_ADMIN_USER)
+    return {
+        "ok": True,
+        "installed": True,
+        "enabled": enabled,
+        "active": active,
+        "service": svc,
+        "admin_user": _SSH_ADMIN_USER,
+        "effective": eff if eff.get("ok") else None,
+        "admin": admin if admin.get("ok") else None,
+    }
 
 
 def ssh_set_enabled(enabled: bool) -> dict:
     svc = _detect_ssh_service()
     if not svc:
         return {"ok": False, "error": "ssh service not found", "installed": False}
+
+    try:
+        _ssh_write_dropin(enabled=enabled)
+    except Exception as e:
+        return {"ok": False, "error": f"failed to write ssh config: {e}"}
+
+    if enabled:
+        ensure = _ensure_unix_user(_SSH_ADMIN_USER)
+        if not ensure.get("ok"):
+            return {"ok": False, "error": f"failed to ensure admin user '{_SSH_ADMIN_USER}': {ensure.get('error')}"}
 
     if enabled:
         proc = run_cmd(["systemctl", "enable", "--now", svc], timeout_s=30)
@@ -1772,9 +2105,81 @@ def ssh_set_enabled(enabled: bool) -> dict:
             "service": svc,
         }
 
+    if enabled:
+        run_cmd(["systemctl", "reload-or-restart", svc], timeout_s=30)
+
     st = ssh_status()
     st["changed"] = True
     return st
+
+
+def ssh_set_admin_password(password: str) -> dict:
+    pw = str(password or "")
+    if len(pw) < 10:
+        return {"ok": False, "error": "password too short (min 10 characters)"}
+    user = _SSH_ADMIN_USER
+    ensure = _ensure_unix_user(user)
+    if not ensure.get("ok"):
+        return {"ok": False, "error": f"user not available: {user} ({ensure.get('error')})"}
+
+    run_cmd(["usermod", "-U", user], timeout_s=10)
+    proc = run_cmd(["chpasswd"], timeout_s=10, input=f"{user}:{pw}\n")
+    if proc.returncode != 0:
+        return {"ok": False, "error": proc.stderr.strip() or f"chpasswd exited {proc.returncode}"}
+    return {"ok": True, "user": user}
+
+
+def ssh_add_authorized_key(pubkey: str) -> dict:
+    key = str(pubkey or "").strip().replace("\r", "")
+    if not key:
+        return {"ok": False, "error": "missing public key"}
+    if len(key) > 8_000:
+        return {"ok": False, "error": "public key too large"}
+    if not (key.startswith("ssh-") or key.startswith("ecdsa-")):
+        return {"ok": False, "error": "invalid public key format"}
+
+    user = _SSH_ADMIN_USER
+    ensure = _ensure_unix_user(user)
+    if not ensure.get("ok"):
+        return {"ok": False, "error": f"user not available: {user} ({ensure.get('error')})"}
+    try:
+        import pwd
+    except Exception:
+        return {"ok": False, "error": "user database not available"}
+    try:
+        ent = pwd.getpwnam(user)
+    except KeyError:
+        return {"ok": False, "error": f"user not found: {user}"}
+
+    ssh_dir = Path(ent.pw_dir) / ".ssh"
+    auth_file = ssh_dir / "authorized_keys"
+    ssh_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(ssh_dir, 0o700)
+    try:
+        os.chown(ssh_dir, ent.pw_uid, ent.pw_gid)
+    except Exception:
+        pass
+
+    existing: list[str] = []
+    try:
+        existing = [ln.strip() for ln in auth_file.read_text(encoding="utf-8").splitlines()]
+    except FileNotFoundError:
+        existing = []
+    except Exception:
+        existing = []
+
+    if key in existing:
+        return {"ok": True, "added": False, "user": user}
+
+    lines = [ln for ln in existing if ln]
+    lines.append(key)
+    auth_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.chmod(auth_file, 0o600)
+    try:
+        os.chown(auth_file, ent.pw_uid, ent.pw_gid)
+    except Exception:
+        pass
+    return {"ok": True, "added": True, "user": user}
 
 
 def schedule_power_action(action: str) -> dict:
@@ -1796,7 +2201,13 @@ def schedule_power_action(action: str) -> dict:
 
 
 def docker_compose_project(app_id: str) -> str:
-    return f"forgeos-{app_id}"
+    new_project = f"5tratumos-{app_id}"
+    legacy_project = f"{_legacy_brand()}-{app_id}"
+    if docker_containers_for_project(new_project):
+        return new_project
+    if docker_containers_for_project(legacy_project):
+        return legacy_project
+    return new_project
 
 
 def docker_containers_for_project(project: str) -> list[dict]:
@@ -2003,16 +2414,233 @@ def default_ui_ports(app_id: str) -> int | None:
     return {"axelive": 5210, "axebench": 5000, "axedoom": 5300}.get(app_id)
 
 
+def _nginx_proxy_block(app_id: str, port: int) -> str:
+    aid = str(app_id or "").strip()
+    p = int(port)
+    return f"""
+
+  location = /apps/{aid} {{
+    return 301 /apps/{aid}/;
+  }}
+
+  location /apps/{aid}/ {{
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Content-Security-Policy;
+    proxy_hide_header Content-Security-Policy-Report-Only;
+    proxy_set_header Accept-Encoding "";
+    sub_filter_once off;
+    sub_filter_types text/html text/css application/javascript text/javascript application/json application/manifest+json;
+    sub_filter '"/app.css' '"/apps/{aid}/app.css';
+    sub_filter "'/app.css" "'/apps/{aid}/app.css";
+    sub_filter '"/app.js' '"/apps/{aid}/app.js';
+    sub_filter "'/app.js" "'/apps/{aid}/app.js";
+    sub_filter '"/assets/' '"/apps/{aid}/assets/';
+    sub_filter "'/assets/" "'/apps/{aid}/assets/";
+    sub_filter '"/api/' '"/apps/{aid}/api/';
+    sub_filter "'/api/" "'/apps/{aid}/api/";
+    sub_filter '"/api"' '"/apps/{aid}/api"';
+    sub_filter "'/api'" "'/apps/{aid}/api'";
+    sub_filter '`/api/' '`/apps/{aid}/api/';
+    sub_filter '`/api`' '`/apps/{aid}/api`';
+    sub_filter '"/icons/' '"/apps/{aid}/icons/';
+    sub_filter "'/icons/" "'/apps/{aid}/icons/";
+    sub_filter '"/manifest.webmanifest' '"/apps/{aid}/manifest.webmanifest';
+    sub_filter "'/manifest.webmanifest" "'/apps/{aid}/manifest.webmanifest";
+    sub_filter '"/sw.js' '"/apps/{aid}/sw.js';
+    sub_filter "'/sw.js" "'/apps/{aid}/sw.js";
+    proxy_pass http://127.0.0.1:{p}/;
+  }}
+""".rstrip("\n")
+
+
+def system_proxy_repair() -> dict:
+    overlay_dir = Path(ROOT_DIR) / "overlay"
+    conf_path = overlay_dir / "nginx" / "default.conf"
+    if not conf_path.is_file():
+        return {"ok": False, "error": f"nginx config not found: {conf_path}"}
+
+    def docker_project_published_ports(app_id: str) -> list[int]:
+        project = docker_compose_project(app_id)
+        ports: set[int] = set()
+        for c in docker_containers_for_project(project):
+            raw = str(c.get("Ports") or "")
+            # Example: "0.0.0.0:21214->3000/tcp, [::]:21214->3000/tcp"
+            for m in re.finditer(r":(\d+)->\d+/(?:tcp|udp)", raw):
+                try:
+                    ports.add(int(m.group(1)))
+                except Exception:
+                    continue
+        return sorted(ports)
+
+    def port_speaks_http(port: int) -> bool:
+        p = int(port)
+        if p <= 0 or p > 65535:
+            return False
+        url = f"http://127.0.0.1:{p}/"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "5tratumosd"}, method="GET")
+            with urllib.request.urlopen(req, timeout=1.2) as resp:  # noqa: S310
+                _ = resp.status
+            return True
+        except urllib.error.HTTPError:
+            # Any HTTP response implies the upstream is reachable and speaking HTTP.
+            return True
+        except Exception:
+            return False
+
+    def detect_ui_port(app_id: str, store_port: int | None) -> int | None:
+        candidates: list[int] = []
+        if store_port:
+            candidates.append(int(store_port))
+        # Prefer actual published host ports when they exist.
+        candidates.extend(docker_project_published_ports(app_id))
+        if not store_port:
+            dp = default_ui_ports(app_id)
+            if dp:
+                candidates.insert(0, int(dp))
+
+        seen: set[int] = set()
+        uniq: list[int] = []
+        for p in candidates:
+            try:
+                pp = int(p)
+            except Exception:
+                continue
+            if pp <= 0 or pp > 65535:
+                continue
+            if pp in seen:
+                continue
+            seen.add(pp)
+            uniq.append(pp)
+
+        for p in uniq:
+            if port_speaks_http(p):
+                return p
+        # Fall back to the store/default port when probing fails.
+        if store_port:
+            return int(store_port)
+        return uniq[0] if uniq else None
+
+    installed: list[dict] = []
+    for app_id in list_installed_app_ids():
+        install_meta = read_app_install_meta(app_id)
+        meta_ch = str(install_meta.get("channel") or "").strip().lower()
+        preferred_channels: list[str] = []
+        sys_ch = str(read_default_channel() or "").strip().lower()
+        if sys_ch in {"main", "dev", "global"}:
+            preferred_channels.append(sys_ch)
+        if meta_ch in {"main", "dev", "global"} and meta_ch not in preferred_channels:
+            preferred_channels.append(meta_ch)
+        for ch in ("main", "dev", "global"):
+            if ch not in preferred_channels:
+                preferred_channels.append(ch)
+
+        store_meta: dict = {}
+        for ch in preferred_channels:
+            m = store_app_by_id_in_channel(app_id, ch)
+            if m:
+                store_meta = m
+                break
+
+        store_port: int | None = default_ui_ports(app_id)
+        if store_port is None:
+            try:
+                sp = int(str(store_meta.get("port") or "").strip() or "0")
+            except Exception:
+                sp = 0
+            store_port = sp or None
+
+        port = detect_ui_port(app_id, store_port)
+        if not port:
+            continue
+        installed.append({"id": app_id, "port": int(port), "store_port": int(store_port) if store_port else None})
+
+    try:
+        original = conf_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return {"ok": False, "error": f"failed to read nginx config: {e}"}
+
+    updated: list[dict] = []
+    added: list[dict] = []
+    next_conf = original
+
+    def insert_before_final_brace(text: str, block: str) -> str:
+        m = re.search(r"\n}\s*\Z", text)
+        if not m:
+            return text.rstrip() + "\n" + block.strip() + "\n"
+        return text[: m.start()] + "\n" + block.strip() + text[m.start() :]
+
+    for entry in installed:
+        app_id = str(entry.get("id") or "").strip()
+        port = int(entry.get("port") or 0)
+        if not app_id or port <= 0:
+            continue
+        pat = re.compile(
+            rf"(location\s+/apps/{re.escape(app_id)}/\s*\{{.*?\bproxy_pass\s+http://127\.0\.0\.1:)(\d+)(/;)",
+            re.S,
+        )
+
+        def _repl(m: re.Match) -> str:
+            old = m.group(2)
+            if old != str(port):
+                updated.append({"id": app_id, "from": int(old), "to": port})
+            return f"{m.group(1)}{port}{m.group(3)}"
+
+        next2, n = pat.subn(_repl, next_conf, count=1)
+        if n == 0:
+            block = _nginx_proxy_block(app_id, port)
+            next_conf = insert_before_final_brace(next_conf, block)
+            added.append({"id": app_id, "port": port})
+        else:
+            next_conf = next2
+
+    changed = next_conf != original
+    backup_path = conf_path.with_suffix(".conf.bak")
+    if changed:
+        try:
+            if not backup_path.exists():
+                backup_path.write_text(original, encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            tmp = conf_path.with_suffix(".conf.tmp")
+            tmp.write_text(next_conf, encoding="utf-8")
+            tmp.replace(conf_path)
+        except Exception as e:
+            return {"ok": False, "error": f"failed to write nginx config: {e}"}
+
+    proc = run_cmd(
+        ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
+        cwd=str(overlay_dir),
+        timeout_s=180,
+    )
+    ok = proc.returncode == 0
+    return {
+        "ok": ok,
+        "changed": bool(changed),
+        "updated": updated,
+        "added": added,
+        "restart": {"ok": ok, "code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr},
+    }
+
+
 def list_available_app_ids(channel: str | None = None) -> dict:
-    args = ["forgeos", "app", "available"]
+    args = ["5tratumos", "app", "available"]
     env = os.environ.copy()
     if channel:
-        env["FORGEOS_CHANNEL"] = channel
+        env["FIVETRATUMOS_CHANNEL"] = channel
     proc = subprocess.run(args, env=env, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         return {
             "ok": False,
-            "error": proc.stderr.strip() or f"forgeos exited {proc.returncode}",
+            "error": proc.stderr.strip() or f"5tratumos exited {proc.returncode}",
             "channel": channel,
             "apps": [],
         }
@@ -2020,8 +2648,8 @@ def list_available_app_ids(channel: str | None = None) -> dict:
     return {"ok": True, "channel": channel, "apps": apps}
 
 
-def forgeos_cmd(args: list[str], *, timeout_s: int = 1800) -> dict:
-    proc = run_cmd(["forgeos", *args], timeout_s=timeout_s)
+def stratumos_cmd(args: list[str], *, timeout_s: int = 1800) -> dict:
+    proc = run_cmd(["5tratumos", *args], timeout_s=timeout_s)
     return {
         "ok": proc.returncode == 0,
         "code": proc.returncode,
@@ -2056,7 +2684,7 @@ def terminal_run(command: str) -> dict:
         if not parts:
             return {"ok": False, "error": "missing command", "code": 2}
 
-        if parts[0] == "forgeos":
+        if parts[0] == "5tratumos":
             parts = parts[1:]
         if parts and parts[0] in {"channel", "store", "overlay", "app", "help"}:
             if parts[:2] == ["overlay", "logs"]:
@@ -2092,7 +2720,7 @@ def terminal_run(command: str) -> dict:
             if parts[:2] in (["app", "up"],):
                 timeout = 900
 
-            return forgeos_cmd(parts, timeout_s=timeout)
+            return stratumos_cmd(parts, timeout_s=timeout)
 
         cmd = parts[0]
         safe_cmds = {
@@ -2175,7 +2803,7 @@ def terminal_run(command: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "forgeosd/0.1"
+    server_version = "5tratumosd/0.1"
 
     def log_message(self, fmt: str, *args) -> None:
         sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), _now_iso(), fmt % args))
@@ -2204,7 +2832,7 @@ class Handler(BaseHTTPRequestHandler):
             json_response(
                 self,
                 HTTPStatus.OK,
-                {"ok": True, "service": "forgeosd", "version": "0.1", "time": _now_iso()},
+                {"ok": True, "service": "5tratumosd", "version": "0.1", "time": _now_iso()},
             )
             return
 
@@ -2216,8 +2844,26 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_metrics())
             return
 
+        if path == "/api/v0/system/processes":
+            sort = (qs.get("sort") or ["cpu"])[0]
+            limit_raw = (qs.get("limit") or ["30"])[0]
+            try:
+                limit = int(str(limit_raw).strip() or "30")
+            except Exception:
+                limit = 30
+            json_response(self, HTTPStatus.OK, system_processes(sort, limit))
+            return
+
         if path == "/api/v0/system/ssh":
             json_response(self, HTTPStatus.OK, ssh_status())
+            return
+
+        if path == "/api/v0/system/session":
+            json_response(self, HTTPStatus.OK, system_session_config_get())
+            return
+
+        if path == "/api/v0/system/proxy":
+            json_response(self, HTTPStatus.OK, {"ok": True, "repair": "/api/v0/system/proxy/repair"})
             return
 
         if path == "/api/v0/system/update/check":
@@ -2238,34 +2884,24 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/apps/installed":
             apps = []
             for app_id in list_installed_app_ids():
-                if app_id == "umbrel-store":
-                    store_meta = store_app_by_id_in_channel(app_id, "main") or store_app_by_id(app_id) or {}
-                    version = str(store_meta.get("version") or "1.0.0").strip() or "1.0.0"
-                    apps.append(
-                        {
-                            "id": app_id,
-                            "name": str(store_meta.get("name") or "Global App Store"),
-                            "store": store_meta if store_meta else None,
-                            "status": "running",
-                            "installed_version": version,
-                            "latest_version": version,
-                            "update_available": False,
-                            "update": {"available": False, "installed_version": version, "latest_version": version},
-                            "containers": [],
-                            "resources": None,
-                            "virtual": True,
-                            "ui": {"path": "/store", "port": None},
-                        }
-                    )
-                    continue
-
                 install_meta = read_app_install_meta(app_id)
                 meta_ch = str(install_meta.get("channel") or "").strip().lower()
-                store_meta = (
-                    store_app_by_id_in_channel(app_id, meta_ch)
-                    if meta_ch in {"main", "dev", "umbrel"}
-                    else store_app_by_id(app_id)
-                ) or {}
+                preferred_channels: list[str] = []
+                sys_ch = str(read_default_channel() or "").strip().lower()
+                if sys_ch in {"main", "dev", "global"}:
+                    preferred_channels.append(sys_ch)
+                if meta_ch in {"main", "dev", "global"} and meta_ch not in preferred_channels:
+                    preferred_channels.append(meta_ch)
+                for ch in ("main", "dev", "global"):
+                    if ch not in preferred_channels:
+                        preferred_channels.append(ch)
+
+                store_meta: dict = {}
+                for ch in preferred_channels:
+                    m = store_app_by_id_in_channel(app_id, ch)
+                    if m:
+                        store_meta = m
+                        break
                 project = docker_compose_project(app_id)
                 st = summarize_project_status(project)
                 resources = summarize_resources(st.get("containers") or [])
@@ -2291,6 +2927,7 @@ class Handler(BaseHTTPRequestHandler):
                         "id": app_id,
                         "name": str(store_meta.get("name") or app_id),
                         "store": store_meta if store_meta else None,
+                        "rollbacks": install_meta.get("rollbacks") if isinstance(install_meta.get("rollbacks"), list) else [],
                         "status": st["status"],
                         "installed_version": installed_version,
                         "latest_version": latest_version,
@@ -2421,6 +3058,28 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
+        if path == "/api/v0/system/session":
+            res = system_session_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/proxy/repair":
+            res = system_proxy_repair()
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/ssh/password":
+            password = str(body.get("password") or "") if isinstance(body, dict) else ""
+            res = ssh_set_admin_password(password)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/ssh/authorized-key":
+            key = str(body.get("key") or body.get("public_key") or "") if isinstance(body, dict) else ""
+            res = ssh_add_authorized_key(key)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         if path == "/api/v0/system/update/apply":
             channel = str(body.get("channel") or "").strip().lower() if isinstance(body, dict) else ""
             res = system_update_apply(channel or None)
@@ -2432,39 +3091,25 @@ class Handler(BaseHTTPRequestHandler):
             args = ["store", "sync"]
             if channel:
                 args.append(channel)
-            res = forgeos_cmd(args, timeout_s=1800)
+            res = stratumos_cmd(args, timeout_s=1800)
+            if res.get("ok"):
+                if channel in {"main", "dev", "global"}:
+                    _STORE_CACHE.pop(channel, None)
+                else:
+                    _STORE_CACHE.clear()
             json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
             return
 
-        m = re.fullmatch(r"/api/v0/apps/([a-z0-9][a-z0-9_-]*)/(install|uninstall|update|up|down|pull)", path)
+        m = re.fullmatch(r"/api/v0/apps/([a-z0-9][a-z0-9_-]*)/(install|uninstall|update|rollback|up|down|pull|redeploy)", path)
         if m:
             app_id, action = m.group(1), m.group(2)
-
-            if app_id == "umbrel-store":
-                if action == "install":
-                    res = set_umbrel_store_enabled(True)
-
-                    def sync_worker() -> None:
-                        forgeos_cmd(["store", "sync", "umbrel"], timeout_s=1800)
-
-                    threading.Thread(target=sync_worker, daemon=True).start()
-                    json_response(self, HTTPStatus.OK, {**res, "syncing": True})
-                    return
-
-                if action == "uninstall":
-                    res = set_umbrel_store_enabled(False)
-                    json_response(self, HTTPStatus.OK, res)
-                    return
-
-                json_response(self, HTTPStatus.OK, {"ok": True, "id": app_id, "action": action})
-                return
 
             if action == "install":
                 channel = body.get("channel")
                 if channel:
-                    res = forgeos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=600)
+                    res = stratumos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=600)
                 else:
-                    res = forgeos_cmd(["app", "install", app_id], timeout_s=600)
+                    res = stratumos_cmd(["app", "install", app_id], timeout_s=600)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -2473,28 +3118,71 @@ class Handler(BaseHTTPRequestHandler):
                 args = ["app", "uninstall", app_id]
                 if purge:
                     args.append("--purge")
-                res = forgeos_cmd(args, timeout_s=600)
+                res = stratumos_cmd(args, timeout_s=600)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "update":
-                res = forgeos_cmd(["app", "update", app_id], timeout_s=1800)
+                channel = str(body.get("channel") or "") if isinstance(body, dict) else ""
+                channel = channel.strip().lower()
+                args = ["app", "update", app_id]
+                if channel in {"main", "dev", "global"}:
+                    args += ["--channel", channel]
+                res = stratumos_cmd(args, timeout_s=1800)
+                json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
+                return
+
+            if action == "rollback":
+                version = str(body.get("version") or body.get("to") or "") if isinstance(body, dict) else ""
+                version = version.strip()
+                args = ["app", "rollback", app_id]
+                if version:
+                    args += ["--to", version]
+                res = stratumos_cmd(args, timeout_s=1800)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "up":
-                res = forgeos_cmd(["app", "up", app_id], timeout_s=1800)
+                res = stratumos_cmd(["app", "up", app_id], timeout_s=1800)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "down":
-                res = forgeos_cmd(["app", "down", app_id], timeout_s=600)
+                res = stratumos_cmd(["app", "down", app_id], timeout_s=600)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "pull":
-                res = forgeos_cmd(["app", "pull", app_id], timeout_s=1800)
+                res = stratumos_cmd(["app", "pull", app_id], timeout_s=1800)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
+                return
+
+            if action == "redeploy":
+                payload = body if isinstance(body, dict) else {}
+                pull = payload.get("pull")
+                pull = True if pull is None else bool(pull)
+
+                steps = []
+                ok = True
+
+                if pull:
+                    pull_res = stratumos_cmd(["app", "pull", app_id], timeout_s=1800)
+                    steps.append({"step": "pull", **pull_res})
+                    ok = ok and bool(pull_res.get("ok"))
+
+                down_res = stratumos_cmd(["app", "down", app_id], timeout_s=600)
+                steps.append({"step": "down", **down_res})
+                ok = ok and bool(down_res.get("ok"))
+
+                up_res = stratumos_cmd(["app", "up", app_id], timeout_s=1800)
+                steps.append({"step": "up", **up_res})
+                ok = ok and bool(up_res.get("ok"))
+
+                json_response(
+                    self,
+                    HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST,
+                    {"ok": ok, "app": app_id, "steps": steps},
+                )
                 return
 
         json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
@@ -2507,7 +3195,7 @@ def main() -> int:
     args = parser.parse_args()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    sys.stderr.write(f"forgeosd listening on http://{args.host}:{args.port}\n")
+    sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

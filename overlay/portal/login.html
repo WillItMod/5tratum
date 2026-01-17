@@ -6,13 +6,13 @@
     <title>5tratumOS Login</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/forgeos.css?v=17" />
+    <link rel="stylesheet" href="/5tratumos.css?v=30" />
   </head>
   <body class="forgeos-login-body min-h-screen bg-axe-950 text-slate-100">
     <main class="forgeos-login" aria-label="5tratumOS Login">
       <section class="axe-card forgeos-login__card">
         <div class="forgeos-login__brand">
-          <img class="forgeos-login__mark" src="/assets/5tratum-icon.png" alt="" />
+          <img class="forgeos-login__mark" src="/assets/New%20Logos/large.png" alt="" />
           <div class="min-w-0">
             <div class="forgeos-login__title">5tratumOS</div>
             <div id="login-subtitle" class="forgeos-login__sub">Sign in to continue.</div>
@@ -156,7 +156,7 @@
 
             submitBtn.disabled = true;
             const prev = submitBtn.textContent;
-            submitBtn.textContent = mode === 'setup' ? 'Creating…' : 'Signing in…';
+            submitBtn.textContent = mode === 'setup' ? 'Creating...' : 'Signing in...';
 
             try {
               const res = await fetch(endpoint, {

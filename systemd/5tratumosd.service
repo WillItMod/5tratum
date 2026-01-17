@@ -5,8 +5,8 @@ Wants=network-online.target docker.service
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/forgeos/daemon
-ExecStart=/usr/bin/python3 /opt/forgeos/daemon/forgeosd.py --host 127.0.0.1 --port 9000
+WorkingDirectory=/opt/5tratumos/daemon
+ExecStart=/usr/bin/python3 /opt/5tratumos/daemon/5tratumosd.py --host 127.0.0.1 --port 9000
 Restart=on-failure
 RestartSec=1
 

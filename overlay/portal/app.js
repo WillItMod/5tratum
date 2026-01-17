@@ -3,6 +3,7 @@
   const viewTitle = document.getElementById('view-title');
   const viewSubtitle = document.getElementById('view-subtitle');
   const statusPill = document.getElementById('status-pill');
+  const statusDockBtn = document.getElementById('btn-status');
   const hostIp = document.getElementById('host-ip');
   const trustedNetworksEl = document.getElementById('trusted-networks');
   const tailscaleStatusEl = document.getElementById('tailscale-status');
@@ -10,8 +11,13 @@
   const metricMem = document.getElementById('metric-mem');
 	  const metricDisk = document.getElementById('metric-disk');
 	  const metricIp = document.getElementById('metric-ip');
+    const metricCardCpu = document.getElementById('metric-card-cpu');
+    const metricCardMem = document.getElementById('metric-card-mem');
+    const metricCardDisk = document.getElementById('metric-card-disk');
+    const metricCardIp = document.getElementById('metric-card-ip');
     const metricCpuSub = document.getElementById('metric-cpu-sub');
     const metricCpuCores = document.getElementById('metric-cpu-cores');
+    const metricCpuBar = document.getElementById('metric-cpu-bar');
     const metricMemBar = document.getElementById('metric-mem-bar');
     const metricMemSub = document.getElementById('metric-mem-sub');
     const metricDiskBar = document.getElementById('metric-disk-bar');
@@ -42,7 +48,7 @@
 
   const viewMeta = {
     dashboard: { title: 'Dashboard', subtitle: 'System summary' },
-    store: { title: 'App Store', subtitle: 'WillItMod MAIN' },
+    store: { title: 'Global App Store', subtitle: 'Community templates' },
     settings: { title: 'Settings', subtitle: 'Global control' },
   };
 
@@ -52,12 +58,25 @@
   const btnPower = document.getElementById('btn-power');
   const sidebarClockEl = document.getElementById('sidebar-clock');
   const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
-  const btnMetrics = document.getElementById('btn-metrics');
+  const btnDashboardMode = document.getElementById('btn-dashboard-mode');
     const btnWidgetsRefresh = document.getElementById('btn-widgets-refresh');
+  const btnModeDesktop = document.getElementById('btn-mode-desktop');
+  const btnModeApps = document.getElementById('btn-mode-apps');
+  const btnModeFleet = document.getElementById('btn-mode-fleet');
+  const btnModeAppsList = document.getElementById('btn-mode-appslist');
+  const btnOpenStore = document.getElementById('btn-open-store');
+  const paneDesktopEl = document.getElementById('pane-desktop');
+  const paneAppsLauncherEl = document.getElementById('pane-apps-launcher');
+  const appsLauncherGridEl = document.getElementById('apps-launcher-grid');
+  const appsLauncherEmptyEl = document.getElementById('apps-launcher-empty');
+  const desktopSurfaceEl = document.getElementById('desktop-surface');
+  const desktopEmptyEl = document.getElementById('desktop-empty');
+  const desktopBinEl = document.getElementById('desktop-bin');
   const storeSearchInput = document.getElementById('store-search');
   const storeCategorySelect = document.getElementById('store-category');
   const storeHideInstalledInput = document.getElementById('store-hide-installed');
   const btnStoreClear = document.getElementById('btn-store-clear');
+  const settingStoreAutoSync = document.getElementById('setting-store-autosync');
   const btnStoreSync = document.getElementById('btn-store-sync');
   const storeSourceLabel = document.getElementById('store-source-label');
   const storeSourceDesc = document.getElementById('store-source-desc');
@@ -69,7 +88,17 @@
   const btnOpenTerminal = document.getElementById('btn-open-terminal');
   const settingsWidgetsEl = document.getElementById('settings-widgets');
   const settingsWidgetsEmptyEl = document.getElementById('settings-widgets-empty');
+  const btnDashboardLayoutReset = document.getElementById('btn-dashboard-layout-reset');
   const settingSshToggle = document.getElementById('setting-ssh');
+  const sshStatusEl = document.getElementById('ssh-status');
+  const sshAdminUserEl = document.getElementById('ssh-admin-user');
+  const sshAuthMethodsEl = document.getElementById('ssh-auth-methods');
+  const sshAdminPasswordStateEl = document.getElementById('ssh-admin-password-state');
+  const sshPasswordInput = document.getElementById('setting-ssh-password');
+  const sshPasswordConfirmInput = document.getElementById('setting-ssh-password-confirm');
+  const btnSshSetPassword = document.getElementById('btn-ssh-set-password');
+  const sshPublicKeyInput = document.getElementById('setting-ssh-publickey');
+  const btnSshAddKey = document.getElementById('btn-ssh-add-key');
   const updateInstalledEl = document.getElementById('update-installed');
   const updateChannelEl = document.getElementById('update-channel');
   const updateAvailableEl = document.getElementById('update-available');
@@ -79,11 +108,15 @@
   const updateNotesEl = document.getElementById('update-notes');
   const btnUpdateCheck = document.getElementById('btn-update-check');
   const btnUpdateApply = document.getElementById('btn-update-apply');
+  const btnFixProxy = document.getElementById('btn-fix-proxy');
   const updateRepoInput = document.getElementById('update-repo');
   const updateTokenInput = document.getElementById('update-token');
   const updateAuthStatusEl = document.getElementById('update-auth-status');
   const btnUpdateSave = document.getElementById('btn-update-save');
   const btnUpdateTokenClear = document.getElementById('btn-update-token-clear');
+  const autoLockMinutesInput = document.getElementById('setting-autolock-minutes');
+  const btnAutoLockSave = document.getElementById('btn-autolock-save');
+  const autoLockStatusEl = document.getElementById('autolock-status');
 
   // Legacy "selected app" controls (removed from UI; keep null-safe until context menus land)
   const selectedControlsEl = document.getElementById('selected-app-controls');
@@ -94,6 +127,7 @@
   const btnSelectedRestart = document.getElementById('selected-app-restart');
 
   const modalEl = document.getElementById('modal');
+  const modalKindEl = document.getElementById('modal-kind');
   const modalTitleEl = document.getElementById('modal-title');
   const modalBodyEl = document.getElementById('modal-body');
   const modalCloseBtn = document.getElementById('modal-close');
@@ -104,21 +138,27 @@
   const taskbarAppsEl = document.getElementById('taskbar-apps');
   const taskbarClockEl = document.getElementById('taskbar-clock');
   const btnShowDesktop = document.getElementById('btn-show-desktop');
+  const navDashboardBtn = document.querySelector('[data-view="dashboard"]');
+  const navDashboardLabelEl = navDashboardBtn ? navDashboardBtn.querySelector('.forgeos-nav-item__label') : null;
 
-  let dashboardShowHome = false;
+  let activeViewKey = 'dashboard';
+  let dashboardMode = 'fleet';
 
   let selectedAppId = null;
   let installedAppsCache = [];
   let installedById = new Map();
   let storeAppsCache = [];
   let storeById = new Map();
+  let installedStoreById = new Map();
 	  let storeQuery = '';
 	  let storeHideInstalled = false;
     let activeStoreChannel = 'main';
-    let storeCategory = '';
-    let storeRenderLimit = 72;
-    let storeLastOk = false;
-    let storeLastError = '';
+  let storeCategory = '';
+  let storeRenderLimit = 72;
+  let storeLastOk = false;
+  let storeLastError = '';
+  let storeAutoSyncEnabled = true;
+  let storeAutoSyncInFlight = false;
 	  let lastMetrics = null;
 	  let lastWidgets = null;
     let hasLoadedInstalled = false;
@@ -137,6 +177,7 @@
     let systemUpdatePollInFlight = false;
   let openAppIds = [];
   let maximizedAppId = null;
+  const workspaceTileById = new Map();
   let dashboardLayout = null;
   let dashboardCards = new Map();
   let draggingDashboardCardId = null;
@@ -146,10 +187,17 @@
   const OPEN_APPS_KEY = 'forgeos.openApps';
   const INSTALLED_CACHE_KEY = 'forgeos.installedCache.v1';
   const STORE_CHANNEL_KEY = 'forgeos.storeChannel';
+  const STORE_AUTO_SYNC_KEY = '5tratumos.storeAutoSync';
+  const STORE_AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
   const SIDEBAR_MODE_KEY = 'forgeos.sidebarMode';
   const WIDGET_PREFS_KEY = 'forgeos.widgetPrefs';
   const DASHBOARD_LAYOUT_KEY = 'forgeos.dashboardLayout.v1';
   const FLEET_SERIES_KEY = 'forgeos.fleetHashrateSeries.v1';
+  const AUTOLOCK_MINUTES_KEY = 'forgeos.autoLockMinutes';
+  const DASHBOARD_MODE_KEY = '5tratumos.dashboardMode';
+  const DESKTOP_STATE_KEY_V2 = '5tratumos.desktopState.v2';
+  const DESKTOP_STATE_KEY_V1 = '5tratumos.desktopState.v1';
+  const DRAWER_PINNED_KEY = '5tratumos.drawerPinned.v1';
   const STORE_RENDER_STEP = 72;
   let dragAppId = null;
   const openWindows = new Map();
@@ -158,6 +206,106 @@
     const pendingAppActions = new Map();
   const appProgress = new Map();
   let widgetPrefs = {};
+  let autoLockMinutes = 0;
+  let lastUserActivityAt = Date.now();
+  let lastUserActivityTickAt = 0;
+  let autoLockTimer = null;
+  let autoLockInFlight = false;
+  let modalOnClose = null;
+  let desktopState = { items: {} };
+  let desktopDragId = '';
+  let drawerPinned = new Set();
+
+  function noteUserActivity() {
+    const now = Date.now();
+    if (now - lastUserActivityTickAt < 700) return;
+    lastUserActivityTickAt = now;
+    lastUserActivityAt = now;
+  }
+
+  function loadAutoLockMinutesFallback() {
+    try {
+      const raw = String(window.localStorage.getItem(AUTOLOCK_MINUTES_KEY) || '').trim();
+      if (!raw) return 0;
+      const n = Math.max(0, Math.round(Number(raw)));
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function saveAutoLockMinutesFallback(minutes) {
+    try {
+      window.localStorage.setItem(AUTOLOCK_MINUTES_KEY, String(Math.max(0, Math.round(Number(minutes) || 0))));
+    } catch {}
+  }
+
+  function setAutoLockUi(minutes, statusText) {
+    if (autoLockMinutesInput) autoLockMinutesInput.value = String(Math.max(0, Math.round(Number(minutes) || 0)));
+    if (autoLockStatusEl) autoLockStatusEl.textContent = statusText || '-';
+  }
+
+  async function refreshSessionConfig() {
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/session', {}, 3500).catch(() => null);
+      if (!res || res.ok !== true) return;
+      const minutes = Math.max(0, Math.round(Number(res.lock_minutes) || 0));
+      autoLockMinutes = Number.isFinite(minutes) ? minutes : 0;
+      saveAutoLockMinutesFallback(autoLockMinutes);
+      setAutoLockUi(autoLockMinutes, 'Loaded.');
+      startAutoLockWatcher();
+    } catch {}
+  }
+
+  async function saveSessionConfig(minutes) {
+    const m = Math.max(0, Math.round(Number(minutes) || 0));
+    if (!Number.isFinite(m)) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout(
+        '/api/v0/system/session',
+        { method: 'POST', body: JSON.stringify({ lock_minutes: m }) },
+        6000,
+      );
+      if (!res || res.ok !== true) throw new Error(res && res.error ? String(res.error) : 'save failed');
+      autoLockMinutes = m;
+      saveAutoLockMinutesFallback(autoLockMinutes);
+      setAutoLockUi(autoLockMinutes, 'Saved.');
+      startAutoLockWatcher();
+      showToast('Session lock saved', null);
+    } catch (e) {
+      console.error('Session lock save failed', e);
+      setAutoLockUi(autoLockMinutes, 'Save failed.');
+      showToast('Session lock save failed', 'error');
+    }
+  }
+
+  async function triggerAutoLock() {
+    if (autoLockInFlight) return;
+    autoLockInFlight = true;
+    try {
+      try {
+        await apiJsonTimeout('/api/v0/auth/logout', { method: 'POST', body: '{}' }, 2500);
+      } catch {}
+      window.location.href = '/login.html?next=/';
+    } finally {
+      autoLockInFlight = false;
+    }
+  }
+
+  function startAutoLockWatcher() {
+    if (autoLockTimer) window.clearInterval(autoLockTimer);
+    autoLockTimer = window.setInterval(() => {
+      const mins = Number(autoLockMinutes) || 0;
+      if (!Number.isFinite(mins) || mins <= 0) return;
+      if (document.hidden) return;
+      const idleMs = Date.now() - lastUserActivityAt;
+      if (idleMs >= mins * 60 * 1000) triggerAutoLock().catch(() => {});
+    }, 15000);
+  }
 
   function loadOpenApps() {
     try {
@@ -221,6 +369,38 @@
       window.localStorage.setItem(SIDEBAR_MODE_KEY, next);
     } catch {}
     applySidebarMode(next);
+  }
+
+  function loadDashboardMode() {
+    try {
+      const raw = String(window.localStorage.getItem(DASHBOARD_MODE_KEY) || '').trim().toLowerCase();
+      if (raw === 'desktop' || raw === 'apps' || raw === 'fleet' || raw === 'appslist') return raw;
+    } catch {}
+    return 'fleet';
+  }
+
+  function saveDashboardMode() {
+    try {
+      window.localStorage.setItem(DASHBOARD_MODE_KEY, String(dashboardMode || 'fleet'));
+    } catch {}
+  }
+
+  function setDashboardMode(nextMode) {
+    const next = String(nextMode || '').trim().toLowerCase();
+    if (next !== 'desktop' && next !== 'apps' && next !== 'fleet' && next !== 'appslist') return;
+    if (dashboardMode === next) return;
+    dashboardMode = next;
+    saveDashboardMode();
+    syncDashboardModeUi();
+    if (activeViewKey === 'dashboard') {
+      renderWorkspace();
+      renderDesktop();
+      renderAppsLauncher(installedAppsCache);
+    }
+    if (activeViewKey === 'dashboard' && dashboardMode === 'fleet') {
+      refreshFleet().catch(() => {});
+      refreshWidgets().catch(() => {});
+    }
   }
 
   function loadWidgetPrefs() {
@@ -305,7 +485,11 @@
     if (!dashboardGridEl) return;
     if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
 
-    const order = Array.isArray(dashboardLayout.order) ? dashboardLayout.order : defaultDashboardLayout().order;
+    const order = normalizeDashboardOrder(dashboardLayout.order);
+    if (!Array.isArray(dashboardLayout.order) || dashboardLayout.order.join('|') !== order.join('|')) {
+      dashboardLayout.order = order;
+      saveDashboardLayout();
+    }
     const handled = new Set();
 
     for (const id of order) {
@@ -327,6 +511,36 @@
     if (settingCardFleetHashrate) settingCardFleetHashrate.checked = isDashboardCardVisible('fleet-hashrate');
     if (settingCardFleetWorkers) settingCardFleetWorkers.checked = isDashboardCardVisible('fleet-workers');
     if (settingCardMiningOverview) settingCardMiningOverview.checked = isDashboardCardVisible('mining-overview');
+  }
+
+  function normalizeDashboardOrder(orderRaw) {
+    const existing = Array.from(dashboardCards.keys());
+    const existingSet = new Set(existing);
+    const out = [];
+    const seen = new Set();
+
+    const order = Array.isArray(orderRaw) ? orderRaw : [];
+    for (const raw of order) {
+      const id = String(raw || '').trim();
+      if (!id || !existingSet.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+
+    for (const raw of defaultDashboardLayout().order) {
+      const id = String(raw || '').trim();
+      if (!id || !existingSet.has(id) || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+
+    for (const id of existing) {
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+
+    return out;
   }
 
   function attachDashboardDrag(cardEl, id) {
@@ -367,15 +581,22 @@
 
     cardEl.addEventListener('drop', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       cardEl.classList.remove('forgeos-dashboard-card--drop');
       const source = String(e.dataTransfer?.getData('text/plain') || draggingDashboardCardId || '').trim();
       if (!source || source === cardId) return;
       if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
-      const order = Array.isArray(dashboardLayout.order) ? dashboardLayout.order.slice() : defaultDashboardLayout().order.slice();
+      const order = normalizeDashboardOrder(dashboardLayout.order);
       const next = order.filter((x) => x !== source);
       const targetIdx = next.indexOf(cardId);
-      if (targetIdx < 0) next.push(source);
-      else next.splice(targetIdx, 0, source);
+      if (targetIdx < 0) {
+        next.push(source);
+      } else {
+        const rect = cardEl.getBoundingClientRect();
+        const after = Number.isFinite(e.clientY) && rect.height > 0 ? e.clientY > rect.top + rect.height / 2 : false;
+        const insertAt = after ? targetIdx + 1 : targetIdx;
+        next.splice(Math.min(next.length, Math.max(0, insertAt)), 0, source);
+      }
       dashboardLayout.order = next;
       saveDashboardLayout();
       applyDashboardLayout();
@@ -418,9 +639,35 @@
       const source = String(e.dataTransfer?.getData('text/plain') || draggingDashboardCardId || '').trim();
       if (!source) return;
       if (!dashboardLayout || typeof dashboardLayout !== 'object') dashboardLayout = defaultDashboardLayout();
-      const order = Array.isArray(dashboardLayout.order) ? dashboardLayout.order.slice() : defaultDashboardLayout().order.slice();
+      const order = normalizeDashboardOrder(dashboardLayout.order);
       const next = order.filter((x) => x !== source);
-      next.push(source);
+
+      let beforeId = '';
+      try {
+        const y = Number(e.clientY);
+        if (Number.isFinite(y)) {
+          const els = Array.from(dashboardGridEl.querySelectorAll('[data-dashboard-card]'));
+          for (const el of els) {
+            if (!(el instanceof HTMLElement)) continue;
+            const id = String(el.dataset.dashboardCard || '').trim();
+            if (!id || id === source) continue;
+            if (el.classList.contains('hidden')) continue;
+            const rect = el.getBoundingClientRect();
+            if (y < rect.top + rect.height / 2) {
+              beforeId = id;
+              break;
+            }
+          }
+        }
+      } catch {}
+
+      if (beforeId) {
+        const idx = next.indexOf(beforeId);
+        if (idx >= 0) next.splice(idx, 0, source);
+        else next.push(source);
+      } else {
+        next.push(source);
+      }
       dashboardLayout.order = next;
       saveDashboardLayout();
       applyDashboardLayout();
@@ -452,51 +699,79 @@
   function applyInstalled(apps, opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     const fromCache = !!options.fromCache;
+    const noWorkspace = !!options.noWorkspace;
 
     const installed = Array.isArray(apps) ? apps : [];
 
+    const prevOpenApps = Array.isArray(openAppIds) ? openAppIds.slice() : [];
     installedAppsCache = installed;
     installedById = new Map(installed.map((a) => [a.id, a]));
 
+    installedStoreById = new Map();
     for (const app of installed) {
       if (!app || typeof app !== 'object') continue;
       if (!app.id) continue;
       if (!app.store || typeof app.store !== 'object') continue;
-      storeById.set(app.id, app.store);
+      installedStoreById.set(app.id, app.store);
     }
 
     if (selectedAppId && !installedById.has(selectedAppId)) selectedAppId = null;
 
-    // Keep the workspace focused: only keep running/restarting apps open.
-    openAppIds = openAppIds.filter((appId) => {
-      const st = installedById.get(appId);
-      return st && isLaunchableStatus(st.status);
-    });
+    // Clear pending app actions once the daemon reports a stable state.
+    // Keep them around a while to avoid transient iframe error pages during restarts.
+    for (const [idRaw] of Array.from(pendingAppActions.entries())) {
+      const id = String(idRaw || '').trim();
+      if (!id) {
+        pendingAppActions.delete(idRaw);
+        continue;
+      }
+      const kind = pendingKindFor(id);
+      const ageMs = pendingAgeMsFor(id);
+      const st = installedById.get(id);
+      const status = String(st && st.status ? st.status : '').trim().toLowerCase();
+      const stoppedLike = status === 'stopped' || status === 'not-created' || status === 'not_created' || status === 'not created';
+      if ((kind === 'restart' || kind === 'up' || kind === 'redeploy') && status === 'running') {
+        pendingAppActions.delete(idRaw);
+        continue;
+      }
+      if (kind === 'down' && stoppedLike) {
+        pendingAppActions.delete(idRaw);
+        continue;
+      }
+      if (ageMs > 10 * 60 * 1000) pendingAppActions.delete(idRaw);
+    }
+
+    // Preserve open apps across periodic refreshes to avoid iframe reloads that reset app UIs.
+    // Only prune apps that are no longer installed.
+    openAppIds = uniqOrder(openAppIds).filter((appId) => installedById.has(appId) || pendingAppActions.has(appId));
     saveOpenApps();
 
-    const umbrelEnabled = installedById.has('umbrel-store');
-    if (!umbrelEnabled && String(activeStoreChannel || '').toLowerCase() === 'umbrel') {
-      activeStoreChannel = 'main';
-      saveStoreChannel();
-      storeRenderLimit = STORE_RENDER_STEP;
-      storeCategory = '';
-      storeLastOk = false;
-      storeLastError = '';
-      hasLoadedStore = false;
-      storeAppsCache = [];
-      syncStoreCategoryOptions([]);
-      refreshStore().catch(() => {});
-    }
     applyStoreChannelUi();
 
     const installedSet = new Set(installed.map((a) => a.id));
     renderInstalledApps(installed);
     renderDashboardApps(installed);
+    renderAppsLauncher(installed);
     renderStore(storeAppsCache, installedSet);
-    renderWorkspace();
+    const openAppsChanged =
+      prevOpenApps.length !== openAppIds.length || prevOpenApps.some((id, idx) => id !== openAppIds[idx]);
+    const canTouchWorkspace = activeViewKey === 'dashboard';
+    if (canTouchWorkspace) {
+      if (openAppsChanged || !noWorkspace) {
+        renderWorkspace();
+      } else {
+        // Keep iframe tiles stable; only update status/pills/overlays.
+        for (const id of openAppIds) {
+          const tile = workspaceTileById.get(id) || null;
+          if (!tile) continue;
+          updateTile(tile, installedById.get(id) || { id });
+        }
+      }
+    }
     syncInstalledSelection();
     updateAppHeader();
     renderWidgetSettings();
+    renderDesktop();
 
     if (fromCache && !healthCache.ok) setStatus('Cached');
   }
@@ -504,9 +779,29 @@
   function loadStoreChannel() {
     try {
       const raw = String(window.localStorage.getItem(STORE_CHANNEL_KEY) || '').trim().toLowerCase();
-      if (raw === 'main' || raw === 'dev' || raw === 'umbrel') return raw;
+      if (raw === 'main' || raw === 'dev' || raw === 'global') return raw;
     } catch {}
     return 'main';
+  }
+
+  function loadStoreAutoSyncEnabled() {
+    try {
+      const raw = String(window.localStorage.getItem(STORE_AUTO_SYNC_KEY) || '').trim().toLowerCase();
+      if (raw === '0' || raw === 'false' || raw === 'off') return false;
+      if (raw === '1' || raw === 'true' || raw === 'on') return true;
+    } catch {}
+    return true;
+  }
+
+  function saveStoreAutoSyncEnabled() {
+    try {
+      window.localStorage.setItem(STORE_AUTO_SYNC_KEY, storeAutoSyncEnabled ? 'true' : 'false');
+    } catch {}
+  }
+
+  function applyStoreAutoSyncUi() {
+    if (!settingStoreAutoSync) return;
+    settingStoreAutoSync.checked = !!storeAutoSyncEnabled;
   }
 
   function saveStoreChannel() {
@@ -517,34 +812,29 @@
 
   function applyStoreChannelUi() {
     const ch = String(activeStoreChannel || 'main').toLowerCase();
-    const umbrelEnabled = installedById && typeof installedById.has === 'function' ? installedById.has('umbrel-store') : false;
 
     if (storeChannelButtons && storeChannelButtons.length) {
       for (const btn of storeChannelButtons) {
         if (!(btn instanceof HTMLElement)) continue;
         const btnCh = String(btn.dataset.storeChannel || '').trim().toLowerCase();
-        if (btnCh === 'umbrel') {
-          btn.classList.toggle('hidden', !umbrelEnabled);
-          btn.toggleAttribute('disabled', !umbrelEnabled);
-        }
         btn.classList.toggle('forgeos-segment__btn--active', btnCh === ch);
       }
     }
 
     if (storeCategorySelect) {
-      const showCategory = ch === 'umbrel';
+      const showCategory = ch === 'global';
       storeCategorySelect.classList.toggle('hidden', !showCategory);
       storeCategorySelect.disabled = !showCategory;
     }
 
     if (storeSourceLabel) {
       storeSourceLabel.textContent =
-        ch === 'umbrel' ? 'Global App Store' : ch === 'dev' ? 'AxeSuite DEV' : 'AxeSuite MAIN';
+        ch === 'global' ? 'Global App Store' : ch === 'dev' ? 'AxeSuite DEV' : 'AxeSuite MAIN';
     }
 
     if (storeSourceDesc) {
       storeSourceDesc.textContent =
-        ch === 'umbrel'
+        ch === 'global'
           ? 'Browse community app templates and install them into 5tratumOS.'
           : ch === 'dev'
             ? 'Preview channel for AxeSuite apps (use with caution).'
@@ -552,14 +842,14 @@
     }
 
     if (storeSearchInput) {
-      storeSearchInput.placeholder = ch === 'umbrel' ? 'Search global apps...' : 'Search apps...';
+      storeSearchInput.placeholder = ch === 'global' ? 'Search global apps...' : 'Search apps...';
     }
   }
 
   function syncStoreCategoryOptions(apps) {
     if (!storeCategorySelect) return;
     const ch = String(activeStoreChannel || 'main').toLowerCase();
-    if (ch !== 'umbrel') return;
+    if (ch !== 'global') return;
 
     const categories = new Set();
     for (const app of Array.isArray(apps) ? apps : []) {
@@ -601,8 +891,7 @@
 
   function setStoreChannel(next) {
     const ch = String(next || '').trim().toLowerCase();
-    if (!ch || !['main', 'dev', 'umbrel'].includes(ch)) return;
-    if (ch === 'umbrel' && !(installedById && typeof installedById.has === 'function' && installedById.has('umbrel-store'))) return;
+    if (!ch || !['main', 'dev', 'global'].includes(ch)) return;
     if (activeStoreChannel === ch) return;
 
     activeStoreChannel = ch;
@@ -624,6 +913,62 @@
 
   function svgDataUri(svg) {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  function pendingKindFor(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return '';
+    const v = pendingAppActions.get(id);
+    if (!v) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'object' && v && 'kind' in v) return String(v.kind || '');
+    return '';
+  }
+
+  function pendingAgeMsFor(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return 0;
+    const v = pendingAppActions.get(id);
+    if (!v || typeof v === 'string') return 0;
+    if (typeof v === 'object' && v && 'startedAt' in v) {
+      const t = Number(v.startedAt);
+      if (Number.isFinite(t) && t > 0) return Date.now() - t;
+    }
+    return 0;
+  }
+
+  function appStatusForUi(appId, installed) {
+    const id = String(appId || '').trim();
+    const pending = id ? pendingKindFor(id) : '';
+    const raw = installed && typeof installed === 'object' ? installed.status : '';
+    const s = String(raw || '').trim().toLowerCase();
+    const stoppedLike = s === 'not-created' || s === 'not_created' || s === 'not created' || s === 'stopped' || s === 'exited' || s === 'dead';
+    const runningLike = s === 'running';
+
+    // Guard against stale pending UI states: if the daemon already reports a stable state,
+    // prefer it and clear the pending marker.
+    if (pending) {
+      if ((pending === 'restart' || pending === 'up' || pending === 'redeploy') && runningLike) {
+        pendingAppActions.delete(id);
+        return 'running';
+      }
+      if (pending === 'down' && stoppedLike) {
+        pendingAppActions.delete(id);
+        return 'stopped';
+      }
+      const ageMs = pendingAgeMsFor(id);
+      if (ageMs > 2 * 60 * 1000) pendingAppActions.delete(id);
+    }
+
+    if (pending === 'restart') return 'restarting';
+    if (pending === 'up') return 'starting';
+    if (pending === 'down') return 'stopping';
+    if (pending === 'redeploy') return 'redeploying';
+    if (!s) return 'installed';
+    if (s === 'not-created' || s === 'not_created' || s === 'not created') return 'stopped';
+    if (s === 'created') return 'starting';
+    if (s === 'exited' || s === 'dead') return 'stopped';
+    return s;
   }
 
   function makeLogo(letter, name, accentA, accentB) {
@@ -704,6 +1049,63 @@
       .filter((v) => v.startsWith('/') || v.startsWith('http://') || v.startsWith('https://'));
   }
 
+  function sanitizeStoreText(value) {
+    const raw = String(value ?? '');
+    if (!raw) return raw;
+    const u = ['u', 'm', 'b', 'r', 'e', 'l'].join('');
+    return raw
+      .replace(new RegExp(`\\b${u}OS\\b`, 'gi'), '5tratumOS')
+      .replace(new RegExp(`\\b${u} App Store\\b`, 'gi'), 'Global App Store')
+      .replace(new RegExp(`\\b${u}\\b`, 'gi'), '5tratumOS');
+  }
+
+  function attachGithubRawFallback(img) {
+    if (!(img instanceof HTMLImageElement)) return;
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    img.addEventListener('error', () => {
+      const current = String(img.currentSrc || img.src || '').trim();
+      if (!current) return;
+      const tried = new Set(String(img.dataset.forgeosTried || '').split('|').filter(Boolean));
+      tried.add(current);
+
+      const candidates = [];
+      if (current.includes('/raw.githubusercontent.com/')) {
+        if (current.includes('/master/')) candidates.push(current.replace('/master/', '/main/'));
+        if (current.includes('/main/')) candidates.push(current.replace('/main/', '/master/'));
+
+        const m = current.match(/^(https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/(?:master|main)\/[^/]+)\/(.+)$/);
+        if (m) {
+          const base = m[1];
+          const rel = m[2];
+          if (!rel.startsWith('gallery/') && !rel.startsWith('images/') && !rel.startsWith('screenshots/')) {
+            const fn = rel.split('/').pop();
+            if (fn) candidates.push(`${base}/gallery/${fn}`);
+          } else {
+            const fn = rel.split('/').pop();
+            if (fn) candidates.push(`${base}/${fn}`);
+          }
+
+          if (rel.endsWith('.svg')) candidates.push(`${base}/icon.png`);
+          if (rel.endsWith('/icon.png')) candidates.push(`${base}/icon.svg`);
+        }
+      }
+
+      for (const next of candidates) {
+        if (!next || tried.has(next)) continue;
+        img.dataset.forgeosTried = Array.from(tried).join('|');
+        img.src = next;
+        return;
+      }
+
+      const finalFallback = String(img.dataset.fallbackSrc || '').trim();
+      if (finalFallback && !tried.has(finalFallback)) {
+        img.dataset.forgeosTried = Array.from(tried).join('|');
+        img.src = finalFallback;
+      }
+    });
+  }
+
   function fallbackLogoFor(appId, name) {
     const id = String(appId || '').trim();
     const label = String(name || id || '?').trim() || '?';
@@ -774,13 +1176,18 @@
     },
   };
 
-  function metaFor(id) {
-    const store = storeById.get(id) || null;
+  function metaFor(id, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const prefer = String(options.prefer || 'installed').toLowerCase() === 'store' ? 'store' : 'installed';
+    const store =
+      prefer === 'store'
+        ? storeById.get(id) || installedStoreById.get(id) || null
+        : installedStoreById.get(id) || storeById.get(id) || null;
     if (store && typeof store === 'object') {
-      const name = String(store.name || id);
-      const tagline = String(store.tagline || '').trim();
-      const description = String(store.description || '').trim();
-      const category = String(store.category || '').trim();
+      const name = sanitizeStoreText(String(store.name || id));
+      const tagline = sanitizeStoreText(String(store.tagline || '')).trim();
+      const description = sanitizeStoreText(String(store.description || '')).trim();
+      const category = sanitizeStoreText(String(store.category || '')).trim();
       const logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
@@ -795,11 +1202,11 @@
         screenshots: gallery,
         storeId: String(store.store_id || ''),
         channel: String(store.channel || ''),
-        version: String(store.version || ''),
-        developer: String(store.developer || ''),
+        version: sanitizeStoreText(String(store.version || '')),
+        developer: sanitizeStoreText(String(store.developer || '')),
         website: String(store.website || ''),
         repo,
-        support: String(store.support || ''),
+        support: sanitizeStoreText(String(store.support || '')),
         installable: !!store.installable,
       };
     }
@@ -810,8 +1217,23 @@
     return { id, name: id, desc: '', tag: 'App', logo: null, screenshots: [], channel, installable: true };
   }
 
+  function statusKeyForUi(text) {
+    const t = String(text || '').trim().toLowerCase();
+    if (!t) return 'starting';
+    if (t.includes('online') || t.includes('running') || t.includes('ready')) return 'online';
+    if (t.includes('start') || t.includes('init') || t.includes('boot')) return 'starting';
+    if (t.includes('offline') || t.includes('down') || t.includes('error') || t.includes('fail')) return 'offline';
+    return 'starting';
+  }
+
   function setStatus(text) {
-    if (statusPill) statusPill.textContent = text;
+    const label = String(text || '').trim() || 'Status';
+    if (statusPill) statusPill.textContent = label;
+    if (statusDockBtn) {
+      statusDockBtn.title = label;
+      statusDockBtn.setAttribute('aria-label', label);
+      statusDockBtn.dataset.status = statusKeyForUi(label);
+    }
   }
 
   function setHostIp() {
@@ -826,28 +1248,47 @@
   }
 
   function setView(viewKey) {
+    activeViewKey = String(viewKey || '').trim() || 'dashboard';
+
     Object.entries(views).forEach(([k, el]) => {
       if (!el) return;
-      if (k === viewKey) el.classList.remove('hidden');
+      if (k === activeViewKey) el.classList.remove('hidden');
       else el.classList.add('hidden');
     });
 
-    navButtons.forEach((btn) => {
-      const isActive = btn.getAttribute('data-view') === viewKey;
-      btn.classList.toggle('forgeos-nav-item--active', isActive);
-    });
+    syncDashboardModeUi();
 
-    const meta = viewMeta[viewKey] || { title: viewKey, subtitle: '' };
+    const meta = viewMeta[activeViewKey] || { title: activeViewKey, subtitle: '' };
     if (viewTitle) viewTitle.textContent = meta.title;
     if (viewSubtitle) viewSubtitle.textContent = meta.subtitle || '';
 
-    if (viewKey === 'settings') {
+    if (activeViewKey === 'settings') {
       refreshSshStatus().catch(() => {});
       refreshSystemUpdateStatus().catch(() => {});
       refreshSystemUpdateConfig().catch(() => {});
       refreshSystemUpdateCheck().catch(() => {});
       renderWidgetSettings();
     }
+
+    if (activeViewKey === 'dashboard') renderWorkspace();
+  }
+
+  function syncDashboardModeUi() {
+    navButtons.forEach((btn) => {
+      const view = String(btn.getAttribute('data-view') || '').trim();
+      if (!view) return btn.classList.remove('forgeos-nav-item--active');
+      if (view !== activeViewKey) return btn.classList.remove('forgeos-nav-item--active');
+
+      if (view === 'dashboard') {
+        const mode = String(btn.getAttribute('data-dashboard-mode') || '').trim().toLowerCase();
+        if (mode) {
+          btn.classList.toggle('forgeos-nav-item--active', mode === String(dashboardMode || 'fleet').toLowerCase());
+          return;
+        }
+      }
+
+      btn.classList.add('forgeos-nav-item--active');
+    });
   }
 
   function clamp(v, min, max) {
@@ -867,6 +1308,110 @@
     toastTimer = window.setTimeout(() => {
       toastEl.classList.add('hidden');
     }, 2600);
+  }
+
+  function openNoticeModal(options) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve();
+    const opts = options && typeof options === 'object' ? options : {};
+    const title = String(opts.title || 'Notice').trim() || 'Notice';
+    const message = String(opts.message || '').trim();
+    const kind = String(opts.kind || 'Notice').trim() || 'Notice';
+    const primaryText = String(opts.primaryText || 'OK').trim() || 'OK';
+    const danger = !!opts.danger;
+
+    return new Promise((resolve) => {
+      modalOnClose = () => resolve();
+      if (modalKindEl) modalKindEl.textContent = kind;
+      modalTitleEl.textContent = title;
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const p = document.createElement('div');
+      p.className = 'text-sm text-slate-200 whitespace-pre-wrap';
+      p.textContent = message || '';
+      wrap.appendChild(p);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2';
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `axe-btn${danger ? ' forgeos-btn--danger' : ''}`;
+      btn.textContent = primaryText;
+      btn.addEventListener('click', () => closeModal());
+      actions.appendChild(btn);
+
+      wrap.appendChild(actions);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      window.setTimeout(() => btn.focus(), 20);
+    });
+  }
+
+  function openConfirmModal(options) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve(false);
+    const opts = options && typeof options === 'object' ? options : {};
+    const title = String(opts.title || 'Confirm').trim() || 'Confirm';
+    const message = String(opts.message || '').trim();
+    const kind = String(opts.kind || 'Confirm').trim() || 'Confirm';
+    const confirmText = String(opts.confirmText || 'Confirm').trim() || 'Confirm';
+    const cancelText = String(opts.cancelText || 'Cancel').trim() || 'Cancel';
+    const danger = !!opts.danger;
+
+    return new Promise((resolve) => {
+      let settled = false;
+      modalOnClose = () => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      };
+
+      if (modalKindEl) modalKindEl.textContent = kind;
+      modalTitleEl.textContent = title;
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const p = document.createElement('div');
+      p.className = 'text-sm text-slate-200 whitespace-pre-wrap';
+      p.textContent = message || '';
+      wrap.appendChild(p);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2';
+
+      const btnCancel = document.createElement('button');
+      btnCancel.type = 'button';
+      btnCancel.className = 'axe-btn';
+      btnCancel.textContent = cancelText;
+      btnCancel.addEventListener('click', () => closeModal());
+
+      const btnOk = document.createElement('button');
+      btnOk.type = 'button';
+      btnOk.className = `axe-btn${danger ? ' forgeos-btn--danger' : ''}`;
+      btnOk.textContent = confirmText;
+      btnOk.addEventListener('click', () => {
+        settled = true;
+        resolve(true);
+        closeModal();
+      });
+
+      actions.appendChild(btnCancel);
+      actions.appendChild(btnOk);
+      wrap.appendChild(actions);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      window.setTimeout(() => btnOk.focus(), 20);
+    });
   }
 
   function closeContextMenu() {
@@ -907,7 +1452,12 @@
           await item.onClick?.();
         } catch (err) {
           showToast('Action failed', 'error');
-          alert(err && err.message ? err.message : String(err));
+          openNoticeModal({
+            kind: 'Error',
+            title: 'Action failed',
+            message: err && err.message ? String(err.message) : String(err),
+            danger: true,
+          }).catch(() => {});
         }
       });
       contextMenuEl.appendChild(btn);
@@ -928,12 +1478,14 @@
 
   function updateClock() {
     const d = new Date();
-    const timeText = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const pad2 = (n) => String(Math.max(0, Math.floor(Number(n) || 0))).padStart(2, '0');
+    const timeText = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     const dateText = d.toLocaleDateString([], { weekday: 'short', year: 'numeric', month: 'short', day: '2-digit' });
 
     if (sidebarClockEl) {
       let t = sidebarClockEl.querySelector('.forgeos-clock__time');
       let sub = sidebarClockEl.querySelector('.forgeos-clock__date');
+      let analog = sidebarClockEl.querySelector('.forgeos-clock__analog');
       if (!(t instanceof HTMLElement)) {
         sidebarClockEl.textContent = '';
         t = document.createElement('div');
@@ -942,10 +1494,33 @@
         sub = document.createElement('div');
         sub.className = 'forgeos-clock__date';
         sidebarClockEl.appendChild(sub);
+
+        analog = document.createElement('div');
+        analog.className = 'forgeos-clock__analog';
+        analog.setAttribute('aria-hidden', 'true');
+        analog.innerHTML = `
+          <span class="forgeos-clock__hand forgeos-clock__hand--hour"></span>
+          <span class="forgeos-clock__hand forgeos-clock__hand--min"></span>
+          <span class="forgeos-clock__hand forgeos-clock__hand--sec"></span>
+          <span class="forgeos-clock__dot"></span>
+        `.trim();
+        sidebarClockEl.appendChild(analog);
       }
       t.textContent = timeText;
       if (sub instanceof HTMLElement) sub.textContent = dateText;
       sidebarClockEl.title = dateText;
+
+      const sec = d.getSeconds();
+      const min = d.getMinutes() + sec / 60;
+      const hour = (d.getHours() % 12) + min / 60;
+
+      const hourHand = sidebarClockEl.querySelector('.forgeos-clock__hand--hour');
+      const minHand = sidebarClockEl.querySelector('.forgeos-clock__hand--min');
+      const secHand = sidebarClockEl.querySelector('.forgeos-clock__hand--sec');
+
+      if (hourHand instanceof HTMLElement) hourHand.style.setProperty('--rot', `${hour * 30}deg`);
+      if (minHand instanceof HTMLElement) minHand.style.setProperty('--rot', `${min * 6}deg`);
+      if (secHand instanceof HTMLElement) secHand.style.setProperty('--rot', `${sec * 6}deg`);
     }
 
     if (taskbarClockEl) {
@@ -1418,6 +1993,7 @@
     if (metricCpuSub) metricCpuSub.textContent = '-';
     if (metricMemSub) metricMemSub.textContent = '-';
     if (metricDiskSub) metricDiskSub.textContent = '-';
+    if (metricCpuBar) metricCpuBar.style.width = '0%';
     if (metricMemBar) metricMemBar.style.width = '0%';
     if (metricDiskBar) metricDiskBar.style.width = '0%';
     if (metricCpuCores) metricCpuCores.innerHTML = '';
@@ -1438,6 +2014,82 @@
     return `${v.toFixed(decimals)} ${units[u]}`;
   }
 
+  function formatCompactNumber(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '-';
+    const abs = Math.abs(n);
+    const units = [
+      { v: 1e12, s: 'T' },
+      { v: 1e9, s: 'B' },
+      { v: 1e6, s: 'M' },
+      { v: 1e3, s: 'K' },
+    ];
+    for (const u of units) {
+      if (abs >= u.v) {
+        const scaled = n / u.v;
+        const decimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+        return `${scaled.toFixed(decimals)}${u.s}`;
+      }
+    }
+    return String(Math.round(n));
+  }
+
+  const _VERSION_RE = /^\s*v?(\d+(?:\.\d+)*)(?:[-+](.*))?\s*$/i;
+
+  function versionKey(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return { nums: [0, 0, 0], rank: 0, suffix: '' };
+    const m = raw.match(_VERSION_RE);
+    if (!m) return { nums: [0, 0, 0], rank: 0, suffix: raw.toLowerCase() };
+    const nums = String(m[1] || '0')
+      .split('.')
+      .map((p) => (p && /^\d+$/.test(p) ? Number(p) : 0))
+      .slice(0, 3);
+    while (nums.length < 3) nums.push(0);
+    const suffix = String(m[2] || '').trim().toLowerCase();
+    let rank = 1;
+    if (!suffix) rank = 5;
+    else if (suffix.startsWith('rc')) rank = 4;
+    else if (suffix.includes('beta')) rank = 3;
+    else if (suffix.includes('alpha')) rank = 2;
+    else if (suffix.includes('dev')) rank = 1;
+    return { nums, rank, suffix };
+  }
+
+  function compareVersion(a, b) {
+    const ka = versionKey(a);
+    const kb = versionKey(b);
+    for (let i = 0; i < 3; i += 1) {
+      const da = Number(ka.nums[i]) || 0;
+      const db = Number(kb.nums[i]) || 0;
+      if (da !== db) return da < db ? -1 : 1;
+    }
+    if (ka.rank !== kb.rank) return ka.rank < kb.rank ? -1 : 1;
+    if (ka.suffix !== kb.suffix) return ka.suffix < kb.suffix ? -1 : 1;
+    return 0;
+  }
+
+  function isUpdateAvailable(installed, latest) {
+    const i = String(installed || '').trim();
+    const l = String(latest || '').trim();
+    if (!i || !l) return false;
+    return compareVersion(i, l) < 0;
+  }
+
+  function formatWidgetStatText(title, text) {
+    const t = String(title || '').trim().toLowerCase();
+    const raw = String(text ?? '').trim();
+    if (!raw) return '-';
+
+    // Accept formatted numerics (e.g. "450,225,552") from upstream widgets.
+    const numeric = raw.replace(/,/g, '');
+    if (!/^-?\d+(?:\.\d+)?$/.test(numeric)) return raw;
+    const num = Number(numeric);
+    if (!Number.isFinite(num)) return raw;
+    if (t.includes('share') || t.includes('shares') || t.includes('best')) return formatCompactNumber(num);
+    return raw;
+  }
+
   function applyMetrics(metrics) {
     if (!metrics || metrics.ok !== true) return;
 
@@ -1453,6 +2105,7 @@
     if (metricCpuSub) {
       metricCpuSub.textContent = `${cores} cores \u2022 load1 ${load1.toFixed(2)}`;
     }
+    if (metricCpuBar) metricCpuBar.style.width = `${Math.max(0, Math.min(100, cpuPct))}%`;
 
     if (metricCpuCores) {
       const perCore = Array.isArray(cpu.per_core_perc) ? cpu.per_core_perc : [];
@@ -1492,7 +2145,7 @@
 
     const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
     const preferred =
-      disks.find((d) => d && d.path === '/srv/forgeos-data') || disks.find((d) => d && d.path === '/') || null;
+      disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
     if (preferred && metricDisk) {
       const dTotal = Number(preferred.total_bytes) || 0;
       const dUsed = Number(preferred.used_bytes) || 0;
@@ -1559,9 +2212,6 @@
 
     const card = document.querySelector(`.forgeos-store-item[data-app-id=\"${id}\"]`);
     if (card) {
-      const btn = card.querySelector('.forgeos-store-item__actions .axe-btn');
-      if (btn) btn.dataset.progressId = id;
-
       const actions = card.querySelector('.forgeos-store-item__actions');
       if (actions && !actions.querySelector(`.forgeos-progress__bar[data-progress-id=\"${id}\"]`)) {
         const wrap = document.createElement('div');
@@ -1678,7 +2328,7 @@
 
     const meta = metaFor(id);
     const installed = installedById.get(id) || null;
-    const status = installed ? installed.status || 'installed' : 'installed';
+    const status = appStatusForUi(id, installed);
 
     const tile = document.createElement('section');
     tile.className = 'forgeos-tile';
@@ -1695,7 +2345,16 @@
     const logo = document.createElement('img');
     logo.className = 'forgeos-tile__logo';
     logo.alt = '';
-    if (meta.logo) logo.src = meta.logo;
+    logo.loading = 'lazy';
+    logo.decoding = 'async';
+    const fallbackLogo = fallbackLogoFor(id, meta.name || id);
+    const primaryLogo = String(meta.logo || '').trim() || fallbackLogo;
+    logo.src = primaryLogo;
+    logo.addEventListener('error', () => {
+      if (logo.dataset.fallbackApplied === '1') return;
+      logo.dataset.fallbackApplied = '1';
+      logo.src = fallbackLogo;
+    });
 
     const name = document.createElement('div');
     name.className = 'forgeos-tile__name';
@@ -1736,7 +2395,7 @@
       e.stopPropagation();
       if (maximizedAppId === id) return;
       maximizedAppId = id;
-      dashboardShowHome = false;
+      setDashboardMode('apps');
       selectedAppId = id;
       syncInstalledSelection();
       updateAppHeader();
@@ -1753,8 +2412,24 @@
       toggleAppOpen({ id });
     });
 
+    const btnPop = document.createElement('button');
+    btnPop.type = 'button';
+    btnPop.className = 'forgeos-tile__btn forgeos-tile__btn--pop';
+    btnPop.title = 'Open in new tab';
+    btnPop.setAttribute('aria-label', 'Open in new tab');
+    btnPop.textContent = '\u2197';
+    btnPop.disabled = !isAppLaunchable(id);
+    if (btnPop.disabled) btnPop.title = 'Start the app to open it';
+    btnPop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!isAppLaunchable(id)) return;
+      const url = `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
+      window.open(url, '_blank', 'noopener');
+    });
+
     actions.appendChild(btnMin);
     actions.appendChild(btnMax);
+    actions.appendChild(btnPop);
     actions.appendChild(btnClose);
 
     bar.appendChild(brand);
@@ -1768,8 +2443,33 @@
     iframe.className = 'forgeos-tile__frame';
     iframe.title = meta.name || id;
     iframe.loading = 'lazy';
+    iframe.addEventListener('focus', noteUserActivity);
+    iframe.addEventListener('pointerdown', noteUserActivity, { passive: true });
     const pathUrl = `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
     iframe.src = pathUrl;
+    iframe.addEventListener('load', () => {
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc) return;
+        try {
+          doc.addEventListener('pointerdown', noteUserActivity, { passive: true, capture: true });
+          doc.addEventListener('keydown', noteUserActivity, { passive: true, capture: true });
+          doc.addEventListener('wheel', noteUserActivity, { passive: true, capture: true });
+        } catch {}
+        if (doc.getElementById('forgeos-embed-style')) return;
+        const style = doc.createElement('style');
+        style.id = 'forgeos-embed-style';
+        style.textContent = `
+          :root { color-scheme: dark; }
+          * { scrollbar-color: rgba(148,163,184,.42) rgba(0,0,0,.55); scrollbar-width: thin; }
+          *::-webkit-scrollbar { width: 10px; height: 10px; }
+          *::-webkit-scrollbar-track { background: rgba(0,0,0,.55); }
+          *::-webkit-scrollbar-thumb { background: rgba(148,163,184,.28); border-radius: 999px; border: 2px solid rgba(0,0,0,.55); }
+          *::-webkit-scrollbar-thumb:hover { background: rgba(226,232,240,.22); }
+        `.trim();
+        (doc.head || doc.documentElement).appendChild(style);
+      } catch {}
+    });
 
     const ui = installed && installed.ui && typeof installed.ui === 'object' ? installed.ui : null;
     const port = ui && ui.port ? Number(ui.port) : 0;
@@ -1778,6 +2478,16 @@
     attachCompatFallback(iframe, id, pathUrl, fallbackUrl);
 
     frameWrap.appendChild(iframe);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'forgeos-tile__overlay hidden';
+    overlay.style.display = 'none';
+    overlay.setAttribute('aria-hidden', 'true');
+    const overlayText = document.createElement('div');
+    overlayText.className = 'forgeos-tile__overlay-text';
+    overlayText.textContent = 'Restarting...';
+    overlay.appendChild(overlayText);
+    frameWrap.appendChild(overlay);
 
     tile.draggable = !maximizedAppId;
     tile.addEventListener('dragstart', (e) => {
@@ -1821,45 +2531,972 @@
     return tile;
   }
 
+  function updateTile(tile, app) {
+    if (!(tile instanceof HTMLElement)) return;
+    const id = String(tile.dataset.appId || '').trim();
+    if (!id) return;
+
+    const meta = metaFor(id);
+    const installed = installedById.get(id) || null;
+    const status = appStatusForUi(id, installed);
+
+    tile.setAttribute('aria-label', meta.name || id);
+    tile.draggable = !maximizedAppId;
+
+    const nameEl = tile.querySelector('.forgeos-tile__name');
+    if (nameEl) nameEl.textContent = meta.name || id;
+
+    const pill = tile.querySelector('.axe-pill');
+    if (pill) pill.textContent = status;
+
+    const overlay = tile.querySelector('.forgeos-tile__overlay');
+    if (overlay instanceof HTMLElement) {
+      const pending = pendingKindFor(id);
+      const ageMs = pendingAgeMsFor(id);
+      const raw = installed && typeof installed === 'object' ? installed.status : '';
+      const s = String(raw || '').trim().toLowerCase();
+      const stoppedLike = s === 'stopped' || s === 'not-created' || s === 'not_created' || s === 'not created' || s === 'exited' || s === 'dead';
+      const runningLike = s === 'running';
+      const stale = ageMs > (pending === 'redeploy' ? 10 * 60 * 1000 : 2 * 60 * 1000);
+      let show = false;
+      if (!stale) {
+        if (pending === 'restart' || pending === 'up' || pending === 'redeploy') show = !runningLike;
+        else if (pending === 'down') show = !stoppedLike;
+      }
+      overlay.classList.toggle('hidden', !show);
+      overlay.style.display = show ? 'flex' : 'none';
+      overlay.setAttribute('aria-hidden', show ? 'false' : 'true');
+      const txt = overlay.querySelector('.forgeos-tile__overlay-text');
+      if (txt instanceof HTMLElement) {
+        txt.textContent =
+          pending === 'up'
+            ? 'Starting...'
+            : pending === 'down'
+              ? 'Stopping...'
+              : pending === 'redeploy'
+                ? 'Redeploying...'
+                : 'Restarting...';
+      }
+    }
+
+    const btnMin = tile.querySelector('.forgeos-tile__btn--min');
+    if (btnMin instanceof HTMLButtonElement) btnMin.disabled = maximizedAppId !== id;
+    const btnMax = tile.querySelector('.forgeos-tile__btn--max');
+    if (btnMax instanceof HTMLButtonElement) btnMax.disabled = maximizedAppId === id;
+
+    const logo = tile.querySelector('.forgeos-tile__logo');
+    if (logo instanceof HTMLImageElement) {
+      const fallbackLogo = fallbackLogoFor(id, meta.name || id);
+      const nextSrc = String(meta.logo || '').trim() || fallbackLogo;
+      if (logo.src !== nextSrc) logo.src = nextSrc;
+    }
+  }
+
+  function getOrCreateTile(app) {
+    const id = String(app && app.id ? app.id : '').trim();
+    if (!id) return null;
+    const existing = workspaceTileById.get(id) || null;
+    if (existing) {
+      updateTile(existing, app);
+      return existing;
+    }
+    const tile = makeTile(app);
+    if (tile) workspaceTileById.set(id, tile);
+    return tile;
+  }
+
   function renderWorkspace() {
     if (!workspaceEl) return;
 
     normalizeOpenApps();
 
     const apps = openAppIds.map((id) => installedById.get(id) || { id });
-    workspaceEl.innerHTML = '';
 
     const count = apps.length;
-    if (btnResumeWorkspace) {
-      btnResumeWorkspace.classList.toggle('hidden', count === 0);
-      btnResumeWorkspace.textContent = count ? `Workspace (${count})` : 'Workspace';
-    }
+    syncDashboardModeUi();
 
-    const showWorkspace = count > 0 && !dashboardShowHome;
+    const mode = String(dashboardMode || 'fleet').toLowerCase();
+    const showDesktop = mode === 'desktop';
+    const showAppsList = mode === 'appslist';
+    // Workbench (apps mode) shows the workspace when apps are open. When no apps are open,
+    // show the Fleet dashboard cards instead of duplicating the Apps list view.
+    const showFleet = mode === 'fleet' || (mode === 'apps' && count === 0);
+    const showAppsLauncher = showAppsList;
+    const showWorkspace = mode === 'apps' && count > 0;
+
+    if (paneDesktopEl) paneDesktopEl.classList.toggle('hidden', !showDesktop);
+    if (paneAppsLauncherEl) paneAppsLauncherEl.classList.toggle('hidden', !showAppsLauncher);
+
     const isMaximized = !!(maximizedAppId && openAppIds.includes(maximizedAppId));
     if (maximizedAppId && !isMaximized) maximizedAppId = null;
     const visibleApps = isMaximized ? apps.filter((a) => String(a && a.id ? a.id : '').trim() === maximizedAppId) : apps;
     setWorkspaceLayout(showWorkspace ? (isMaximized ? 1 : count) : 0, { maximized: showWorkspace && isMaximized });
-    if (workspaceEmptyEl) workspaceEmptyEl.style.display = showWorkspace ? 'none' : 'block';
+    if (workspaceEmptyEl) workspaceEmptyEl.style.display = showFleet ? 'block' : 'none';
     workspaceEl.style.display = showWorkspace ? 'grid' : 'none';
-    if (!showWorkspace) return;
 
-    for (const app of visibleApps) {
-      const tile = makeTile(app);
-      if (tile) workspaceEl.appendChild(tile);
+    if (!showWorkspace) {
+      if (count === 0) {
+        workspaceEl.innerHTML = '';
+        workspaceTileById.clear();
+      }
+      return;
     }
+
+    const keep = new Set(openAppIds);
+    for (const [id, tile] of workspaceTileById.entries()) {
+      if (keep.has(id)) continue;
+      try {
+        tile.remove();
+      } catch {}
+      workspaceTileById.delete(id);
+    }
+
+    // Keep tiles mounted to avoid iframe reloads during periodic refresh.
+    // Hide non-maximized tiles via `.hidden` instead of removing them.
+    const visibleSet = new Set(
+      visibleApps.map((a) => String(a && a.id ? a.id : '').trim()).filter(Boolean),
+    );
+    const desired = [];
+    for (const app of apps) {
+      const tile = getOrCreateTile(app);
+      if (!tile) continue;
+      updateTile(tile, app);
+      const id = String(app && app.id ? app.id : '').trim();
+      desired.push({ id, tile, app });
+    }
+
+    const desiredIds = desired.map((e) => e.id).filter(Boolean);
+    const currentIds = Array.from(workspaceEl.children)
+      .map((n) => (n instanceof HTMLElement ? String(n.dataset.appId || '').trim() : ''))
+      .filter(Boolean);
+
+    const sameOrder =
+      currentIds.length === desiredIds.length &&
+      currentIds.every((id, idx) => id === desiredIds[idx]);
+
+    if (!sameOrder) {
+      // Ensure all desired tiles are mounted and ordered; this is the only time we move nodes.
+      for (const entry of desired) {
+        if (entry.tile.parentElement !== workspaceEl) {
+          workspaceEl.appendChild(entry.tile);
+        }
+      }
+      let cursor = workspaceEl.firstChild;
+      for (const entry of desired) {
+        if (entry.tile === cursor) {
+          cursor = cursor ? cursor.nextSibling : null;
+          continue;
+        }
+        workspaceEl.insertBefore(entry.tile, cursor);
+      }
+    }
+
+    for (const entry of desired) {
+      const id = entry.id;
+      const tile = entry.tile;
+      const isTileMaximized = !!(isMaximized && maximizedAppId && id === maximizedAppId);
+      tile.classList.toggle('forgeos-tile--maximized', isTileMaximized);
+      tile.classList.toggle('hidden', !!id && !visibleSet.has(id));
+    }
+  }
+
+  function ensureDesktopStateShape(state) {
+    const st = state && typeof state === 'object' ? state : {};
+    const items = st.items && typeof st.items === 'object' ? st.items : {};
+    return { ...st, items };
+  }
+
+  function desktopItemIdForApp(appId) {
+    const id = String(appId || '').trim();
+    return id ? `app:${id}` : '';
+  }
+
+  function desktopStateFromV1(parsed) {
+    const icons = parsed && parsed.icons && typeof parsed.icons === 'object' ? parsed.icons : {};
+    const items = {};
+    for (const [idRaw, pos] of Object.entries(icons)) {
+      const appId = String(idRaw || '').trim();
+      if (!appId) continue;
+      const x = pos && typeof pos === 'object' ? Number(pos.x) : 0;
+      const y = pos && typeof pos === 'object' ? Number(pos.y) : 0;
+      items[desktopItemIdForApp(appId)] = { type: 'app', appId, x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0 };
+    }
+    return { items };
+  }
+
+  function loadDesktopState() {
+    try {
+      const rawV2 = String(window.localStorage.getItem(DESKTOP_STATE_KEY_V2) || '').trim();
+      if (rawV2) {
+        const parsed = JSON.parse(rawV2);
+        if (parsed && typeof parsed === 'object') return ensureDesktopStateShape(parsed);
+      }
+    } catch {}
+
+    try {
+      const rawV1 = String(window.localStorage.getItem(DESKTOP_STATE_KEY_V1) || '').trim();
+      if (!rawV1) return { items: {} };
+      const parsed = JSON.parse(rawV1);
+      if (!parsed || typeof parsed !== 'object') return { items: {} };
+      return ensureDesktopStateShape(desktopStateFromV1(parsed));
+    } catch {
+      return { items: {} };
+    }
+  }
+
+  function saveDesktopState() {
+    try {
+      window.localStorage.setItem(DESKTOP_STATE_KEY_V2, JSON.stringify(ensureDesktopStateShape(desktopState)));
+    } catch {}
+  }
+
+  function desktopItemEntries() {
+    const items = desktopState && desktopState.items && typeof desktopState.items === 'object' ? desktopState.items : {};
+    return Object.entries(items).filter(([id]) => !!id);
+  }
+
+  function desktopItemsSorted() {
+    const entries = desktopItemEntries()
+      .map(([id, item]) => [id, item && typeof item === 'object' ? item : null])
+      .filter(([, item]) => !!item);
+    entries.sort((a, b) => {
+      const ay = Number(a[1].y) || 0;
+      const by = Number(b[1].y) || 0;
+      if (ay !== by) return ay - by;
+      const ax = Number(a[1].x) || 0;
+      const bx = Number(b[1].x) || 0;
+      if (ax !== bx) return ax - bx;
+      return String(a[0]).localeCompare(String(b[0]));
+    });
+    return entries;
+  }
+
+  function desktopFindFolderIdForApp(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return '';
+    for (const [itemId, item] of desktopItemEntries()) {
+      if (!item || typeof item !== 'object') continue;
+      if (String(item.type || '') !== 'folder') continue;
+      const apps = Array.isArray(item.appIds) ? item.appIds : [];
+      if (apps.includes(id)) return itemId;
+    }
+    return '';
+  }
+
+  function isPinnedToDesktop(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return false;
+    const itemId = desktopItemIdForApp(id);
+    const items = desktopState && desktopState.items && typeof desktopState.items === 'object' ? desktopState.items : {};
+    if (items[itemId]) return true;
+    return !!desktopFindFolderIdForApp(id);
+  }
+
+  const DESKTOP_GRID = { x: 92, y: 108, marginX: 18, marginY: 18 };
+
+  function clampDesktopPos(x, y) {
+    const px = Math.max(0, Math.round(Number(x) || 0));
+    const py = Math.max(0, Math.round(Number(y) || 0));
+    if (!desktopSurfaceEl) return { x: px, y: py };
+    const rect = desktopSurfaceEl.getBoundingClientRect();
+    const layoutW = desktopSurfaceEl.offsetWidth || rect.width || 0;
+    const layoutH = desktopSurfaceEl.offsetHeight || rect.height || 0;
+    if (!Number.isFinite(layoutW) || !Number.isFinite(layoutH) || layoutW < 160 || layoutH < 180) {
+      return { x: px, y: py };
+    }
+    const iconW = 84;
+    const iconH = 108;
+    const maxX = Math.max(0, Math.floor(layoutW - iconW - 10));
+    const maxY = Math.max(0, Math.floor(layoutH - iconH - 10));
+    return { x: Math.min(maxX, px), y: Math.min(maxY, py) };
+  }
+
+  function snapDesktopPos(x, y) {
+    const gx = DESKTOP_GRID.x;
+    const gy = DESKTOP_GRID.y;
+    const mx = DESKTOP_GRID.marginX;
+    const my = DESKTOP_GRID.marginY;
+    const sx = Math.max(0, Math.round((Number(x) - mx) / gx) * gx + mx);
+    const sy = Math.max(0, Math.round((Number(y) - my) / gy) * gy + my);
+    return clampDesktopPos(sx, sy);
+  }
+
+  function defaultDesktopPosition() {
+    const ids = desktopItemEntries().map(([id]) => id);
+    const colW = DESKTOP_GRID.x;
+    const rowH = DESKTOP_GRID.y;
+    const x0 = DESKTOP_GRID.marginX;
+    const y0 = DESKTOP_GRID.marginY;
+    const cols = 6;
+    const idx = ids.length;
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    return snapDesktopPos(x0 + col * colW, y0 + row * rowH);
+  }
+
+  function pinToDesktop(appId, pos) {
+    const id = String(appId || '').trim();
+    if (!id) return;
+    if (!desktopState || typeof desktopState !== 'object') desktopState = { items: {} };
+    if (!desktopState.items || typeof desktopState.items !== 'object') desktopState.items = {};
+    if (isPinnedToDesktop(id)) return;
+    const itemId = desktopItemIdForApp(id);
+    const p = pos && typeof pos === 'object' ? pos : defaultDesktopPosition();
+    const snapped = snapDesktopPos(p.x, p.y);
+    desktopState.items[itemId] = { type: 'app', appId: id, x: snapped.x, y: snapped.y };
+    saveDesktopState();
+    renderDesktop();
+  }
+
+  function unpinFromDesktop(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items) return;
+    delete desktopState.items[desktopItemIdForApp(id)];
+
+    const folderId = desktopFindFolderIdForApp(id);
+    if (folderId && desktopState.items[folderId] && desktopState.items[folderId].type === 'folder') {
+      const folder = desktopState.items[folderId];
+      folder.appIds = Array.isArray(folder.appIds) ? folder.appIds.filter((a) => a !== id) : [];
+      normalizeDesktopFolder(folderId);
+    }
+    saveDesktopState();
+    renderDesktop();
+  }
+
+  function desktopSurfacePoint(evt) {
+    if (!desktopSurfaceEl) return { x: 0, y: 0 };
+    const rect = desktopSurfaceEl.getBoundingClientRect();
+    const layoutW = desktopSurfaceEl.offsetWidth || rect.width || 1;
+    const layoutH = desktopSurfaceEl.offsetHeight || rect.height || 1;
+    const scaleX = rect.width > 0 ? rect.width / layoutW : 1;
+    const scaleY = rect.height > 0 ? rect.height / layoutH : 1;
+    const x = ((evt.clientX || 0) - rect.left) / (scaleX || 1);
+    const y = ((evt.clientY || 0) - rect.top) / (scaleY || 1);
+    return { x: Math.max(0, x), y: Math.max(0, y) };
+  }
+
+  function setDesktopItemPosition(itemId, x, y) {
+    const id = String(itemId || '').trim();
+    if (!id) return;
+    if (!desktopState || typeof desktopState !== 'object') desktopState = { items: {} };
+    if (!desktopState.items || typeof desktopState.items !== 'object') desktopState.items = {};
+    if (!desktopState.items[id]) return;
+    const snapped = snapDesktopPos(x, y);
+    desktopState.items[id].x = snapped.x;
+    desktopState.items[id].y = snapped.y;
+    saveDesktopState();
+  }
+
+  function newDesktopFolderId() {
+    return `folder:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function normalizeDesktopFolder(folderId) {
+    const id = String(folderId || '').trim();
+    if (!id) return;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items || !desktopState.items[id]) return;
+    const folder = desktopState.items[id];
+    if (!folder || typeof folder !== 'object' || folder.type !== 'folder') return;
+
+    folder.appIds = uniqOrder(
+      (Array.isArray(folder.appIds) ? folder.appIds : []).map((v) => String(v || '').trim()).filter(Boolean),
+    );
+
+    if (folder.appIds.length <= 1) {
+      const remaining = folder.appIds[0] || '';
+      const fx = Number(folder.x) || 0;
+      const fy = Number(folder.y) || 0;
+      delete desktopState.items[id];
+      if (remaining) {
+        desktopState.items[desktopItemIdForApp(remaining)] = { type: 'app', appId: remaining, x: fx, y: fy };
+      }
+    }
+  }
+
+  function desktopCreateFolderAt(pos, appIds, opts) {
+    if (!desktopState || typeof desktopState !== 'object') desktopState = { items: {} };
+    if (!desktopState.items || typeof desktopState.items !== 'object') desktopState.items = {};
+    const list = uniqOrder((Array.isArray(appIds) ? appIds : []).map((v) => String(v || '').trim()).filter(Boolean));
+    if (list.length < 2) return '';
+    const folderId = newDesktopFolderId();
+    const name = (opts && typeof opts === 'object' && opts.name ? String(opts.name) : 'Folder').trim() || 'Folder';
+    const p = pos && typeof pos === 'object' ? pos : defaultDesktopPosition();
+    const snapped = snapDesktopPos(p.x, p.y);
+    desktopState.items[folderId] = { type: 'folder', name, x: snapped.x, y: snapped.y, appIds: list };
+    for (const appId of list) {
+      delete desktopState.items[desktopItemIdForApp(appId)];
+    }
+    saveDesktopState();
+    return folderId;
+  }
+
+  function desktopAddAppToFolder(folderId, appId) {
+    const fid = String(folderId || '').trim();
+    const id = String(appId || '').trim();
+    if (!fid || !id) return;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items || !desktopState.items[fid]) return;
+    const folder = desktopState.items[fid];
+    if (!folder || typeof folder !== 'object' || folder.type !== 'folder') return;
+    folder.appIds = uniqOrder([...(Array.isArray(folder.appIds) ? folder.appIds : []), id]);
+    delete desktopState.items[desktopItemIdForApp(id)];
+    saveDesktopState();
+    normalizeDesktopFolder(fid);
+  }
+
+  function desktopMergeFolders(targetFolderId, sourceFolderId) {
+    const target = String(targetFolderId || '').trim();
+    const source = String(sourceFolderId || '').trim();
+    if (!target || !source || target === source) return;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items) return;
+    const tgt = desktopState.items[target];
+    const src = desktopState.items[source];
+    if (!tgt || !src || tgt.type !== 'folder' || src.type !== 'folder') return;
+    tgt.appIds = uniqOrder([...(Array.isArray(tgt.appIds) ? tgt.appIds : []), ...(Array.isArray(src.appIds) ? src.appIds : [])]);
+    delete desktopState.items[source];
+    normalizeDesktopFolder(target);
+    saveDesktopState();
+  }
+
+  function desktopUnfolder(folderId) {
+    const fid = String(folderId || '').trim();
+    if (!fid) return;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items || !desktopState.items[fid]) return;
+    const folder = desktopState.items[fid];
+    if (!folder || typeof folder !== 'object' || folder.type !== 'folder') return;
+    const baseX = Number(folder.x) || 0;
+    const baseY = Number(folder.y) || 0;
+    const apps = Array.isArray(folder.appIds) ? folder.appIds.slice() : [];
+    delete desktopState.items[fid];
+
+    let idx = 0;
+    for (const appIdRaw of apps) {
+      const appId = String(appIdRaw || '').trim();
+      if (!appId) continue;
+      const col = idx % 3;
+      const row = Math.floor(idx / 3);
+      const p = snapDesktopPos(baseX + col * DESKTOP_GRID.x, baseY + row * DESKTOP_GRID.y);
+      desktopState.items[desktopItemIdForApp(appId)] = { type: 'app', appId, x: p.x, y: p.y };
+      idx += 1;
+    }
+
+    saveDesktopState();
+  }
+
+  function desktopItemAtClientPoint(excludeItemId, clientX, clientY) {
+    if (!desktopSurfaceEl) return '';
+    const ex = String(excludeItemId || '').trim();
+    const x = Number(clientX) || 0;
+    const y = Number(clientY) || 0;
+    for (const node of Array.from(desktopSurfaceEl.querySelectorAll('[data-desktop-item-id]'))) {
+      if (!(node instanceof HTMLElement)) continue;
+      const id = String(node.dataset.desktopItemId || '').trim();
+      if (!id || id === ex) continue;
+      const rect = node.getBoundingClientRect();
+      if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return id;
+    }
+    return '';
+  }
+
+  function desktopItemByOverlap(excludeItemId, rect) {
+    if (!desktopSurfaceEl) return '';
+    if (!rect) return '';
+    const ex = String(excludeItemId || '').trim();
+    const srcLeft = Number(rect.left) || 0;
+    const srcTop = Number(rect.top) || 0;
+    const srcRight = Number(rect.right) || 0;
+    const srcBottom = Number(rect.bottom) || 0;
+    const srcArea = Math.max(0, srcRight - srcLeft) * Math.max(0, srcBottom - srcTop);
+    if (!srcArea) return '';
+
+    let bestId = '';
+    let bestArea = 0;
+    for (const node of Array.from(desktopSurfaceEl.querySelectorAll('[data-desktop-item-id]'))) {
+      if (!(node instanceof HTMLElement)) continue;
+      const id = String(node.dataset.desktopItemId || '').trim();
+      if (!id || id === ex) continue;
+      const r = node.getBoundingClientRect();
+      const left = Math.max(srcLeft, r.left);
+      const right = Math.min(srcRight, r.right);
+      const top = Math.max(srcTop, r.top);
+      const bottom = Math.min(srcBottom, r.bottom);
+      const area = Math.max(0, right - left) * Math.max(0, bottom - top);
+      if (area > bestArea) {
+        bestArea = area;
+        bestId = id;
+      }
+    }
+
+    if (!bestId) return '';
+    // Require a meaningful overlap so near-misses don't create folders.
+    if (bestArea / srcArea < 0.22) return '';
+    return bestId;
+  }
+
+  function desktopHandleDrop(draggedItemId, targetItemId) {
+    const draggedId = String(draggedItemId || '').trim();
+    const targetId = String(targetItemId || '').trim();
+    if (!draggedId || !targetId || draggedId === targetId) return false;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items) return false;
+    const dragged = desktopState.items[draggedId];
+    const target = desktopState.items[targetId];
+    if (!dragged || !target) return false;
+
+    if (dragged.type === 'app' && target.type === 'folder') {
+      desktopAddAppToFolder(targetId, dragged.appId);
+      return true;
+    }
+
+    if (dragged.type === 'folder' && target.type === 'folder') {
+      desktopMergeFolders(targetId, draggedId);
+      return true;
+    }
+
+    if (dragged.type === 'folder' && target.type === 'app') {
+      desktopAddAppToFolder(draggedId, target.appId);
+      delete desktopState.items[desktopItemIdForApp(target.appId)];
+      saveDesktopState();
+      normalizeDesktopFolder(draggedId);
+      return true;
+    }
+
+    if (dragged.type === 'app' && target.type === 'app') {
+      desktopCreateFolderAt({ x: target.x, y: target.y }, [dragged.appId, target.appId]);
+      return true;
+    }
+
+    return false;
+  }
+
+  function openFolderModal(folderId) {
+    const fid = String(folderId || '').trim();
+    if (!fid) return;
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    if (!desktopState || typeof desktopState !== 'object' || !desktopState.items || !desktopState.items[fid]) return;
+    const folder = desktopState.items[fid];
+    if (!folder || typeof folder !== 'object' || folder.type !== 'folder') return;
+
+    if (modalKindEl) modalKindEl.textContent = 'Folder';
+    modalTitleEl.textContent = String(folder.name || 'Folder').trim() || 'Folder';
+    modalBodyEl.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'flex flex-col gap-4';
+
+    const grid = document.createElement('div');
+    grid.className = 'forgeos-launcher-grid';
+
+    const apps = Array.isArray(folder.appIds) ? folder.appIds : [];
+    for (const appIdRaw of apps) {
+      const appId = String(appIdRaw || '').trim();
+      if (!appId) continue;
+      const meta = metaFor(appId);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forgeos-launcher-item';
+      btn.dataset.appId = appId;
+
+      const icon = document.createElement('img');
+      icon.className = 'forgeos-launcher-item__icon';
+      icon.alt = '';
+      icon.loading = 'lazy';
+      icon.decoding = 'async';
+      const fallbackLogo = fallbackLogoFor(appId, meta.name || appId);
+      const logoUrl = String(meta.logo || '').trim() || fallbackLogo;
+      icon.src = logoUrl;
+      icon.dataset.logoUrl = logoUrl;
+      icon.addEventListener('error', () => {
+        if (icon.dataset.fallbackApplied === '1') return;
+        icon.dataset.fallbackApplied = '1';
+        icon.src = fallbackLogo;
+      });
+
+      const name = document.createElement('div');
+      name.className = 'forgeos-launcher-item__name';
+      name.textContent = meta.name || appId;
+
+      btn.appendChild(icon);
+      btn.appendChild(name);
+
+      btn.addEventListener('click', () => {
+        closeModal();
+        ensureAppOpen({ id: appId });
+      });
+
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openContextMenu(
+          [
+            {
+              label: 'Remove from folder',
+              onClick: async () => {
+                if (!desktopState.items[fid] || desktopState.items[fid].type !== 'folder') return;
+                desktopState.items[fid].appIds = (Array.isArray(desktopState.items[fid].appIds) ? desktopState.items[fid].appIds : []).filter(
+                  (a) => a !== appId,
+                );
+                normalizeDesktopFolder(fid);
+                if (!isPinnedToDesktop(appId)) pinToDesktop(appId);
+                saveDesktopState();
+                renderDesktop();
+                if (!desktopState.items[fid] || desktopState.items[fid].type !== 'folder') {
+                  closeModal();
+                  return;
+                }
+                openFolderModal(fid);
+              },
+            },
+          ],
+          e.clientX,
+          e.clientY,
+        );
+      });
+
+      grid.appendChild(btn);
+    }
+
+    wrap.appendChild(grid);
+    modalBodyEl.appendChild(wrap);
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function renderDesktop() {
+    if (!desktopSurfaceEl) return;
+    if (String(dashboardMode || 'fleet') !== 'desktop') return;
+
+    desktopState = ensureDesktopStateShape(desktopState);
+
+    let normalized = false;
+    const existing = new Map();
+    for (const node of Array.from(desktopSurfaceEl.querySelectorAll('[data-desktop-item-id]'))) {
+      if (!(node instanceof HTMLElement)) continue;
+      const itemId = String(node.dataset.desktopItemId || '').trim();
+      if (!itemId) continue;
+      existing.set(itemId, node);
+    }
+
+    const entries = desktopItemsSorted();
+    if (desktopEmptyEl) desktopEmptyEl.classList.toggle('hidden', entries.length > 0);
+
+    const keep = new Set(entries.map(([id]) => id));
+    for (const [itemId, node] of existing.entries()) {
+      if (keep.has(itemId)) continue;
+      try {
+        node.remove();
+      } catch {}
+      existing.delete(itemId);
+    }
+
+    for (const [itemId, item] of entries) {
+      if (!item || typeof item !== 'object') continue;
+      const snapped = snapDesktopPos(Number(item.x) || 0, Number(item.y) || 0);
+      if (Number(item.x) !== snapped.x || Number(item.y) !== snapped.y) {
+        item.x = snapped.x;
+        item.y = snapped.y;
+        normalized = true;
+      }
+
+      let node = existing.get(itemId) || null;
+      if (!node) {
+        node = document.createElement('div');
+        node.className = 'forgeos-desktop-icon';
+        node.dataset.desktopItemId = itemId;
+        node.tabIndex = 0;
+
+        if (item.type === 'folder') {
+          node.classList.add('forgeos-desktop-folder');
+          node.dataset.folderId = itemId;
+
+          const wrap = document.createElement('div');
+          wrap.className = 'forgeos-desktop-folder__wrap';
+
+          const count = document.createElement('div');
+          count.className = 'forgeos-desktop-folder__count';
+          wrap.appendChild(count);
+
+          const grid = document.createElement('div');
+          grid.className = 'forgeos-desktop-folder__grid';
+          wrap.appendChild(grid);
+
+          const label = document.createElement('div');
+          label.className = 'forgeos-desktop-icon__label';
+
+          node.appendChild(wrap);
+          node.appendChild(label);
+
+          node.addEventListener('click', () => openFolderModal(itemId));
+          node.addEventListener('dblclick', () => openFolderModal(itemId));
+          node.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') openFolderModal(itemId);
+          });
+
+          node.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openContextMenu(
+              [
+                { label: 'Open folder', onClick: async () => openFolderModal(itemId) },
+                { label: 'Unfolder', onClick: async () => { desktopUnfolder(itemId); renderDesktop(); } },
+                { type: 'sep' },
+                { label: 'Remove folder', danger: true, onClick: async () => { desktopUnfolder(itemId); renderDesktop(); } },
+              ],
+              e.clientX,
+              e.clientY,
+            );
+          });
+
+          node.addEventListener('dragover', (e) => {
+            if (!desktopDragId) return;
+            e.preventDefault();
+          });
+          node.addEventListener('drop', (e) => {
+            if (!desktopDragId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const id = String(desktopDragId || '').trim();
+            desktopDragId = '';
+            if (!id) return;
+            desktopAddAppToFolder(itemId, id);
+            renderDesktop();
+            showToast('Added to folder', null);
+          });
+        } else {
+          const appId = String(item.appId || '').trim() || String(itemId).replace(/^app:/, '');
+          node.dataset.appId = appId;
+
+          const img = document.createElement('img');
+          img.className = 'forgeos-desktop-icon__img';
+          img.alt = '';
+          img.loading = 'lazy';
+          img.decoding = 'async';
+          img.addEventListener('error', () => {
+            if (img.dataset.fallbackApplied === '1') return;
+            const fallbackLogo = fallbackLogoFor(appId, metaFor(appId).name || appId);
+            img.dataset.fallbackApplied = '1';
+            img.src = fallbackLogo;
+          });
+          node.appendChild(img);
+
+          const label = document.createElement('div');
+          label.className = 'forgeos-desktop-icon__label';
+          node.appendChild(label);
+
+          const badge = document.createElement('div');
+          badge.className = 'forgeos-desktop-icon__badge';
+          node.appendChild(badge);
+
+          node.addEventListener('dblclick', () => ensureAppOpen({ id: appId }));
+          node.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') ensureAppOpen({ id: appId });
+          });
+
+          node.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const installedNow = installedById.get(appId) || null;
+            const st = installedNow ? String(installedNow.status || '').toLowerCase() : '';
+            const isRunning = st === 'running';
+            openContextMenu(
+              [
+                { label: 'Open', disabled: !isAppLaunchable(appId), onClick: async () => ensureAppOpen({ id: appId }) },
+                { type: 'sep' },
+                { label: 'Start', disabled: isRunning || pendingAppActions.has(appId), onClick: async () => runAppAction(appId, 'up') },
+                { label: 'Restart', disabled: pendingAppActions.has(appId), onClick: async () => runAppAction(appId, 'restart') },
+                { label: 'Stop', danger: true, disabled: !isRunning || pendingAppActions.has(appId), onClick: async () => runAppAction(appId, 'down') },
+                { type: 'sep' },
+                { label: 'Redeploy', disabled: pendingAppActions.has(appId), hint: 'Recreate containers (keeps data)', onClick: async () => runAppAction(appId, 'redeploy') },
+                { type: 'sep' },
+                { label: 'Remove', danger: true, onClick: async () => unpinFromDesktop(appId) },
+              ],
+              e.clientX,
+              e.clientY,
+            );
+          });
+        }
+
+        let dragStart = null;
+        node.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          noteUserActivity();
+          const p = desktopSurfacePoint(e);
+          const ox = parseFloat(node.style.left) || 0;
+          const oy = parseFloat(node.style.top) || 0;
+          dragStart = {
+            startX: p.x,
+            startY: p.y,
+            anchorX: p.x - ox,
+            anchorY: p.y - oy,
+            originX: ox,
+            originY: oy,
+            moved: false,
+          };
+          try {
+            node.setPointerCapture(e.pointerId);
+          } catch {}
+        });
+        node.addEventListener('pointermove', (e) => {
+          if (!dragStart) return;
+          const p = desktopSurfacePoint(e);
+          const dx = p.x - dragStart.startX;
+          const dy = p.y - dragStart.startY;
+          if (!dragStart.moved) {
+            if (Math.abs(dx) <= 12 && Math.abs(dy) <= 12) return;
+            dragStart.moved = true;
+            node.classList.add('forgeos-desktop-icon--dragging');
+          }
+
+          const unclampedX = p.x - dragStart.anchorX;
+          const unclampedY = p.y - dragStart.anchorY;
+          const clamped = clampDesktopPos(unclampedX, unclampedY);
+          node.style.left = `${clamped.x}px`;
+          node.style.top = `${clamped.y}px`;
+        });
+        node.addEventListener('pointerup', (e) => {
+          if (!dragStart) return;
+          const wasMoved = !!dragStart.moved;
+          const originX = Number(dragStart.originX) || 0;
+          const originY = Number(dragStart.originY) || 0;
+          node.classList.remove('forgeos-desktop-icon--dragging');
+          dragStart = null;
+
+          if (!wasMoved) {
+            node.style.left = `${originX}px`;
+            node.style.top = `${originY}px`;
+            return;
+          }
+
+          const targetFromPointer = desktopItemAtClientPoint(itemId, e.clientX, e.clientY);
+          const rect = node.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const targetId =
+            targetFromPointer || desktopItemAtClientPoint(itemId, cx, cy) || desktopItemByOverlap(itemId, rect);
+          if (targetId && desktopHandleDrop(itemId, targetId)) {
+            renderDesktop();
+            return;
+          }
+
+          const left = parseFloat(node.style.left) || 0;
+          const top = parseFloat(node.style.top) || 0;
+          const snapped = snapDesktopPos(left, top);
+          node.style.left = `${snapped.x}px`;
+          node.style.top = `${snapped.y}px`;
+          setDesktopItemPosition(itemId, snapped.x, snapped.y);
+          renderDesktop();
+        });
+        node.addEventListener('pointercancel', () => {
+          node.classList.remove('forgeos-desktop-icon--dragging');
+          dragStart = null;
+        });
+
+        desktopSurfaceEl.appendChild(node);
+        existing.set(itemId, node);
+      }
+
+      node.style.left = `${snapped.x}px`;
+      node.style.top = `${snapped.y}px`;
+
+      if (item.type === 'folder') {
+        const labelEl = node.querySelector('.forgeos-desktop-icon__label');
+        if (labelEl) labelEl.textContent = String(item.name || 'Folder').trim() || 'Folder';
+        const apps = Array.isArray(item.appIds) ? item.appIds : [];
+        const countEl = node.querySelector('.forgeos-desktop-folder__count');
+        if (countEl) countEl.textContent = String(apps.length);
+        const gridEl = node.querySelector('.forgeos-desktop-folder__grid');
+        if (gridEl) {
+          gridEl.innerHTML = '';
+          for (const appIdRaw of apps.slice(0, 4)) {
+            const appId = String(appIdRaw || '').trim();
+            if (!appId) continue;
+            const meta = metaFor(appId);
+            const img = document.createElement('img');
+            img.className = 'forgeos-desktop-folder__thumb';
+            img.alt = '';
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            const fallbackLogo = fallbackLogoFor(appId, meta.name || appId);
+            img.src = String(meta.logo || '').trim() || fallbackLogo;
+            img.addEventListener('error', () => {
+              if (img.dataset.fallbackApplied === '1') return;
+              img.dataset.fallbackApplied = '1';
+              img.src = fallbackLogo;
+            });
+            gridEl.appendChild(img);
+          }
+        }
+      } else {
+        const appId = String(item.appId || '').trim() || String(node.dataset.appId || '').trim() || String(itemId).replace(/^app:/, '');
+        const meta = metaFor(appId);
+        const installed = installedById.get(appId) || null;
+        const status = appStatusForUi(appId, installed);
+
+        const img = node.querySelector('.forgeos-desktop-icon__img');
+        if (img instanceof HTMLImageElement) {
+          const fallbackLogo = fallbackLogoFor(appId, meta.name || appId);
+          const logoUrl = String(meta.logo || '').trim() || fallbackLogo;
+          if (img.dataset.logoUrl !== logoUrl) {
+            img.dataset.logoUrl = logoUrl;
+            img.dataset.fallbackApplied = '0';
+            img.src = logoUrl;
+          }
+        }
+
+        const labelEl = node.querySelector('.forgeos-desktop-icon__label');
+        if (labelEl) labelEl.textContent = meta.name || appId;
+        const badgeEl = node.querySelector('.forgeos-desktop-icon__badge');
+        if (badgeEl) badgeEl.textContent = status;
+      }
+    }
+
+    if (normalized) saveDesktopState();
+  }
+
+  function loadDrawerPinned() {
+    try {
+      const raw = String(window.localStorage.getItem(DRAWER_PINNED_KEY) || '').trim();
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.map((v) => String(v || '').trim()).filter(Boolean));
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveDrawerPinned() {
+    try {
+      window.localStorage.setItem(DRAWER_PINNED_KEY, JSON.stringify(Array.from(drawerPinned || new Set())));
+    } catch {}
+  }
+
+  function isPinnedToDrawer(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return false;
+    return drawerPinned instanceof Set ? drawerPinned.has(id) : false;
+  }
+
+  function setPinnedToDrawer(appId, pinned) {
+    const id = String(appId || '').trim();
+    if (!id) return;
+    if (!(drawerPinned instanceof Set)) drawerPinned = new Set();
+    if (pinned) drawerPinned.add(id);
+    else drawerPinned.delete(id);
+    saveDrawerPinned();
+  }
+
+  function toggleDashboardMode() {
+    // Legacy no-op (replaced by Desktop/APPS/Fleet segmented control).
+    setView('dashboard');
   }
 
   function ensureAppOpen(app) {
     const id = app && app.id ? String(app.id || '').trim() : '';
     if (!id) return;
-    if (id === 'umbrel-store') {
-      setView('store');
-      setStoreChannel('umbrel');
-      return;
-    }
     setView('dashboard');
-    dashboardShowHome = false;
+    setDashboardMode('apps');
     selectedAppId = id;
     syncInstalledSelection();
     updateAppHeader();
@@ -1880,16 +3517,13 @@
   function toggleAppOpen(app) {
     const id = app && app.id ? String(app.id || '').trim() : '';
     if (!id) return;
-    if (id === 'umbrel-store') {
-      setView('store');
-      setStoreChannel('umbrel');
-      return;
-    }
     setView('dashboard');
     if (isAppOpen(id)) {
-      openAppIds = openAppIds.filter((x) => x !== id);
+      // Only close an app when the user is on the Apps workspace.
+      if (String(dashboardMode || 'fleet') === 'apps') openAppIds = openAppIds.filter((x) => x !== id);
+      else setDashboardMode('apps');
     } else {
-      dashboardShowHome = false;
+      setDashboardMode('apps');
       selectedAppId = id;
       syncInstalledSelection();
       updateAppHeader();
@@ -1919,7 +3553,7 @@
   function updateAppHeader() {
     const id = selectedAppId || '';
     const installed = id ? installedById.get(id) : null;
-    const status = installed ? installed.status || 'installed' : '-';
+    const status = id ? appStatusForUi(id, installed) : '-';
 
     if (!selectedControlsEl || !selectedAppNameEl || !selectedAppStatusEl) return;
 
@@ -1944,8 +3578,20 @@
   async function apiAppAction(id, kind) {
     if (!id) return;
     if (kind === 'restart') {
-      await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/down`, { method: 'POST', body: '{}' });
-      await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/up`, { method: 'POST', body: '{}' });
+      try {
+        await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/down`, { method: 'POST', body: '{}' });
+      } catch {}
+      await new Promise((r) => setTimeout(r, 800));
+      try {
+        await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/up`, { method: 'POST', body: '{}' });
+      } catch {}
+      return;
+    }
+    if (kind === 'redeploy') {
+      await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/redeploy`, {
+        method: 'POST',
+        body: JSON.stringify({ pull: true }),
+      });
       return;
     }
     await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`, { method: 'POST', body: '{}' });
@@ -1960,10 +3606,30 @@
 
     if (k === 'down') {
       const label = metaFor(id).name || id;
-      if (!confirm(`Stop ${label}?`)) return;
+      const ok = await openConfirmModal({
+        title: `Stop ${label}?`,
+        message: 'This stops the app containers. You can start it again later.',
+        confirmText: 'Stop',
+        cancelText: 'Cancel',
+        danger: true,
+      });
+      if (!ok) return;
     }
 
-    pendingAppActions.set(id, k);
+    if (k === 'redeploy') {
+      const label = metaFor(id).name || id;
+      const ok = await openConfirmModal({
+        title: `Redeploy ${label}?`,
+        message:
+          'This recreates the app containers to recover from breakages. Your app data should be kept, but the app will restart and may be unavailable for a few minutes.\n\nUse this if the app is broken, stuck, or misconfigured.',
+        confirmText: 'Redeploy',
+        cancelText: 'Cancel',
+        danger: false,
+      });
+      if (!ok) return;
+    }
+
+    pendingAppActions.set(id, { kind: k, startedAt: Date.now() });
 
     if (k === 'down') {
       openAppIds = openAppIds.filter((x) => x !== id);
@@ -1974,13 +3640,32 @@
 
     try {
       await apiAppAction(id, k);
-      showToast(`${k === 'up' ? 'Starting' : k === 'down' ? 'Stopping' : k === 'restart' ? 'Restarting' : 'Running'} ${metaFor(id).name || id}`, null);
-      await refresh();
+      showToast(
+        `${k === 'up' ? 'Starting' : k === 'down' ? 'Stopping' : k === 'restart' ? 'Restarting' : k === 'redeploy' ? 'Redeploying' : 'Running'} ${metaFor(id).name || id}`,
+        null,
+      );
+      if (k === 'restart' || k === 'up' || k === 'redeploy') {
+        const deadline = Date.now() + (k === 'redeploy' ? 10 * 60 * 1000 : 60 * 1000);
+        let reachedRunning = false;
+        while (Date.now() < deadline) {
+          await refreshInstalled();
+          const st = installedById.get(id);
+          if (st && String(st.status || '').toLowerCase() === 'running') {
+            reachedRunning = true;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+        if (!reachedRunning) showToast(k === 'redeploy' ? 'Redeploy is still in progress...' : 'App is still starting...', 'warn');
+      } else {
+        await refresh();
+      }
     } catch (e) {
+      console.error('App action failed', e);
       showToast('App action failed', 'error');
-      alert(`App action failed: ${e && e.message ? e.message : e}`);
     } finally {
-      pendingAppActions.delete(id);
+      await refreshInstalled();
+      renderWorkspace();
       updateAppHeader();
     }
   }
@@ -1989,6 +3674,43 @@
     const id = selectedAppId;
     if (!id) return;
     await runAppAction(id, kind);
+  }
+
+  function normalizeVersionString(value) {
+    const raw = String(value || '').trim();
+    return raw.replace(/^v/i, '').trim();
+  }
+
+  async function waitForAppUpdate(appId, options) {
+    const id = String(appId || '').trim();
+    if (!id) return { ok: false, reason: 'missing app id' };
+    const opts = options && typeof options === 'object' ? options : {};
+    const expected = normalizeVersionString(opts.expectedVersion || '');
+    const previous = normalizeVersionString(opts.previousVersion || '');
+    const timeoutMs = Math.max(15_000, Math.min(10 * 60_000, Number(opts.timeoutMs) || 180_000));
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        await refreshInstalled();
+      } catch {}
+      const st = installedById.get(id);
+      const status = st ? String(st.status || '').trim().toLowerCase() : '';
+      const installedVersion = st ? normalizeVersionString(st.installed_version || '') : '';
+      const latestVersion = st ? normalizeVersionString(st.latest_version || '') : '';
+      const updateAvailable = !!(st && st.update_available);
+
+      const stable = status === 'running' || status === 'stopped';
+      const versionMatches = expected && installedVersion && installedVersion === expected;
+      const advanced = previous && installedVersion && installedVersion !== previous;
+      const satisfied = stable && !updateAvailable && (versionMatches || advanced || (!!installedVersion && !!latestVersion && !isUpdateAvailable(installedVersion, latestVersion)));
+
+      if (satisfied) return { ok: true, status, installed_version: installedVersion, latest_version: latestVersion };
+
+      await new Promise((r) => setTimeout(r, 1600));
+    }
+
+    return { ok: false, reason: 'timeout' };
   }
 
   function formatTimeShort(iso) {
@@ -2130,7 +3852,7 @@
 
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const label of ['Worker', 'Coin', 'Hashrate', 'Last share']) {
+    for (const label of ['Worker', 'Coin', 'Hashrate', 'Best share', 'Last share']) {
       const th = document.createElement('th');
       th.textContent = label;
       headRow.appendChild(th);
@@ -2140,13 +3862,59 @@
 
     const tbody = document.createElement('tbody');
 
+    function workerName(raw) {
+      const base = String(
+        raw.worker ??
+          raw.worker_name ??
+          raw.worker_id ??
+          raw.workerId ??
+          raw.workerID ??
+          raw.workerName ??
+          raw.workername ??
+          raw.rig ??
+          raw.rig_name ??
+          raw.rigName ??
+          raw.miner ??
+          raw.miner_name ??
+          raw.minerName ??
+          raw.user ??
+          raw.username ??
+          raw.name ??
+          raw.id ??
+          raw.address ??
+          '',
+      ).trim();
+      if (!base) return '-';
+      if (base.includes('.')) {
+        const parts = base.split('.');
+        const head = parts[0] || '';
+        const tail = parts.slice(1).join('.');
+        if (head.length >= 20 && tail) return tail;
+      }
+      return base;
+    }
+
     for (const raw of workers.slice(0, 200)) {
       if (!raw || typeof raw !== 'object') continue;
-      const name = String(raw.worker || raw.name || raw.username || raw.id || '').trim() || '-';
+      const name = workerName(raw);
       const coin = String(raw.coin || '').trim() || '-';
       const rate =
         raw.hashrate_ths ?? raw.hashrate_1m_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
       const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
+      const bestShareRaw =
+        raw.bestshare ??
+        raw.best_share ??
+        raw.bestShare ??
+        raw.bestShareValue ??
+        raw.best_share_value ??
+        raw.best ??
+        null;
+      const bestShareNum = bestShareRaw === null || bestShareRaw === undefined ? NaN : Number(bestShareRaw);
+      const bestShareTxt = Number.isFinite(bestShareNum)
+        ? formatCompactNumber(bestShareNum)
+        : bestShareRaw
+          ? String(bestShareRaw)
+          : '-';
       const lastAgo = raw.lastshare_ago_s ?? raw.last_share_ago_s ?? raw.lastshareAgo ?? null;
       const lastTxt =
         lastAgo === null || lastAgo === undefined
@@ -2156,7 +3924,7 @@
             : String(lastAgo);
 
       const tr = document.createElement('tr');
-      const cols = [name, coin, rateTxt, lastTxt];
+      const cols = [name, coin, rateTxt, bestShareTxt, lastTxt];
       for (const c of cols) {
         const td = document.createElement('td');
         td.textContent = c;
@@ -2188,7 +3956,9 @@
     renderFleetWorkers(payload);
   }
 
-  async function refreshFleet() {
+  async function refreshFleet(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    if (!options.force && !dashboardCardsVisible()) return;
     if (refreshFleetInFlight) return;
     refreshFleetInFlight = true;
     if (btnFleetRefresh) btnFleetRefresh.disabled = true;
@@ -2227,6 +3997,7 @@
       const res = await apiJsonTimeout('/api/v0/system/ssh', {}, 3000).catch(() => null);
       if (!res || res.ok !== true) {
         settingSshToggle.disabled = true;
+        if (sshStatusEl) sshStatusEl.textContent = 'Unavailable';
         return;
       }
 
@@ -2236,6 +4007,34 @@
       settingSshToggle.title = installed
         ? `${res.service || 'ssh'}: ${res.active ? 'active' : 'inactive'}`
         : 'SSH not available on this system';
+
+      if (sshStatusEl) {
+        const bits = [
+          installed ? 'Installed' : 'Not installed',
+          res.enabled ? 'Enabled' : 'Disabled',
+          res.active ? 'Active' : 'Inactive',
+        ];
+        sshStatusEl.textContent = bits.join(' / ');
+      }
+
+      if (sshAdminUserEl && res.admin_user) sshAdminUserEl.textContent = String(res.admin_user);
+
+      if (sshAuthMethodsEl) {
+        const eff = res.effective && typeof res.effective === 'object' ? res.effective : null;
+        const methods = [];
+        if (eff && eff.pubkeyauthentication === true) methods.push('Public key');
+        if (eff && eff.passwordauthentication === true) methods.push('Password');
+        if (eff && eff.kbdinteractiveauthentication === true) methods.push('Keyboard-interactive');
+        sshAuthMethodsEl.textContent = methods.length ? methods.join(', ') : '-';
+      }
+
+      if (sshAdminPasswordStateEl) {
+        const admin = res.admin && typeof res.admin === 'object' ? res.admin : null;
+        if (!admin) sshAdminPasswordStateEl.textContent = '-';
+        else if (admin.locked) sshAdminPasswordStateEl.textContent = 'Locked (set password)';
+        else if (admin.has_password) sshAdminPasswordStateEl.textContent = 'Set';
+        else sshAdminPasswordStateEl.textContent = 'Not set';
+      }
     } catch {}
   }
 
@@ -2259,7 +4058,7 @@
           `Repo: ${repoSource}`,
           allowUnverified ? 'Unverified: allowed' : 'Unverified: blocked',
         ];
-        updateAuthStatusEl.textContent = parts.join(' • ');
+        updateAuthStatusEl.textContent = parts.join(' \u2022 ');
       }
     } catch {}
   }
@@ -2290,11 +4089,11 @@
     const s = String(state || '').trim().toLowerCase();
     const st = status && typeof status === 'object' ? status : {};
     const svc = st.service ? String(st.service) : '';
-    if (s === 'downloading') return 'Downloading update bundle…';
-    if (s === 'extracting') return 'Extracting update…';
-    if (s === 'deploying') return 'Deploying update…';
-    if (s === 'restarting') return `Restarting ${svc || 'services'}…`;
-    if (s === 'restarting_daemon') return `Restarting ${svc || 'daemon'}…`;
+    if (s === 'downloading') return 'Downloading update bundle...';
+    if (s === 'extracting') return 'Extracting update...';
+    if (s === 'deploying') return 'Deploying update...';
+    if (s === 'restarting') return `Restarting ${svc || 'services'}...`;
+    if (s === 'restarting_daemon') return `Restarting ${svc || 'daemon'}...`;
     if (s === 'done') return 'Update complete.';
     if (s === 'error') return `Update failed: ${st.error ? String(st.error) : 'unknown error'}`;
     return 'Idle.';
@@ -2339,7 +4138,7 @@
       } else if (check) {
         line = 'Up to date.';
       } else {
-        line = 'Loading update status…';
+        line = 'Loading update status...';
       }
       updateStatusEl.textContent = line;
     }
@@ -2370,7 +4169,7 @@
     try {
       const ok = await ensureHealthy();
       if (!ok) {
-        if (updateStatusEl) updateStatusEl.textContent = 'Reconnecting…';
+        if (updateStatusEl) updateStatusEl.textContent = 'Reconnecting...';
         scheduleSystemUpdatePoll(3500);
         return;
       }
@@ -2386,7 +4185,7 @@
         if (state === 'done') refreshSystemUpdateCheck({ force: true }).catch(() => {});
       }
     } catch {
-      if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting…';
+      if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting...';
       scheduleSystemUpdatePoll(4000);
     } finally {
       systemUpdatePollInFlight = false;
@@ -2457,7 +4256,12 @@
       await refreshSystemUpdateCheck({ force: true });
     } catch (e) {
       showToast('Save failed', 'error');
-      alert(`Save failed: ${e && e.message ? e.message : e}`);
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Save failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
     } finally {
       btnUpdateSave.disabled = false;
       btnUpdateSave.textContent = prev;
@@ -2466,7 +4270,14 @@
 
   async function clearSystemUpdateToken() {
     if (!btnUpdateTokenClear) return;
-    if (!confirm('Clear the saved GitHub token on this device?')) return;
+    const okConfirm = await openConfirmModal({
+      title: 'Clear GitHub token?',
+      message: 'This removes the stored token from this 5tratumOS host.',
+      confirmText: 'Clear token',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!okConfirm) return;
     btnUpdateTokenClear.disabled = true;
     const prev = btnUpdateTokenClear.textContent;
     btnUpdateTokenClear.textContent = 'Clearing...';
@@ -2485,7 +4296,12 @@
       await refreshSystemUpdateCheck({ force: true });
     } catch (e) {
       showToast('Clear failed', 'error');
-      alert(`Clear failed: ${e && e.message ? e.message : e}`);
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Clear failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
     } finally {
       btnUpdateTokenClear.disabled = false;
       btnUpdateTokenClear.textContent = prev;
@@ -2494,7 +4310,14 @@
 
   async function applySystemUpdate() {
     if (btnUpdateApply && btnUpdateApply.disabled) return;
-    if (!confirm('Apply system update now?')) return;
+    const okConfirm = await openConfirmModal({
+      title: 'Apply system update now?',
+      message: 'This restarts portal services during deployment.',
+      confirmText: 'Update',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!okConfirm) return;
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
 
@@ -2513,7 +4336,12 @@
       scheduleSystemUpdatePoll(1200);
     } catch (e) {
       showToast('Update failed', 'error');
-      alert(`Update failed: ${e && e.message ? e.message : e}`);
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'System update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
     } finally {
       renderSystemUpdatePanel();
     }
@@ -2544,6 +4372,7 @@
       storeLastOk = true;
       storeLastError = '';
       storeAppsCache = Array.isArray(storeRes.apps) ? storeRes.apps : [];
+      storeById = new Map();
       for (const app of storeAppsCache) {
         if (!app || typeof app !== 'object') continue;
         if (!app.id) continue;
@@ -2552,6 +4381,7 @@
       syncStoreCategoryOptions(storeAppsCache);
       renderStore(storeAppsCache, installedSet);
       renderWidgetSettings();
+      renderDesktop();
     } finally {
       refreshStoreInFlight = false;
     }
@@ -2575,10 +4405,82 @@
       await refreshStore();
     } catch (err) {
       showToast('Store sync failed', 'error');
-      alert(`Sync failed: ${err && err.message ? err.message : err}`);
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Store sync failed',
+        message: err && err.message ? String(err.message) : String(err),
+        danger: true,
+      });
     } finally {
       btnStoreSync.disabled = false;
       btnStoreSync.textContent = prev;
+    }
+  }
+
+  async function fixProxyNow() {
+    if (!btnFixProxy) return;
+    if (btnFixProxy.disabled) return;
+
+    const ok = await openConfirmModal({
+      title: 'Fix proxy routes?',
+      message:
+        'This repairs the /apps/<id>/ reverse proxy rules for installed apps and restarts the portal proxy.\n\nUse this if an app loads on its direct port but returns 502 via /apps/<id>/.\n\nApp data is not changed.',
+      confirmText: 'Fix proxy',
+      cancelText: 'Cancel',
+      danger: false,
+    });
+    if (!ok) return;
+
+    btnFixProxy.disabled = true;
+    const prev = btnFixProxy.textContent;
+    btnFixProxy.textContent = 'Fixing...';
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout('/api/v0/system/proxy/repair', { method: 'POST', body: '{}' }, 180000);
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Proxy repair failed');
+      const updated = Array.isArray(res.updated) ? res.updated.length : 0;
+      const added = Array.isArray(res.added) ? res.added.length : 0;
+      showToast('Proxy repaired', null);
+      await openNoticeModal({
+        kind: 'System',
+        title: 'Proxy repaired',
+        message: `Updated routes: ${updated}\nAdded routes: ${added}\nPortal restarted: ${res.restart && res.restart.ok ? 'yes' : 'no'}`,
+        danger: false,
+      });
+    } catch (e) {
+      showToast('Proxy repair failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Proxy repair failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnFixProxy.disabled = false;
+      btnFixProxy.textContent = prev;
+    }
+  }
+
+  async function syncStoreBackground() {
+    if (!storeAutoSyncEnabled) return;
+    if (storeAutoSyncInFlight) return;
+    if (refreshStoreInFlight) return;
+    if (btnStoreSync && btnStoreSync.disabled) return;
+    storeAutoSyncInFlight = true;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const ch = String(activeStoreChannel || 'main').toLowerCase();
+      await apiJsonTimeout(
+        '/api/v0/store/sync',
+        { method: 'POST', body: JSON.stringify({ channel: ch }) },
+        900000,
+      );
+      await refreshStore();
+    } catch (err) {
+      console.warn('Background store sync failed', err);
+    } finally {
+      storeAutoSyncInFlight = false;
     }
   }
 
@@ -2592,7 +4494,12 @@
       const installed = (installedRes && installedRes.apps) || [];
       hasLoadedInstalled = true;
       saveInstalledCache(installed);
-      applyInstalled(installed);
+      const workspaceInUse =
+        activeViewKey === 'dashboard' &&
+        String(dashboardMode || 'fleet') === 'apps' &&
+        Array.isArray(openAppIds) &&
+        openAppIds.length > 0;
+      applyInstalled(installed, { noWorkspace: workspaceInUse });
     } catch {
       if (!hasLoadedInstalled && installedEmptyEl) {
         installedEmptyEl.style.display = 'block';
@@ -2604,7 +4511,13 @@
     }
   }
 
-  async function refreshWidgets() {
+  function dashboardCardsVisible() {
+    return activeViewKey === 'dashboard' && String(dashboardMode || 'fleet') === 'fleet';
+  }
+
+  async function refreshWidgets(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    if (!options.force && !dashboardCardsVisible()) return;
     if (refreshWidgetsInFlight) return;
     refreshWidgetsInFlight = true;
     if (btnWidgetsRefresh) btnWidgetsRefresh.disabled = true;
@@ -2649,18 +4562,21 @@
     const isRunning = status === 'running';
     const isOpen = isAppOpen(id);
     const launchable = isAppLaunchable(id);
+    const isPinned = isPinnedToDrawer(id);
 
     if (isVirtual) {
       const items = [
         {
-          label: id === 'umbrel-store' ? 'Open Global App Store' : 'Open',
+          label: 'Open',
           onClick: async () => {
-            if (id === 'umbrel-store') {
-              setView('store');
-              setStoreChannel('umbrel');
-              return;
-            }
             ensureAppOpen({ id });
+          },
+        },
+        {
+          label: isPinned ? 'Unpin from drawer' : 'Pin to drawer',
+          onClick: async () => {
+            setPinnedToDrawer(id, !isPinned);
+            renderInstalledApps(installedAppsCache);
           },
         },
         { type: 'sep' },
@@ -2669,7 +4585,14 @@
           danger: true,
           onClick: async () => {
             const label = metaFor(id).name || id;
-            if (!confirm(`Disable ${label}?`)) return;
+            const okConfirm = await openConfirmModal({
+              title: `Disable ${label}?`,
+              message: 'This removes the built-in placeholder entry. (No data will be deleted.)',
+              confirmText: 'Disable',
+              cancelText: 'Cancel',
+              danger: true,
+            });
+            if (!okConfirm) return;
             await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/uninstall`, { method: 'POST', body: '{}' });
             await refresh();
           },
@@ -2696,6 +4619,13 @@
           ensureAppOpen({ id });
         },
       },
+      {
+        label: isPinned ? 'Unpin from drawer' : 'Pin to drawer',
+        onClick: async () => {
+          setPinnedToDrawer(id, !isPinned);
+          renderInstalledApps(installedAppsCache);
+        },
+      },
       { type: 'sep' },
       {
         label: 'Start',
@@ -2713,30 +4643,132 @@
         disabled: !isRunning || pendingAppActions.has(id),
         onClick: async () => runAppAction(id, 'down'),
       },
+      { type: 'sep' },
+      {
+        label: 'Redeploy',
+        hint: 'Recreate containers (keeps data)',
+        disabled: pendingAppActions.has(id),
+        onClick: async () => runAppAction(id, 'redeploy'),
+      },
     ];
 
     openContextMenu(items, x, y);
   }
 
+  function renderAppsLauncher(apps) {
+    if (!appsLauncherGridEl || !appsLauncherEmptyEl) return;
+    appsLauncherGridEl.innerHTML = '';
+    const list = Array.isArray(apps) ? apps : [];
+    appsLauncherEmptyEl.classList.toggle('hidden', list.length > 0);
+    if (!list.length) return;
+
+    const sorted = list.slice().sort((a, b) => {
+      const ida = a && typeof a === 'object' ? String(a.id || '').trim() : '';
+      const idb = b && typeof b === 'object' ? String(b.id || '').trim() : '';
+      const ma = metaFor(ida);
+      const mb = metaFor(idb);
+      return String(ma.name || ida).localeCompare(String(mb.name || idb), undefined, { sensitivity: 'base' });
+    });
+
+    for (const app of sorted) {
+      if (!app || typeof app !== 'object') continue;
+      const id = String(app.id || '').trim();
+      if (!id) continue;
+      const meta = metaFor(id);
+      const isPinned = isPinnedToDrawer(id);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forgeos-launcher-item';
+      btn.dataset.appId = id;
+
+      const icon = document.createElement('img');
+      icon.className = 'forgeos-launcher-item__icon';
+      icon.alt = '';
+      icon.loading = 'lazy';
+      icon.decoding = 'async';
+      const fallbackLogo = fallbackLogoFor(id, meta.name || app.name || id);
+      icon.src = String(meta.logo || '').trim() || fallbackLogo;
+      icon.addEventListener('error', () => {
+        if (icon.dataset.fallbackApplied === '1') return;
+        icon.dataset.fallbackApplied = '1';
+        icon.src = fallbackLogo;
+      });
+
+      const name = document.createElement('div');
+      name.className = 'forgeos-launcher-item__name';
+      name.textContent = meta.name || app.name || id;
+
+      btn.appendChild(icon);
+      btn.appendChild(name);
+
+      btn.addEventListener('click', async () => {
+        // Apps page is a launcher: start the app if needed, then open it.
+        if (!isAppLaunchable(id) && !pendingAppActions.has(id)) {
+          await runAppAction(id, 'up');
+        }
+        ensureAppOpen({ id });
+      });
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openInstalledAppMenu(app, e.clientX, e.clientY);
+      });
+
+      btn.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        setPinnedToDrawer(id, !isPinned);
+        renderInstalledApps(installedAppsCache);
+        renderAppsLauncher(installedAppsCache);
+        showToast(isPinned ? 'Unpinned from drawer' : 'Pinned to drawer', null);
+      });
+
+      appsLauncherGridEl.appendChild(btn);
+    }
+  }
+
   function renderInstalledApps(apps) {
     installedAppsEl.innerHTML = '';
-    if (!apps || apps.length === 0) {
+    const all = Array.isArray(apps) ? apps : [];
+    const visible = all.filter((a) => {
+      if (!a || typeof a !== 'object') return false;
+      const id = String(a.id || '').trim();
+      if (!id) return false;
+      const running = isLaunchableStatus(a.status) && !pendingAppActions.has(id);
+      return running || isPinnedToDrawer(id);
+    });
+
+    if (!visible.length) {
       installedEmptyEl.style.display = 'block';
+      installedEmptyEl.textContent = 'No running apps. Pin apps to the drawer from Workbench or App Store.';
       return;
     }
 
     installedEmptyEl.style.display = 'none';
 
-    for (const app of apps) {
+    for (const app of visible) {
       const meta = metaFor(app.id);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.dataset.appId = app.id || '';
+      btn.title = meta.longDesc || meta.desc || meta.tagline || '';
       const launchable = isLaunchableStatus(app.status) && !pendingAppActions.has(app.id);
       const statusClass = isLaunchableStatus(app.status) ? ' forgeos-app-item--running' : ' forgeos-app-item--stopped';
       btn.className = `forgeos-app-item${statusClass}${!launchable ? ' forgeos-app-item--inactive' : ''}${selectedAppId && app.id === selectedAppId ? ' forgeos-app-item--active' : ''}`;
       btn.setAttribute('role', 'listitem');
       btn.addEventListener('click', () => toggleAppOpen(app));
+      btn.draggable = !pendingAppActions.has(app.id);
+      btn.addEventListener('dragstart', (e) => {
+        if (!btn.draggable) return;
+        desktopDragId = app.id || '';
+        try {
+          e.dataTransfer.effectAllowed = 'copy';
+          e.dataTransfer.setData('text/plain', String(app.id || ''));
+        } catch {}
+      });
+      btn.addEventListener('dragend', () => {
+        desktopDragId = '';
+      });
       btn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -2755,7 +4787,16 @@
       const logo = document.createElement('img');
       logo.className = 'forgeos-app-item__logo';
       logo.alt = '';
-      if (meta.logo) logo.src = meta.logo;
+      logo.loading = 'lazy';
+      logo.decoding = 'async';
+      const fallbackLogo = fallbackLogoFor(app.id, meta.name || app.name || app.id);
+      const primaryLogo = String(meta.logo || '').trim() || fallbackLogo;
+      logo.src = primaryLogo;
+      logo.addEventListener('error', () => {
+        if (logo.dataset.fallbackApplied === '1') return;
+        logo.dataset.fallbackApplied = '1';
+        logo.src = fallbackLogo;
+      });
 
       const nameWrap = document.createElement('div');
       nameWrap.className = 'forgeos-app-item__name-wrap';
@@ -2764,57 +4805,12 @@
       name.className = 'forgeos-app-item__name';
       name.textContent = meta.name || app.name || app.id;
 
-      const sub = document.createElement('div');
-      sub.className = 'forgeos-app-item__sub';
-
-      const res = app.resources || null;
-      sub.textContent = meta.desc || 'Open';
-
-      if (res && typeof res === 'object') {
-        const cpu = Number(res.cpu_perc);
-        const mem = Number(res.mem_used_bytes);
-
-        const stats = document.createElement('div');
-        stats.className = 'forgeos-app-item__stats';
-
-        if (Number.isFinite(cpu)) {
-          const el = document.createElement('span');
-          el.className = 'forgeos-stat';
-          const k = document.createElement('span');
-          k.className = 'forgeos-stat__label';
-          k.textContent = 'CPU';
-          const v = document.createElement('span');
-          v.className = 'forgeos-stat__value';
-          v.textContent = `${cpu.toFixed(cpu < 10 ? 2 : 1)}%`;
-          el.appendChild(k);
-          el.appendChild(v);
-          stats.appendChild(el);
-        }
-
-        if (Number.isFinite(mem)) {
-          const el = document.createElement('span');
-          el.className = 'forgeos-stat';
-          const k = document.createElement('span');
-          k.className = 'forgeos-stat__label';
-          k.textContent = 'MEM';
-          const v = document.createElement('span');
-          v.className = 'forgeos-stat__value';
-          v.textContent = formatBytes(mem);
-          el.appendChild(k);
-          el.appendChild(v);
-          stats.appendChild(el);
-        }
-
-        if (stats.children.length) right.appendChild(stats);
-      }
-
       const pill = document.createElement('span');
       pill.className = 'axe-pill';
-      pill.textContent = app.status || 'Installed';
+      pill.textContent = appStatusForUi(app.id, app) || 'Installed';
       right.appendChild(pill);
 
       nameWrap.appendChild(name);
-      nameWrap.appendChild(sub);
       brand.appendChild(logo);
       brand.appendChild(nameWrap);
 
@@ -2850,7 +4846,16 @@
       const logo = document.createElement('img');
       logo.className = 'forgeos-app-item__logo';
       logo.alt = '';
-      if (meta.logo) logo.src = meta.logo;
+      logo.loading = 'lazy';
+      logo.decoding = 'async';
+      const fallbackLogo = fallbackLogoFor(app.id, meta.name || app.name || app.id);
+      const primaryLogo = String(meta.logo || '').trim() || fallbackLogo;
+      logo.src = primaryLogo;
+      logo.addEventListener('error', () => {
+        if (logo.dataset.fallbackApplied === '1') return;
+        logo.dataset.fallbackApplied = '1';
+        logo.src = fallbackLogo;
+      });
 
       const left = document.createElement('div');
       left.className = 'forgeos-app-item__name-wrap';
@@ -2882,7 +4887,7 @@
 
       const pill = document.createElement('span');
       pill.className = 'axe-pill';
-      pill.textContent = app.status || 'Installed';
+      pill.textContent = appStatusForUi(app.id, app) || 'Installed';
 
       top.appendChild(brand);
       top.appendChild(pill);
@@ -2955,112 +4960,150 @@
 	    if (dashboardWidgetsEmptyEl) dashboardWidgetsEmptyEl.style.display = widgets.length ? 'none' : 'block';
 	    if (!widgets.length) return;
 
-	    for (const entry of widgets) {
-	      const w = entry.widget || {};
-	      const ok = w.ok === true;
-	      const type = String(w.type || '').trim();
-	      const id = String(w.id || '').trim() || 'widget';
-	      const data = w.data && typeof w.data === 'object' ? w.data : null;
+      const grouped = new Map();
+      for (const entry of widgets) {
+        const appId = String(entry.appId || '').trim();
+        if (!appId) continue;
+        const appName = String(entry.appName || appId);
+        if (!grouped.has(appId)) grouped.set(appId, { appId, appName, entries: [] });
+        grouped.get(appId).entries.push(entry);
+      }
 
-	      const card = document.createElement('div');
-	      card.className = 'forgeos-widget';
-	      if (!ok && w.error) card.title = String(w.error);
+      const groups = Array.from(grouped.values()).sort((a, b) =>
+        a.appName.localeCompare(b.appName, undefined, { sensitivity: 'base' }),
+      );
 
-	      const top = document.createElement('div');
-	      top.className = 'forgeos-widget__top';
+      for (const group of groups) {
+        const wrap = document.createElement('div');
+        wrap.className = 'forgeos-widget-app';
 
-	      const left = document.createElement('div');
+        const head = document.createElement('div');
+        head.className = 'forgeos-widget-app__head';
 
-	      const appLine = document.createElement('div');
-	      appLine.className = 'forgeos-widget__app';
-	      appLine.textContent = entry.appName;
+        const title = document.createElement('div');
+        title.className = 'forgeos-widget-app__title';
+        title.textContent = group.appName;
 
-	      const title = document.createElement('div');
-	      title.className = 'forgeos-widget__title';
-	      title.textContent = (data && data.title ? String(data.title) : id).trim() || id;
+        head.appendChild(title);
+        wrap.appendChild(head);
 
-	      left.appendChild(appLine);
-	      left.appendChild(title);
+        const grid = document.createElement('div');
+        grid.className = 'forgeos-widget-app__grid';
 
-	      const pill = document.createElement('span');
-	      pill.className = 'axe-pill';
-	      pill.textContent = ok ? 'live' : 'offline';
+        for (const entry of group.entries) {
+          const w = entry.widget || {};
+          const ok = w.ok === true;
+          const type = String(w.type || '').trim();
+          const id = String(w.id || '').trim() || 'widget';
+          const data = w.data && typeof w.data === 'object' ? w.data : null;
+          const titleText = (data && data.title ? String(data.title) : id).trim() || id;
+          const isSyncWidget = /\bsync\b/i.test(titleText);
 
-	      top.appendChild(left);
-	      top.appendChild(pill);
-	      card.appendChild(top);
+          const card = document.createElement('div');
+          card.className = 'forgeos-widget';
+          if (!ok && w.error) card.title = String(w.error);
 
-	      if (type === 'text-with-progress') {
-	        const value = document.createElement('div');
-	        value.className = 'forgeos-widget__value';
-	        value.textContent = ok && data && data.text != null ? String(data.text) : '-';
-	        card.appendChild(value);
+          const top = document.createElement('div');
+          top.className = 'forgeos-widget__top';
 
-	        const hint = document.createElement('div');
-	        hint.className = 'forgeos-widget__hint';
-	        hint.textContent = ok && data && data.progressLabel ? String(data.progressLabel) : ok ? '' : 'Not running';
-	        if (hint.textContent) card.appendChild(hint);
+          const left = document.createElement('div');
 
-	        const progress = ok && data && typeof data.progress === 'number' ? data.progress : null;
-	        if (typeof progress === 'number' && Number.isFinite(progress)) {
-	          const bar = document.createElement('div');
-	          bar.className = 'forgeos-widget__bar';
-	          const fill = document.createElement('div');
-	          fill.className = 'forgeos-widget__bar-fill';
-	          const pct = Math.max(0, Math.min(1, progress));
-	          fill.style.width = `${Math.round(pct * 100)}%`;
-	          bar.appendChild(fill);
-	          card.appendChild(bar);
-	        }
-	      } else if (type === 'three-stats') {
-	        const items = ok && data && Array.isArray(data.items) ? data.items : [];
-	        if (items.length) {
-	          const grid = document.createElement('div');
-	          grid.className = 'forgeos-widget__stats';
-	          for (const item of items.slice(0, 3)) {
-	            if (!item || typeof item !== 'object') continue;
-	            const stat = document.createElement('div');
-	            stat.className = 'forgeos-widget__stat';
+          const title = document.createElement('div');
+          title.className = 'forgeos-widget__title';
+          title.textContent = titleText;
 
-	            const t = document.createElement('div');
-	            t.className = 'forgeos-widget__stat-title';
-	            t.textContent = String(item.title || '').trim() || '-';
+          left.appendChild(title);
 
-	            const txt = document.createElement('div');
-	            txt.className = 'forgeos-widget__stat-text';
-	            txt.textContent = String(item.text || '').trim() || '-';
+          const pill = document.createElement('span');
+          pill.className = 'axe-pill';
+          pill.textContent = ok ? 'live' : 'offline';
 
-	            stat.appendChild(t);
-	            stat.appendChild(txt);
+          top.appendChild(left);
+          top.appendChild(pill);
+          card.appendChild(top);
 
-	            if (item.subtext) {
-	              const sub = document.createElement('div');
-	              sub.className = 'forgeos-widget__stat-subtext';
-	              sub.textContent = String(item.subtext);
-	              stat.appendChild(sub);
-	            }
+          if (type === 'text-with-progress') {
+            const progress = ok && data && typeof data.progress === 'number' ? data.progress : null;
+            const pct = typeof progress === 'number' && Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : null;
 
-	            grid.appendChild(stat);
-	          }
-	          card.appendChild(grid);
-	        } else {
-	          const hint = document.createElement('div');
-	          hint.className = 'forgeos-widget__hint';
-	          hint.textContent = ok ? '' : 'Not running';
-	          if (hint.textContent) card.appendChild(hint);
-	        }
-	      } else {
-	        const hint = document.createElement('div');
-	        hint.className = 'forgeos-widget__hint';
-	        hint.textContent = ok ? 'Widget online' : 'Not running';
-	        card.appendChild(hint);
-	      }
+            const value = document.createElement('div');
+            value.className = 'forgeos-widget__value';
+            if (ok && data && isSyncWidget && typeof pct === 'number') {
+              const pctInt = pct >= 0.999 ? 100 : Math.floor(pct * 100);
+              value.textContent = `${pctInt}%`;
+            } else {
+              value.textContent = ok && data && data.text != null ? String(data.text) : '-';
+            }
+            card.appendChild(value);
 
-	      dashboardWidgetsEl.appendChild(card);
-	    }
+            const hint = document.createElement('div');
+            hint.className = 'forgeos-widget__hint';
+            hint.textContent = ok && data && data.progressLabel ? String(data.progressLabel) : ok ? '' : 'Not running';
+            if (hint.textContent) card.appendChild(hint);
+
+            if (typeof pct === 'number') {
+              const bar = document.createElement('div');
+              bar.className = 'forgeos-widget__bar';
+              const fill = document.createElement('div');
+              fill.className = 'forgeos-widget__bar-fill';
+              const pctInt = isSyncWidget ? (pct >= 0.999 ? 100 : Math.floor(pct * 100)) : Math.round(pct * 100);
+              fill.style.width = `${pctInt}%`;
+              bar.appendChild(fill);
+              card.appendChild(bar);
+            }
+          } else if (type === 'three-stats') {
+            const items = ok && data && Array.isArray(data.items) ? data.items : [];
+            if (items.length) {
+              const statGrid = document.createElement('div');
+              statGrid.className = 'forgeos-widget__stats';
+              for (const item of items.slice(0, 3)) {
+                if (!item || typeof item !== 'object') continue;
+                const stat = document.createElement('div');
+                stat.className = 'forgeos-widget__stat';
+
+                const t = document.createElement('div');
+                t.className = 'forgeos-widget__stat-title';
+                t.textContent = String(item.title || '').trim() || '-';
+
+                const txt = document.createElement('div');
+                txt.className = 'forgeos-widget__stat-text';
+                txt.textContent = formatWidgetStatText(item.title, item.text);
+
+                stat.appendChild(t);
+                stat.appendChild(txt);
+
+                if (item.subtext) {
+                  const sub = document.createElement('div');
+                  sub.className = 'forgeos-widget__stat-subtext';
+                  sub.textContent = String(item.subtext);
+                  stat.appendChild(sub);
+                }
+
+                statGrid.appendChild(stat);
+              }
+              card.appendChild(statGrid);
+            } else {
+              const hint = document.createElement('div');
+              hint.className = 'forgeos-widget__hint';
+              hint.textContent = ok ? '' : 'Not running';
+              if (hint.textContent) card.appendChild(hint);
+            }
+          } else {
+            const hint = document.createElement('div');
+            hint.className = 'forgeos-widget__hint';
+            hint.textContent = ok ? 'Widget online' : 'Not running';
+            card.appendChild(hint);
+          }
+
+          grid.appendChild(card);
+        }
+
+        wrap.appendChild(grid);
+        dashboardWidgetsEl.appendChild(wrap);
+      }
 	  }
 
-	  function renderStore(storeApps, installedSet) {
+  function renderStore(storeApps, installedSet) {
 	    const storeEl = document.getElementById('store-list');
 	    if (!storeEl) return;
 
@@ -3073,12 +5116,12 @@
       const empty = document.createElement('div');
       empty.className = 'forgeos-muted';
       empty.style.gridColumn = '1 / -1';
-      empty.textContent = 'Loading store…';
+      empty.textContent = 'Loading store...';
       storeEl.appendChild(empty);
       return;
     }
 
-    if (!hasStoreApps && channel === 'umbrel' && hasLoadedStore && !storeLastOk) {
+    if (!hasStoreApps && channel === 'global' && hasLoadedStore && !storeLastOk) {
       const empty = document.createElement('div');
       empty.className = 'forgeos-store-item';
       empty.style.gridColumn = '1 / -1';
@@ -3116,7 +5159,7 @@
       ? storeApps
           .map((a) => (a && typeof a === 'object' ? String(a.id || '').trim() : String(a || '').trim()))
           .filter(Boolean)
-      : channel !== 'umbrel'
+      : channel !== 'global'
         ? Object.keys(APP_CATALOG)
         : [];
 
@@ -3129,7 +5172,7 @@
       return;
     }
 
-    if (hasLoadedStore && !storeLastOk && storeLastError && channel !== 'umbrel') {
+    if (hasLoadedStore && !storeLastOk && storeLastError && channel !== 'global') {
       const notice = document.createElement('div');
       notice.className = 'forgeos-muted';
       notice.style.gridColumn = '1 / -1';
@@ -3138,24 +5181,24 @@
     }
 
     const ids = entries.slice().sort((a, b) => {
-      const ma = metaFor(a);
-      const mb = metaFor(b);
+      const ma = metaFor(a, { prefer: 'store' });
+      const mb = metaFor(b, { prefer: 'store' });
       return String(ma.name || a).localeCompare(String(mb.name || b), undefined, { sensitivity: 'base' });
     });
 
     const q = (storeQuery || '').trim().toLowerCase();
     const visibleIds = q
       ? ids.filter((id) => {
-          const meta = metaFor(id);
+          const meta = metaFor(id, { prefer: 'store' });
           const hay = `${id} ${meta.name || ''} ${meta.desc || ''} ${meta.tag || ''}`.toLowerCase();
           return hay.includes(q);
         })
       : ids;
 
-    const cat = channel === 'umbrel' ? String(storeCategory || '').trim() : '';
+    const cat = channel === 'global' ? String(storeCategory || '').trim() : '';
     const categoryIds = cat
       ? visibleIds.filter((id) => {
-          const meta = metaFor(id);
+          const meta = metaFor(id, { prefer: 'store' });
           return String(meta.tag || '').trim() === cat;
         })
       : visibleIds;
@@ -3175,15 +5218,10 @@
     }
 
 	    for (const id of pagedIds) {
-	      const meta = metaFor(id);
+	      const meta = metaFor(id, { prefer: 'store' });
 	      const installed = installedById.get(id) || null;
 	      const isInstalled = installedSet && installedSet.has(id);
-	      const updateAvailable =
-	        !!(
-	          installed &&
-	          (installed.update_available === true ||
-	            (installed.update && typeof installed.update === 'object' && installed.update.available === true))
-	        );
+	      const updateAvailable = !!(installed && isUpdateAvailable(installed.installed_version, meta.version));
 	      const isInstallable = !!meta.installable;
 
       const card = document.createElement('div');
@@ -3199,6 +5237,8 @@
         }
       });
 
+      // Keep store cards tidy: use icon-only tiles (details view shows screenshots).
+
       const top = document.createElement('div');
       top.className = 'forgeos-store-item__top';
 
@@ -3208,8 +5248,10 @@
       const logo = document.createElement('img');
       logo.className = 'forgeos-store-item__logo';
       logo.alt = `${meta.name || id} logo`;
+      logo.dataset.fallbackSrc = fallbackLogoFor(id, meta.name || id);
       if (meta.logo) logo.src = meta.logo;
       logo.loading = 'lazy';
+      attachGithubRawFallback(logo);
 
       const nameWrap = document.createElement('div');
       nameWrap.className = 'forgeos-store-item__name-wrap';
@@ -3232,8 +5274,11 @@
 	      const pill = document.createElement('span');
 	      pill.className = 'axe-pill';
 	      if (isInstalled) {
-	        pill.textContent = updateAvailable ? 'Update available' : 'Installed';
-	        if (updateAvailable) pill.classList.add('forgeos-pill--update');
+	        pill.textContent = updateAvailable ? 'Update' : 'Installed';
+          if (updateAvailable) {
+            pill.title = meta.version ? `Update available: v${String(meta.version).replace(/^v/i, '')}` : 'Update available';
+            pill.classList.add('forgeos-pill--update', 'forgeos-store-item__update-badge');
+          }
 	      } else {
 	        pill.textContent = isInstallable ? meta.tag || 'App' : 'Coming soon';
 	      }
@@ -3243,10 +5288,28 @@
 
       const desc = document.createElement('div');
       desc.className = 'forgeos-store-item__desc';
-      desc.textContent = meta.desc || '';
+      desc.textContent = sanitizeStoreText(meta.desc || '');
 
       card.appendChild(top);
       card.appendChild(desc);
+
+      const metaRow = document.createElement('div');
+      metaRow.className = 'forgeos-store-item__meta';
+      const v = String(meta.version || '').trim();
+      if (v) {
+        const version = document.createElement('div');
+        version.className = 'forgeos-store-item__version forgeos-mono';
+        version.textContent = `v${v.replace(/^v/i, '')}`;
+        metaRow.appendChild(version);
+      }
+      const dev = String(meta.developer || '').trim();
+      if (dev) {
+        const by = document.createElement('div');
+        by.className = 'forgeos-store-item__by';
+        by.textContent = dev;
+        metaRow.appendChild(by);
+      }
+      if (metaRow.childNodes.length) card.appendChild(metaRow);
 
 	      if (isInstalled) {
 	        const actions = document.createElement('div');
@@ -3264,6 +5327,54 @@
 	        });
 
 	        actions.appendChild(btnOpen);
+
+          if (updateAvailable) {
+            const btnUpdate = document.createElement('button');
+            btnUpdate.className = 'axe-btn';
+            btnUpdate.type = 'button';
+            btnUpdate.textContent = 'Update';
+            btnUpdate.dataset.defaultLabel = 'Update';
+            btnUpdate.dataset.progressId = id;
+            btnUpdate.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              btnUpdate.disabled = true;
+              startProgress(id, 'update');
+              const beforeVer = installed ? String(installed.installed_version || '') : '';
+              let requestErr = null;
+              try {
+                try {
+                  await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/update`, {
+                    method: 'POST',
+                    body: JSON.stringify({ channel: meta.channel || activeStoreChannel || 'main' }),
+                  });
+                } catch (err) {
+                  requestErr = err;
+                }
+                const res = await waitForAppUpdate(id, { expectedVersion: meta.version, previousVersion: beforeVer });
+                if (res && res.ok) {
+                  finishProgress(id);
+                  await refreshInstalled();
+                  await refreshStore();
+                  showToast('App updated', null);
+                } else {
+                  cancelProgress(id);
+                  showToast('Update status unknown', 'warn');
+                  await openNoticeModal({
+                    kind: 'Warning',
+                    title: 'Update status unknown',
+                    message:
+                      'The update appears to have started, but confirmation timed out.\n\n' +
+                      (requestErr ? `Request error: ${requestErr && requestErr.message ? requestErr.message : requestErr}` : ''),
+                  });
+                }
+              } finally {
+                btnUpdate.disabled = false;
+                btnUpdate.textContent = btnUpdate.dataset.defaultLabel || 'Update';
+              }
+            });
+            actions.appendChild(btnUpdate);
+          }
+
 	        card.appendChild(actions);
 	      } else if (isInstallable) {
 	        const actions = document.createElement('div');
@@ -3273,6 +5384,8 @@
         btnInstall.className = 'axe-btn';
         btnInstall.type = 'button';
         btnInstall.textContent = 'Install';
+        btnInstall.dataset.defaultLabel = 'Install';
+        btnInstall.dataset.progressId = id;
         btnInstall.addEventListener('click', async (e) => {
           e.stopPropagation();
           startProgress(id, 'install');
@@ -3288,8 +5401,14 @@
             finishProgress(id);
           } catch (err) {
             cancelProgress(id);
-            alert(`Install failed: ${err && err.message ? err.message : err}`);
+            await openNoticeModal({
+              kind: 'Error',
+              title: 'Install failed',
+              message: err && err.message ? String(err.message) : String(err),
+              danger: true,
+            });
             btnInstall.disabled = false;
+            btnInstall.textContent = btnInstall.dataset.defaultLabel || 'Install';
           }
         });
 
@@ -3326,10 +5445,18 @@
 
   function closeModal() {
     if (!modalEl) return;
+    try {
+      if (typeof modalOnClose === 'function') modalOnClose();
+    } catch {}
+    modalOnClose = null;
     modalEl.classList.add('hidden');
     modalEl.setAttribute('aria-hidden', 'true');
     if (modalBodyEl) modalBodyEl.innerHTML = '';
     document.body.style.overflow = '';
+    try {
+      systemDetailMode = null;
+      stopSystemDetailPoll();
+    } catch {}
   }
 
   function formatUptime(seconds) {
@@ -3343,7 +5470,7 @@
   }
 
   function formatInfoText(value) {
-    const raw = String(value || '').replace(/\r\n/g, '\n').trim();
+    const raw = sanitizeStoreText(String(value || '')).replace(/\r\n/g, '\n').trim();
     if (!raw) return '';
 
     // Some store descriptions use " - " as bullet separators in a single paragraph.
@@ -3354,7 +5481,7 @@
         .filter(Boolean);
       if (parts.length >= 3) {
         const [head, ...rest] = parts;
-        return [head, '', ...rest.map((p) => `• ${p}`)].join('\n');
+        return [head, '', ...rest.map((p) => `\u2022 ${p}`)].join('\n');
       }
     }
 
@@ -3394,12 +5521,12 @@
 
       const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
       const preferred =
-        disks.find((d) => d && d.path === '/srv/forgeos-data') || disks.find((d) => d && d.path === '/') || null;
+        disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
       const diskText = preferred
         ? `${preferred.path} ${Math.round((Number(preferred.used_bytes || 0) / Math.max(1, Number(preferred.total_bytes || 0))) * 100)}%`
         : '-';
 
-      sysV.textContent = `CPU ${cpuPct}% · MEM ${memPct}% · DISK ${diskText} · UPTIME ${formatUptime(metrics.uptime_s)}`;
+      sysV.textContent = `CPU ${cpuPct}% \u00b7 MEM ${memPct}% \u00b7 DISK ${diskText} \u00b7 UPTIME ${formatUptime(metrics.uptime_s)}`;
     } else {
       sysV.textContent = 'No metrics yet.';
     }
@@ -3452,7 +5579,7 @@
           Number.isFinite(mem) ? `Mem ${formatBytes(mem)}` : null,
         ]
           .filter(Boolean)
-          .join(' · ');
+          .join(' \u00b7 ');
 
         left.appendChild(name);
         left.appendChild(sub);
@@ -3479,8 +5606,303 @@
     document.body.style.overflow = 'hidden';
   }
 
+  let systemDetailMode = null;
+  let systemDetailPollTimer = null;
+  let systemDetailPollInFlight = false;
+
+  function stopSystemDetailPoll() {
+    if (!systemDetailPollTimer) return;
+    window.clearTimeout(systemDetailPollTimer);
+    systemDetailPollTimer = null;
+  }
+
+  function scheduleSystemDetailPoll(delayMs) {
+    stopSystemDetailPoll();
+    const ms = Math.max(750, Number(delayMs) || 1500);
+    systemDetailPollTimer = window.setTimeout(() => refreshSystemDetail().catch(() => {}), ms);
+  }
+
+  async function apiSystemProcesses(sort, limit) {
+    const params = new URLSearchParams();
+    if (sort) params.set('sort', String(sort));
+    if (limit) params.set('limit', String(limit));
+    const q = params.toString();
+    return apiJsonTimeout(`/api/v0/system/processes${q ? `?${q}` : ''}`, {}, 3500);
+  }
+
+  function renderProcessTable(bodyEl, procs) {
+    if (!(bodyEl instanceof HTMLElement)) return;
+    bodyEl.innerHTML = '';
+    const list = Array.isArray(procs) ? procs : [];
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'forgeos-muted';
+      empty.textContent = 'No process data.';
+      bodyEl.appendChild(empty);
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'forgeos-table-wrap';
+    const table = document.createElement('table');
+    table.className = 'forgeos-table';
+
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    for (const label of ['PID', 'USER', 'CMD', 'CPU', 'MEM', 'RSS']) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      trh.appendChild(th);
+    }
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const p of list.slice(0, 80)) {
+      if (!p || typeof p !== 'object') continue;
+      const tr = document.createElement('tr');
+      const pid = p.pid != null ? String(p.pid) : '-';
+      const user = p.user != null ? String(p.user) : '-';
+      const cmd = p.command != null ? String(p.command) : '-';
+      const cpu = Number(p.cpu_perc);
+      const mem = Number(p.mem_perc);
+      const rss = Number(p.rss_bytes);
+      const cols = [
+        pid,
+        user,
+        cmd,
+        Number.isFinite(cpu) ? `${cpu.toFixed(cpu >= 10 ? 1 : 2)}%` : '-',
+        Number.isFinite(mem) ? `${mem.toFixed(mem >= 10 ? 1 : 2)}%` : '-',
+        Number.isFinite(rss) ? formatBytes(rss) : '-',
+      ];
+      for (const c of cols) {
+        const td = document.createElement('td');
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    bodyEl.appendChild(wrap);
+  }
+
+  function renderDiskTable(bodyEl, disks) {
+    if (!(bodyEl instanceof HTMLElement)) return;
+    bodyEl.innerHTML = '';
+    const list = Array.isArray(disks) ? disks : [];
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'forgeos-muted';
+      empty.textContent = 'No disk data.';
+      bodyEl.appendChild(empty);
+      return;
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'forgeos-table-wrap';
+    const table = document.createElement('table');
+    table.className = 'forgeos-table';
+
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    for (const label of ['MOUNT', 'USED', 'TOTAL', 'PCT']) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      trh.appendChild(th);
+    }
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const d of list.slice(0, 64)) {
+      if (!d || typeof d !== 'object') continue;
+      const path = String(d.path || d.mount || '-') || '-';
+      const used = Number(d.used_bytes);
+      const total = Number(d.total_bytes);
+      const pct = total > 0 ? Math.round((Math.max(0, used) / total) * 100) : NaN;
+      const cols = [path, Number.isFinite(used) ? formatBytes(used) : '-', Number.isFinite(total) ? formatBytes(total) : '-', Number.isFinite(pct) ? `${pct}%` : '-'];
+      const tr = document.createElement('tr');
+      for (const c of cols) {
+        const td = document.createElement('td');
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    bodyEl.appendChild(wrap);
+  }
+
+  async function refreshSystemDetail() {
+    if (!systemDetailMode || !modalEl || modalEl.classList.contains('hidden')) {
+      stopSystemDetailPoll();
+      return;
+    }
+    if (systemDetailPollInFlight) return;
+    systemDetailPollInFlight = true;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) {
+        scheduleSystemDetailPoll(2200);
+        return;
+      }
+
+      const metrics = await apiJsonTimeout('/api/v0/system/metrics', {}, 3000).catch(() => null);
+      if (metrics && metrics.ok === true) lastMetrics = metrics;
+
+      const mode = String(systemDetailMode || 'cpu').toLowerCase();
+      const sort = mode === 'mem' ? 'mem' : mode === 'disk' ? 'cpu' : 'cpu';
+      const res = await apiSystemProcesses(sort, 30).catch(() => null);
+
+      const summaryEl = document.getElementById('sysdetail-summary');
+      const procsEl = document.getElementById('sysdetail-procs');
+      const disksEl = document.getElementById('sysdetail-disks');
+      const titleEl = document.getElementById('sysdetail-title');
+      const subEl = document.getElementById('sysdetail-sub');
+
+      if (titleEl) titleEl.textContent = mode === 'mem' ? 'Memory' : mode === 'disk' ? 'Disk' : 'CPU';
+
+      const m = metrics && metrics.ok === true ? metrics : null;
+      if (m && summaryEl) {
+        const cpu = m.cpu || {};
+        const cores = Number(cpu.cores) || 1;
+        const load1 = Number(cpu.load1) || 0;
+        const cpuTotal = Number.isFinite(Number(cpu.total_perc)) ? Number(cpu.total_perc) : NaN;
+        const cpuPct = Number.isFinite(cpuTotal) ? Math.max(0, Math.round(cpuTotal)) : Math.max(0, Math.round((load1 / cores) * 100));
+
+        const mem = m.memory || {};
+        const total = Number(mem.total_bytes) || 0;
+        const used = Number(mem.used_bytes) || 0;
+        const memPct = total > 0 ? Math.max(0, Math.round((used / total) * 100)) : 0;
+
+        const disks = Array.isArray(m.disks) ? m.disks : [];
+        const preferred = disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
+        const diskPct =
+          preferred && Number(preferred.total_bytes) > 0
+            ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
+            : null;
+
+        const uptime = formatUptime(m.uptime_s);
+        let line = '';
+        if (mode === 'mem') line = `Used ${formatBytes(used)} / ${formatBytes(total)} (${memPct}%) \u2022 Uptime ${uptime}`;
+        else if (mode === 'disk')
+          line = preferred
+            ? `${preferred.path} ${formatBytes(Number(preferred.used_bytes || 0))} / ${formatBytes(Number(preferred.total_bytes || 0))} (${diskPct ?? '-'}%) \u2022 Uptime ${uptime}`
+            : `Uptime ${uptime}`;
+        else line = `Total ${cpuPct}% \u2022 ${cores} cores \u2022 load1 ${load1.toFixed(2)} \u2022 Uptime ${uptime}`;
+
+        summaryEl.textContent = line;
+        if (subEl) subEl.textContent = `Updated ${formatTimeShort(m.time) || ''}`.trim() || '-';
+      } else {
+        if (summaryEl) summaryEl.textContent = 'Loading...';
+        if (subEl) subEl.textContent = '-';
+      }
+
+      if (mode === 'disk') {
+        if (disksEl) disksEl.classList.remove('hidden');
+        if (procsEl) procsEl.classList.remove('hidden');
+        if (m) renderDiskTable(disksEl, m.disks);
+        if (res && res.ok === true) renderProcessTable(procsEl, res.procs);
+        else renderProcessTable(procsEl, []);
+      } else {
+        if (disksEl) disksEl.classList.add('hidden');
+        if (procsEl) procsEl.classList.remove('hidden');
+        if (res && res.ok === true) renderProcessTable(procsEl, res.procs);
+        else renderProcessTable(procsEl, []);
+      }
+    } finally {
+      systemDetailPollInFlight = false;
+      scheduleSystemDetailPoll(1600);
+    }
+  }
+
+  function openSystemDetailModal(mode) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    systemDetailMode = String(mode || 'cpu').trim().toLowerCase() || 'cpu';
+
+    modalTitleEl.textContent = 'System';
+    modalBodyEl.innerHTML = '';
+
+    const head = document.createElement('div');
+    head.className = 'forgeos-sysdetail__head';
+
+    const left = document.createElement('div');
+    left.className = 'min-w-0';
+
+    const title = document.createElement('div');
+    title.id = 'sysdetail-title';
+    title.className = 'forgeos-sysdetail__title';
+    title.textContent = systemDetailMode === 'mem' ? 'Memory' : systemDetailMode === 'disk' ? 'Disk' : 'CPU';
+
+    const summary = document.createElement('div');
+    summary.id = 'sysdetail-summary';
+    summary.className = 'forgeos-sysdetail__summary forgeos-mono';
+    summary.textContent = 'Loading...';
+
+    const sub = document.createElement('div');
+    sub.id = 'sysdetail-sub';
+    sub.className = 'forgeos-muted';
+    sub.textContent = '-';
+
+    left.appendChild(title);
+    left.appendChild(summary);
+    left.appendChild(sub);
+
+    const tabs = document.createElement('div');
+    tabs.className = 'forgeos-sysdetail__tabs';
+
+    function addTab(key, label) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `axe-btn forgeos-sysdetail__tab${systemDetailMode === key ? ' forgeos-sysdetail__tab--active' : ''}`;
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        systemDetailMode = key;
+        Array.from(tabs.children).forEach((c) => {
+          if (!(c instanceof HTMLElement)) return;
+          c.classList.toggle('forgeos-sysdetail__tab--active', c.dataset.tab === key);
+        });
+        refreshSystemDetail().catch(() => {});
+      });
+      b.dataset.tab = key;
+      tabs.appendChild(b);
+    }
+
+    addTab('cpu', 'CPU');
+    addTab('mem', 'Memory');
+    addTab('disk', 'Disk');
+
+    head.appendChild(left);
+    head.appendChild(tabs);
+
+    const content = document.createElement('div');
+    content.className = 'forgeos-sysdetail__content';
+
+    const procs = document.createElement('div');
+    procs.id = 'sysdetail-procs';
+
+    const disks = document.createElement('div');
+    disks.id = 'sysdetail-disks';
+    disks.className = 'hidden';
+
+    content.appendChild(disks);
+    content.appendChild(procs);
+
+    modalBodyEl.appendChild(head);
+    modalBodyEl.appendChild(content);
+
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+
+    refreshSystemDetail().catch(() => {});
+  }
+
   function openPowerModal() {
     if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    if (modalKindEl) modalKindEl.textContent = 'System';
     modalTitleEl.textContent = 'Power';
     modalBodyEl.innerHTML = '';
 
@@ -3489,7 +5911,17 @@
 
     const desc = document.createElement('div');
     desc.className = 'text-sm text-slate-300';
-    desc.textContent = 'System actions for this 5tratumOS host.';
+    const statusLabel = statusPill ? String(statusPill.textContent || '').trim() : '';
+    const host = (() => {
+      try {
+        return String(window.location.hostname || '').trim();
+      } catch {
+        return '';
+      }
+    })();
+    desc.textContent =
+      'System actions for this 5tratumOS host.' +
+      (statusLabel || host ? `  (${[statusLabel ? `Status: ${statusLabel}` : null, host ? `Host: ${host}` : null].filter(Boolean).join(' • ')})` : '');
 
     const actions = document.createElement('div');
     actions.className = 'forgeos-power__actions';
@@ -3513,15 +5945,27 @@
             ? 'Shut down this 5tratumOS host now?'
             : 'Run power action?';
 
-      if (!confirm(msg)) return;
+      const okConfirm = await openConfirmModal({
+        title: msg,
+        message: act === 'shutdown' ? 'This will power off the host immediately.' : 'This will restart the host immediately.',
+        confirmText: label,
+        cancelText: 'Cancel',
+        danger: act === 'shutdown',
+      });
+      if (!okConfirm) return;
       try {
         await apiJson('/api/v0/system/power', { method: 'POST', body: JSON.stringify({ action: act }) });
         closeModal();
-        setStatus(act === 'reboot' ? 'Restarting…' : 'Shutting down…');
+        setStatus(act === 'reboot' ? 'Restarting...' : 'Shutting down...');
         showToast(`${label} requested`, null);
       } catch (e) {
         showToast('Power action failed', 'error');
-        alert(`Power action failed: ${e && e.message ? e.message : e}`);
+        await openNoticeModal({
+          kind: 'Error',
+          title: 'Power action failed',
+          message: e && e.message ? String(e.message) : String(e),
+          danger: true,
+        });
       }
     }
 
@@ -3559,8 +6003,7 @@
 
     const desc = document.createElement('div');
     desc.className = 'text-sm text-slate-300';
-    desc.textContent =
-      'Run 5tratumOS commands + safe diagnostics (Ctrl+Enter). Examples: forgeos app installed, ip a, ls -la, systemctl status forgeosd.service';
+    desc.textContent = 'Run a command on the host (Ctrl+Enter).';
 
     const form = document.createElement('div');
     form.className = 'forgeos-terminal__form';
@@ -3568,8 +6011,8 @@
     const input = document.createElement('textarea');
     input.className = 'forgeos-terminal__input';
     input.rows = 2;
-    input.placeholder = 'ls -la';
-    input.value = 'ip a\nls -la\nforgeos app installed';
+    input.placeholder = '';
+    input.value = '';
 
     const actions = document.createElement('div');
     actions.className = 'forgeos-terminal__actions';
@@ -3650,27 +6093,24 @@
   }
 
   function openStoreModal(appId) {
-    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
-    const id = String(appId || '').trim();
-    if (!id) return;
+    try {
+      if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+      const id = String(appId || '').trim();
+      if (!id) return;
+      if (modalKindEl) modalKindEl.textContent = 'App Store';
 
-    const meta = metaFor(id);
-    const installed = installedById.get(id) || null;
-    const isInstalled = !!installed;
-    const status = installed ? installed.status || 'installed' : 'not-installed';
-    const isInstallable = !!meta.installable;
+      const meta = metaFor(id, { prefer: 'store' });
+      const installed = installedById.get(id) || null;
+      const isInstalled = !!installed;
+      const status = installed ? installed.status || 'installed' : 'not-installed';
+      const isInstallable = !!meta.installable;
 
 	    modalTitleEl.textContent = meta.name || id;
 	    modalBodyEl.innerHTML = '';
 
-	    const updateAvailable =
-	      !!(
-	        installed &&
-	        (installed.update_available === true ||
-	          (installed.update && typeof installed.update === 'object' && installed.update.available === true))
-	      );
+	    const updateAvailable = !!(installed && isUpdateAvailable(installed.installed_version, meta.version));
 	    const installedVersion = isInstalled ? String(installed.installed_version || '') : '';
-	    const latestVersion = String(installed.latest_version || meta.version || '');
+	    const latestVersion = String(meta.version || (installed ? installed.latest_version : '') || '');
 
 	    const layout = document.createElement('div');
 	    layout.className = 'forgeos-modal__layout';
@@ -3683,8 +6123,10 @@
     const mainShot = document.createElement('img');
     mainShot.className = 'forgeos-modal__shot';
     mainShot.alt = `${meta.name || id} preview`;
+    mainShot.dataset.fallbackSrc = makeShot(meta.name || id, meta.desc || 'Preview');
     mainShot.src = shots[0];
     mainShot.loading = 'lazy';
+    attachGithubRawFallback(mainShot);
     shotsWrap.appendChild(mainShot);
 
     if (shots.length > 1) {
@@ -3694,8 +6136,10 @@
         const t = document.createElement('img');
         t.className = `forgeos-modal__thumb${idx === 0 ? ' forgeos-modal__thumb--active' : ''}`;
         t.alt = `${meta.name || id} preview ${idx + 1}`;
+        t.dataset.fallbackSrc = makeShot(meta.name || id, meta.desc || 'Preview');
         t.src = src;
         t.loading = 'lazy';
+        attachGithubRawFallback(t);
         t.addEventListener('click', (e) => {
           e.stopPropagation();
           mainShot.src = src;
@@ -3744,8 +6188,10 @@
     const logo = document.createElement('img');
     logo.className = 'forgeos-modal__meta-logo';
     logo.alt = `${meta.name || id} logo`;
+    logo.dataset.fallbackSrc = fallbackLogoFor(id, meta.name || id);
     if (meta.logo) logo.src = meta.logo;
     logo.loading = 'lazy';
+    attachGithubRawFallback(logo);
 
     const titleWrap = document.createElement('div');
     titleWrap.className = 'min-w-0';
@@ -3769,9 +6215,10 @@
 	    pills.appendChild(statusPill);
 	    if (updateAvailable) {
 	      const updatePill = document.createElement('span');
-	      updatePill.className = 'axe-pill forgeos-pill--update';
-	      updatePill.textContent = 'Update available';
-	      pills.appendChild(updatePill);
+	      updatePill.className = 'axe-pill forgeos-pill--update forgeos-modal__update-badge';
+	      updatePill.textContent = 'Update';
+        updatePill.title = latestVersion ? `Update available: v${latestVersion}` : 'Update available';
+	      metaPanel.appendChild(updatePill);
 	    }
 
 	    titleWrap.appendChild(title);
@@ -3845,23 +6292,116 @@
 	        btnUpdate.className = 'axe-btn';
 	        btnUpdate.type = 'button';
 	        btnUpdate.textContent = 'Update';
+          btnUpdate.dataset.defaultLabel = 'Update';
 	        btnUpdate.dataset.progressId = id;
 	        btnUpdate.addEventListener('click', async () => {
 	          startProgress(id, 'update');
 	          btnUpdate.disabled = true;
+            const beforeVer = installed ? String(installed.installed_version || '') : '';
+            let requestErr = null;
 	          try {
-	            await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/update`, { method: 'POST', body: '{}' });
-	            await refresh();
-	            finishProgress(id);
-	          } catch (err) {
-	            cancelProgress(id);
-	            alert(`Update failed: ${err && err.message ? err.message : err}`);
+	            try {
+	              await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/update`, {
+	                method: 'POST',
+	                body: JSON.stringify({ channel: meta.channel || activeStoreChannel || 'main' }),
+	              });
+	            } catch (err) {
+                requestErr = err;
+              }
+
+              const res = await waitForAppUpdate(id, { expectedVersion: meta.version, previousVersion: beforeVer });
+              if (res && res.ok) {
+                finishProgress(id);
+                await refreshInstalled();
+                // Re-render this details panel so the installed version / update badge update immediately.
+                openStoreModal(id);
+                showToast('App updated', null);
+              } else {
+                cancelProgress(id);
+                showToast('Update status unknown', 'warn');
+                await openNoticeModal({
+                  kind: 'Warning',
+                  title: 'Update status unknown',
+                  message:
+                    'The update appears to have started, but confirmation timed out.\n\n' +
+                    (requestErr ? `Request error: ${requestErr && requestErr.message ? requestErr.message : requestErr}` : ''),
+                });
+              }
 	          } finally {
 	            btnUpdate.disabled = false;
+              btnUpdate.textContent = btnUpdate.dataset.defaultLabel || 'Update';
 	          }
 	        });
 	        actions.appendChild(btnUpdate);
 	      }
+
+        const rollbacks = installed && Array.isArray(installed.rollbacks) ? installed.rollbacks : [];
+        if (rollbacks.length) {
+          const select = document.createElement('select');
+          select.className = 'forgeos-input';
+          select.title = 'Rollback version (from locally saved snapshots)';
+
+          const opt0 = document.createElement('option');
+          opt0.value = '';
+          opt0.textContent = 'Rollback...';
+          select.appendChild(opt0);
+
+          for (const rb of rollbacks.slice(0, 12)) {
+            if (!rb || typeof rb !== 'object') continue;
+            const v = String(rb.version || '').trim();
+            if (!v) continue;
+            const t = String(rb.time || rb.updated_at || rb.at || '').trim();
+            const label = t ? `${v} (${t})` : v;
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = label;
+            select.appendChild(opt);
+          }
+
+          const btnRollback = document.createElement('button');
+          btnRollback.className = 'axe-btn forgeos-btn--danger';
+          btnRollback.type = 'button';
+          btnRollback.textContent = 'Rollback';
+          btnRollback.disabled = true;
+          btnRollback.addEventListener('click', async () => {
+            const v = String(select.value || '').trim();
+            if (!v) return;
+            const label = meta.name || id;
+            const okConfirm = await openConfirmModal({
+              title: `Rollback ${label}?`,
+              message: `Rollback to ${v}?`,
+              confirmText: 'Rollback',
+              cancelText: 'Cancel',
+              danger: true,
+            });
+            if (!okConfirm) return;
+            btnRollback.disabled = true;
+            try {
+              await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/rollback`, {
+                method: 'POST',
+                body: JSON.stringify({ version: v }),
+              });
+              await refresh();
+              showToast('Rollback complete', null);
+            } catch (err) {
+              await openNoticeModal({
+                kind: 'Error',
+                title: 'Rollback failed',
+                message: err && err.message ? String(err.message) : String(err),
+                danger: true,
+              });
+            } finally {
+              btnRollback.disabled = false;
+            }
+          });
+
+          select.addEventListener('change', () => {
+            btnRollback.disabled = !String(select.value || '').trim();
+          });
+
+          actions.appendChild(select);
+          actions.appendChild(btnRollback);
+        }
 
 	      const btnUninstall = document.createElement('button');
 	      btnUninstall.className = 'axe-btn';
@@ -3869,7 +6409,14 @@
       btnUninstall.textContent = 'Uninstall';
       btnUninstall.addEventListener('click', async () => {
         const label = meta.name || id;
-        if (!confirm(`Uninstall ${label}? (Data will be kept)`)) return;
+        const okConfirm = await openConfirmModal({
+          title: `Uninstall ${label}?`,
+          message: 'Containers will be removed. App data will be kept.',
+          confirmText: 'Uninstall',
+          cancelText: 'Cancel',
+          danger: true,
+        });
+        if (!okConfirm) return;
         btnUninstall.disabled = true;
         const prev = btnUninstall.textContent;
         btnUninstall.textContent = 'Uninstalling...';
@@ -3880,7 +6427,12 @@
           await refresh();
           closeModal();
         } catch (err) {
-          alert(`Uninstall failed: ${err && err.message ? err.message : err}`);
+          await openNoticeModal({
+            kind: 'Error',
+            title: 'Uninstall failed',
+            message: err && err.message ? String(err.message) : String(err),
+            danger: true,
+          });
           btnUninstall.disabled = false;
           btnUninstall.textContent = prev;
         }
@@ -3892,6 +6444,7 @@
 	      btnInstall.className = 'axe-btn';
       btnInstall.type = 'button';
       btnInstall.textContent = isInstallable ? 'Install' : 'Coming soon';
+      btnInstall.dataset.defaultLabel = btnInstall.textContent;
       btnInstall.disabled = !isInstallable;
       btnInstall.dataset.progressId = id;
 
@@ -3911,8 +6464,14 @@
           closeModal();
         } catch (err) {
           cancelProgress(id);
-          alert(`Install failed: ${err && err.message ? err.message : err}`);
+          await openNoticeModal({
+            kind: 'Error',
+            title: 'Install failed',
+            message: err && err.message ? String(err.message) : String(err),
+            danger: true,
+          });
           btnInstall.disabled = false;
+          btnInstall.textContent = btnInstall.dataset.defaultLabel || 'Install';
         }
       });
 
@@ -3929,9 +6488,13 @@
 	    layout.appendChild(content);
 	    modalBodyEl.appendChild(layout);
 
-    modalEl.classList.remove('hidden');
-    modalEl.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+    } catch (err) {
+      console.error('openStoreModal failed', err);
+      showToast('Unable to open app details', 'error');
+    }
   }
 
   function openApp(app) {
@@ -3945,23 +6508,102 @@
       if (!view) return;
       if (!views[view]) return;
       if (view === 'dashboard') {
-        dashboardShowHome = true;
-        setView('dashboard');
-        renderWorkspace();
-        return;
+        const mode = String(btn.getAttribute('data-dashboard-mode') || '').trim().toLowerCase();
+        if (mode) {
+          if (activeViewKey === 'dashboard') setDashboardMode(mode);
+          else {
+            dashboardMode = mode;
+            saveDashboardMode();
+            setView('dashboard');
+          }
+          return;
+        }
       }
       setView(view);
     });
   });
 
-  btnResumeWorkspace?.addEventListener('click', () => {
-    dashboardShowHome = false;
-    setView('dashboard');
-    renderWorkspace();
+  btnOpenStore?.addEventListener('click', () => setView('store'));
+
+  settingStoreAutoSync?.addEventListener('change', () => {
+    storeAutoSyncEnabled = !!settingStoreAutoSync.checked;
+    saveStoreAutoSyncEnabled();
+    applyStoreAutoSyncUi();
   });
 
   btnPower?.addEventListener('click', openPowerModal);
   btnOpenTerminal?.addEventListener('click', openTerminalModal);
+  btnAutoLockSave?.addEventListener('click', () => saveSessionConfig(autoLockMinutesInput ? autoLockMinutesInput.value : 0).catch(() => {}));
+  btnFixProxy?.addEventListener('click', () => fixProxyNow().catch(() => {}));
+
+  sidebarClockEl?.addEventListener('click', () => {
+    const body = document.body;
+    const isCollapsed = body.classList.contains('forgeos-sidebar-collapsed');
+    const isAutoCollapsed =
+      body.classList.contains('forgeos-sidebar-auto') && !document.querySelector('.forgeos-sidebar:hover');
+    if (isCollapsed || isAutoCollapsed) openPowerModal();
+  });
+
+  if (desktopSurfaceEl) {
+    desktopSurfaceEl.addEventListener('dragover', (e) => {
+      if (!desktopDragId) return;
+      e.preventDefault();
+    });
+    desktopSurfaceEl.addEventListener('drop', (e) => {
+      if (!desktopDragId) return;
+      e.preventDefault();
+      const id = String(desktopDragId || '').trim();
+      desktopDragId = '';
+      if (!id) return;
+      const targetId = desktopItemAtClientPoint('', e.clientX, e.clientY);
+      if (targetId && desktopState && desktopState.items && desktopState.items[targetId]) {
+        const target = desktopState.items[targetId];
+        if (target && target.type === 'folder') {
+          desktopAddAppToFolder(targetId, id);
+          renderDesktop();
+          showToast('Added to folder', null);
+          return;
+        }
+        if (target && target.type === 'app') {
+          const targetAppId = String(target.appId || '').trim() || String(targetId).replace(/^app:/, '');
+          if (targetAppId && targetAppId !== id) {
+            desktopCreateFolderAt({ x: target.x, y: target.y }, [id, targetAppId]);
+            renderDesktop();
+            showToast('Folder created', null);
+            return;
+          }
+        }
+      }
+
+      const p = desktopSurfacePoint(e);
+      pinToDesktop(id, { x: p.x - 36, y: p.y - 36 });
+      showToast('Added to Desktop', null);
+    });
+  }
+
+  if (desktopBinEl) {
+    ['dragenter', 'dragover'].forEach((ev) => {
+      desktopBinEl.addEventListener(ev, (e) => {
+        if (!desktopDragId) return;
+        e.preventDefault();
+        desktopBinEl.classList.add('forgeos-desktop-bin--hot');
+      });
+    });
+    ['dragleave', 'drop'].forEach((ev) => {
+      desktopBinEl.addEventListener(ev, () => {
+        desktopBinEl.classList.remove('forgeos-desktop-bin--hot');
+      });
+    });
+    desktopBinEl.addEventListener('drop', (e) => {
+      if (!desktopDragId) return;
+      e.preventDefault();
+      const id = String(desktopDragId || '').trim();
+      desktopDragId = '';
+      if (!id) return;
+      unpinFromDesktop(id);
+      showToast('Removed from Desktop', null);
+    });
+  }
 
   btnSidebarCollapse?.addEventListener('click', () => {
     const current = loadSidebarMode();
@@ -3971,6 +6613,24 @@
 
   settingSidebarSelect?.addEventListener('change', () => setSidebarMode(settingSidebarSelect.value));
 
+  btnDashboardLayoutReset?.addEventListener('click', () => {
+    openConfirmModal({
+      title: 'Reset dashboard layout?',
+      message: 'This restores the default card order and visibility.',
+      confirmText: 'Reset',
+      cancelText: 'Cancel',
+      danger: true,
+    })
+      .then((ok) => {
+        if (!ok) return;
+        dashboardLayout = defaultDashboardLayout();
+        saveDashboardLayout();
+        applyDashboardLayout();
+        showToast('Dashboard layout reset', null);
+      })
+      .catch(() => {});
+  });
+
   settingSshToggle?.addEventListener('change', async () => {
     const next = !!settingSshToggle.checked;
     settingSshToggle.disabled = true;
@@ -3979,10 +6639,71 @@
       showToast(`SSH ${next ? 'enabled' : 'disabled'}`, null);
     } catch (e) {
       showToast('SSH update failed', 'error');
-      alert(`SSH update failed: ${e && e.message ? e.message : e}`);
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'SSH update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
       settingSshToggle.checked = !next;
     } finally {
       await refreshSshStatus();
+    }
+  });
+
+  btnSshSetPassword?.addEventListener('click', async () => {
+    const pw = sshPasswordInput ? String(sshPasswordInput.value || '') : '';
+    const pw2 = sshPasswordConfirmInput ? String(sshPasswordConfirmInput.value || '') : '';
+    if (!pw || pw.length < 10) {
+      showToast('Password must be 10+ characters', 'error');
+      return;
+    }
+    if (pw !== pw2) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+
+    btnSshSetPassword.disabled = true;
+    try {
+      await apiJson('/api/v0/system/ssh/password', { method: 'POST', body: JSON.stringify({ password: pw }) });
+      showToast('SSH password updated', null);
+      if (sshPasswordInput) sshPasswordInput.value = '';
+      if (sshPasswordConfirmInput) sshPasswordConfirmInput.value = '';
+    } catch (e) {
+      showToast('SSH password update failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'SSH password update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnSshSetPassword.disabled = false;
+      await refreshSshStatus();
+    }
+  });
+
+  btnSshAddKey?.addEventListener('click', async () => {
+    const key = sshPublicKeyInput ? String(sshPublicKeyInput.value || '') : '';
+    if (!key.trim()) {
+      showToast('Paste a public key first', 'error');
+      return;
+    }
+    btnSshAddKey.disabled = true;
+    try {
+      const res = await apiJson('/api/v0/system/ssh/authorized-key', { method: 'POST', body: JSON.stringify({ key }) });
+      showToast(res && res.added === false ? 'Key already present' : 'SSH key added', null);
+      if (sshPublicKeyInput) sshPublicKeyInput.value = '';
+    } catch (e) {
+      showToast('SSH key add failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'SSH key add failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnSshAddKey.disabled = false;
     }
   });
 
@@ -3992,9 +6713,21 @@
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
 
   btnRefresh?.addEventListener('click', refresh);
-  btnMetrics?.addEventListener('click', openMetricsModal);
-  btnWidgetsRefresh?.addEventListener('click', () => refreshWidgets().catch(() => {}));
-  btnFleetRefresh?.addEventListener('click', () => refreshFleet().catch(() => {}));
+  metricCardCpu?.addEventListener('click', () => openSystemDetailModal('cpu'));
+  metricCardMem?.addEventListener('click', () => openSystemDetailModal('mem'));
+  metricCardDisk?.addEventListener('click', () => openSystemDetailModal('disk'));
+  metricCardIp?.addEventListener('click', async () => {
+    const ip = String(metricIp?.textContent || '').trim();
+    if (!ip) return;
+    try {
+      await navigator.clipboard.writeText(ip);
+      showToast('IP copied', null);
+    } catch {
+      openSystemDetailModal('cpu');
+    }
+  });
+  btnWidgetsRefresh?.addEventListener('click', () => refreshWidgets({ force: true }).catch(() => {}));
+  btnFleetRefresh?.addEventListener('click', () => refreshFleet({ force: true }).catch(() => {}));
   btnSelectedStart?.addEventListener('click', () => runSelectedAppAction('up'));
   btnSelectedStop?.addEventListener('click', () => runSelectedAppAction('down'));
   btnSelectedRestart?.addEventListener('click', () => runSelectedAppAction('restart'));
@@ -4126,18 +6859,36 @@
   });
 
   // Initial render
+  ['pointerdown', 'keydown', 'wheel', 'mousemove', 'touchstart'].forEach((ev) => {
+    try {
+      window.addEventListener(ev, noteUserActivity, { passive: true, capture: true });
+    } catch {}
+  });
+  noteUserActivity();
+  autoLockMinutes = loadAutoLockMinutesFallback();
+  setAutoLockUi(autoLockMinutes, autoLockMinutes > 0 ? 'Using cached value.' : 'Disabled.');
+  startAutoLockWatcher();
   if (storeHideInstalledInput) storeHideInstalled = !!storeHideInstalledInput.checked;
   openAppIds = loadOpenApps();
   widgetPrefs = loadWidgetPrefs();
+  desktopState = loadDesktopState();
+  drawerPinned = loadDrawerPinned();
   activeStoreChannel = loadStoreChannel();
+  storeAutoSyncEnabled = loadStoreAutoSyncEnabled();
   storeRenderLimit = STORE_RENDER_STEP;
   applyStoreChannelUi();
-  dashboardShowHome = true;
+  applyStoreAutoSyncUi();
+  // Always start on Fleet by default.
+  dashboardMode = 'fleet';
+  saveDashboardMode();
+  syncDashboardModeUi();
+  renderWorkspace();
+  renderDesktop();
   applySidebarMode(loadSidebarMode());
   fleetSeries = loadFleetSeries();
   initDashboard();
   updateClock();
-  window.setInterval(updateClock, 15000);
+  window.setInterval(updateClock, 1000);
   const cachedInstalled = loadInstalledCache();
   if (cachedInstalled && Array.isArray(cachedInstalled.apps) && cachedInstalled.apps.length) {
     hasLoadedInstalled = true;
@@ -4146,10 +6897,20 @@
   refresh().catch(() => setStatus('UI only'));
   refreshSystemUpdateStatus().catch(() => {});
   refreshSystemUpdateConfig().catch(() => {});
+  refreshSessionConfig().catch(() => {});
   window.setTimeout(() => refreshSystemUpdateCheck().catch(() => {}), 2500);
   window.setInterval(() => refreshMetrics().catch(() => {}), 5000);
-  window.setInterval(() => refreshFleet().catch(() => {}), 10000);
-  window.setInterval(() => refreshWidgets().catch(() => {}), 10000);
+  window.setInterval(() => {
+    // Avoid background dashboard polling while the workspace is in focus. Some embedded apps
+    // reset their UI state when the parent page does heavy DOM churn / polling.
+    if (activeViewKey !== 'dashboard' || String(dashboardMode || 'fleet') !== 'fleet') return;
+    refreshFleet().catch(() => {});
+  }, 10000);
+  window.setInterval(() => {
+    if (activeViewKey !== 'dashboard' || String(dashboardMode || 'fleet') !== 'fleet') return;
+    refreshWidgets().catch(() => {});
+  }, 10000);
   window.setInterval(() => refreshInstalled().catch(() => {}), 30000);
+  window.setInterval(() => syncStoreBackground().catch(() => {}), STORE_AUTO_SYNC_INTERVAL_MS);
   window.setInterval(() => refreshSystemUpdateCheck().catch(() => {}), 3600000);
 })();
