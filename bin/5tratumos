@@ -1332,7 +1332,7 @@ meta = {
      "updated_at": now,
      "rollbacks": rollbacks,
  }
- print(json.dumps(meta, separators=(",", ":"), ensure_ascii=False))
+print(json.dumps(meta, separators=(",", ":"), ensure_ascii=False))
 PY
         mv "${tmp_meta}" "${meta_file}"
 
