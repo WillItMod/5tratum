@@ -1322,7 +1322,7 @@ for item in rollbacks:
         kept.append(item)
 rollbacks = kept[:10]
 
- meta = {
+meta = {
      "app_id": app_id,
      "channel": channel,
      "store_dir": store_dir,
