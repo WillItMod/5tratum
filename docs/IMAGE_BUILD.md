@@ -11,6 +11,8 @@ This should be done on a dedicated “golden image” VM, not on an in-use syste
 4) Clean/reset machine-specific state.
 5) Shut down, then convert the VM disk to a raw image for Etcher.
 
+On first boot, the image will auto-expand the root filesystem (ext4) to fill the disk.
+
 ## Clean/reset checklist (do NOT run on an in-use machine)
 - Remove installed app state:
   - `/var/lib/5tratumos/apps/*`

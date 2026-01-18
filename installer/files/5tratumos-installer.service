@@ -1,0 +1,17 @@
+[Unit]
+Description=5tratumOS Installer (TTY)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+ExecStart=/usr/local/sbin/5tratumos-installer
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+

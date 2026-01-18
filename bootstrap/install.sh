@@ -21,6 +21,7 @@ apt-get update -y
 apt-get install -y --no-install-recommends \
   ca-certificates \
   curl \
+  cloud-guest-utils \
   gnupg \
   jq \
   python3 \

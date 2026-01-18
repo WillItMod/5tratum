@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+if ! have dialog; then
+  echo "Missing 'dialog'. Installer cannot continue." >&2
+  exit 1
+fi
+
+MEDIA_IMG=""
+for p in \
+  "/run/live/medium/5tratumos.img.xz" \
+  "/lib/live/mount/medium/5tratumos.img.xz" \
+  "/cdrom/5tratumos.img.xz" \
+  "/5tratumos.img.xz"; do
+  if [ -f "$p" ]; then MEDIA_IMG="$p"; break; fi
+done
+
+if [ -z "${MEDIA_IMG}" ]; then
+  dialog --title "5tratumOS Installer" --msgbox "Embedded image 5tratumos.img.xz not found on install media.\n\nRebuild the ISO with dist/5tratumos.img.xz present." 10 70
+  exit 1
+fi
+
+mapfile -t disks < <(lsblk -dn -o NAME,TYPE,SIZE,MODEL | awk '$2=="disk"{print $0}')
+if [ "${#disks[@]}" -eq 0 ]; then
+  dialog --title "5tratumOS Installer" --msgbox "No disks found." 6 50
+  exit 1
+fi
+
+menu=()
+for row in "${disks[@]}"; do
+  name="$(awk '{print $1}' <<<"${row}")"
+  size="$(awk '{print $3}' <<<"${row}")"
+  model="$(cut -d' ' -f4- <<<"${row}" | sed 's/[[:space:]]\\+/ /g')"
+  menu+=("/dev/${name}" "${size} ${model}")
+done
+
+target="$(dialog --clear --title "5tratumOS Installer" --menu "Select the target disk (ALL DATA WILL BE ERASED):" 20 80 10 "${menu[@]}" 2>&1 >/dev/tty)"
+if [ -z "${target}" ]; then
+  clear
+  exit 0
+fi
+
+confirm="$(dialog --clear --title "Confirm" --inputbox "Type INSTALL to confirm writing 5tratumOS to:\n\n${target}\n\nThis will erase the disk." 12 70 2>&1 >/dev/tty)"
+if [ "${confirm}" != "INSTALL" ]; then
+  dialog --title "Cancelled" --msgbox "Install cancelled." 6 40
+  clear
+  exit 0
+fi
+
+dialog --title "Installing" --infobox "Writing image to ${target}...\n\nThis may take a few minutes." 8 60
+
+set +e
+umount "${target}"* >/dev/null 2>&1
+set -e
+
+if have xzcat; then
+  xzcat "${MEDIA_IMG}" | dd of="${target}" bs=8M status=progress conv=fsync
+else
+  dialog --title "Error" --msgbox "Missing xzcat (xz-utils)." 6 50
+  exit 1
+fi
+
+sync
+
+dialog --title "Done" --msgbox "5tratumOS was written successfully.\n\nRemove the install media and reboot." 9 60
+reboot -f
+
