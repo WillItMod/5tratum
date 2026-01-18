@@ -7,7 +7,13 @@ Param(
 $ErrorActionPreference = "Stop"
 
 function Resolve-RepoRoot {
-  $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $here = $PSScriptRoot
+  if ([string]::IsNullOrWhiteSpace($here)) {
+    $here = Split-Path -Parent $PSCommandPath
+  }
+  if ([string]::IsNullOrWhiteSpace($here)) {
+    throw "Unable to resolve script directory"
+  }
   return (Resolve-Path (Join-Path $here "..")).Path
 }
 
@@ -68,4 +74,3 @@ try {
 } finally {
   if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
 }
-
