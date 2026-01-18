@@ -5511,6 +5511,15 @@
       await refreshSystemUpdateStatus();
       scheduleSystemUpdatePoll(1200);
     } catch (e) {
+      const msg = e && e.message ? String(e.message) : String(e);
+      const isGateway = msg.includes('HTTP 502') || msg.includes('HTTP 503') || msg.includes('Failed to fetch');
+      if (isGateway) {
+        showToast('Update started (reconnecting...)', null);
+        if (updateStatusEl) updateStatusEl.textContent = 'Reconnecting...';
+        scheduleSystemUpdatePoll(1200);
+        return;
+      }
+
       showToast('Update failed', 'error');
       if (systemUpdateSplashToken) {
         hideGlobalSplash(systemUpdateSplashToken);
@@ -5519,7 +5528,7 @@
       await openNoticeModal({
         kind: 'Error',
         title: 'System update failed',
-        message: e && e.message ? String(e.message) : String(e),
+        message: msg,
         danger: true,
       });
     } finally {
