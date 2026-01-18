@@ -71,7 +71,8 @@ UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN"
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
-DEFAULT_SUPPORT_BASE_URL = str(_env("SUPPORT_BASE_URL", "http://10.10.10.108") or "http://10.10.10.108").strip()
+# Default to the public Axebench endpoint (never rely on private LAN IPs).
+DEFAULT_SUPPORT_BASE_URL = str(_env("SUPPORT_BASE_URL", "https://axebench.dreamnet.uk") or "https://axebench.dreamnet.uk").strip()
 _SUPPORT_CHECKIN_URL_RAW = _env("SUPPORT_CHECKIN_URL")
 if _SUPPORT_CHECKIN_URL_RAW is not None and str(_SUPPORT_CHECKIN_URL_RAW).strip():
     SUPPORT_CHECKIN_URL = str(_SUPPORT_CHECKIN_URL_RAW).strip()
