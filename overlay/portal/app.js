@@ -4208,6 +4208,12 @@
                 { label: 'Stop', danger: true, disabled: !isRunning || pendingAppActions.has(appId), onClick: async () => runAppAction(appId, 'down') },
                 { type: 'sep' },
                 { label: 'Redeploy', disabled: pendingAppActions.has(appId), hint: 'Recreate containers (keeps data)', onClick: async () => runAppAction(appId, 'redeploy') },
+                {
+                  label: 'Move data…',
+                  hint: 'Move app data to another drive',
+                  disabled: pendingAppActions.has(appId),
+                  onClick: async () => openMoveAppDataModal(appId),
+                },
                 { type: 'sep' },
                 { label: 'Remove', danger: true, onClick: async () => unpinFromDesktop(appId) },
               ],
