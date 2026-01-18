@@ -72,7 +72,16 @@ UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
 DEFAULT_SUPPORT_BASE_URL = str(_env("SUPPORT_BASE_URL", "http://10.10.10.108") or "http://10.10.10.108").strip()
-SUPPORT_CHECKIN_URL = str(_env("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/telemetry/ping") or "").strip()
+_SUPPORT_CHECKIN_URL_RAW = _env("SUPPORT_CHECKIN_URL")
+if _SUPPORT_CHECKIN_URL_RAW is not None and str(_SUPPORT_CHECKIN_URL_RAW).strip():
+    SUPPORT_CHECKIN_URL = str(_SUPPORT_CHECKIN_URL_RAW).strip()
+else:
+    base = (DEFAULT_SUPPORT_BASE_URL or "").strip().rstrip("/")
+    # If the base already includes the ping path, don't append again.
+    if base.endswith("/api/telemetry/ping"):
+        SUPPORT_CHECKIN_URL = base
+    else:
+        SUPPORT_CHECKIN_URL = f"{base}/api/telemetry/ping" if base else ""
 SUPPORT_CHECKIN_ENABLED = str(_env("SUPPORT_CHECKIN_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
 INSTALL_ID_HEADER = "X-Install-Id"
 INSTALL_ID_PATH = os.path.join(SUPPORT_DIR, "install_id.txt")
