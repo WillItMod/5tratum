@@ -303,10 +303,8 @@
     }
     globalSplashEl.dataset.locked = locked ? 'true' : 'false';
     if (globalSplashDismissEl) {
-      globalSplashDismissEl.classList.remove('hidden');
-      globalSplashDismissEl.textContent = locked
-        ? 'Do not refresh or navigate away from this page.'
-        : 'Click anywhere to dismiss';
+      globalSplashDismissEl.classList.toggle('hidden', locked);
+      if (!locked) globalSplashDismissEl.textContent = 'Click anywhere to dismiss';
     }
   }
 
@@ -322,7 +320,10 @@
     const token = `splash-${splashTokenSeq}`;
     splashTokens.set(token, { title, sub, dismissable });
     if (globalSplashTitleEl) globalSplashTitleEl.textContent = title;
-    if (globalSplashSubEl) globalSplashSubEl.textContent = sub || 'Please wait';
+    if (globalSplashSubEl) {
+      const fallbackSub = dismissable ? 'Please wait' : 'Do not refresh or navigate away from this page.';
+      globalSplashSubEl.textContent = sub || fallbackSub;
+    }
     if (globalSplashProgressEl) {
       globalSplashProgressEl.classList.toggle('hidden', !showProgress);
       globalSplashProgressEl.setAttribute('aria-hidden', showProgress ? 'false' : 'true');
