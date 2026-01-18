@@ -2673,6 +2673,47 @@ def current_user(handler: BaseHTTPRequestHandler) -> str | None:
         return user
 
 
+_INTERNAL_SESSION_LOCK = threading.Lock()
+_INTERNAL_SESSION: dict[str, float | str] = {"sid": "", "exp": 0.0}
+
+
+def _internal_session_cookie() -> str | None:
+    now = time.time()
+    with _INTERNAL_SESSION_LOCK:
+        sid = str(_INTERNAL_SESSION.get("sid") or "")
+        exp = float(_INTERNAL_SESSION.get("exp") or 0.0)
+        if sid and exp - now > 60:
+            return sid
+
+        # Use the first configured user to mint a service session for internal scrapes.
+        auth = _read_auth()
+        users = auth.get("users") if isinstance(auth.get("users"), list) else []
+        username = ""
+        for u in users:
+            if not isinstance(u, dict):
+                continue
+            cand = str(u.get("username") or "").strip()
+            if cand:
+                username = cand
+                break
+        if not username:
+            _INTERNAL_SESSION["sid"] = ""
+            _INTERNAL_SESSION["exp"] = 0.0
+            return None
+
+        sid, exp = _make_session(username)
+        _INTERNAL_SESSION["sid"] = sid
+        _INTERNAL_SESSION["exp"] = float(exp)
+        return sid
+
+
+def _internal_auth_headers() -> dict[str, str]:
+    sid = _internal_session_cookie()
+    if not sid:
+        return {}
+    return {"Cookie": f"{SESSION_COOKIE}={sid}"}
+
+
 def auth_status(handler: BaseHTTPRequestHandler) -> dict:
     with _AUTH_LOCK:
         auth = _read_auth()
@@ -3381,8 +3422,16 @@ def _widget_endpoint_path(endpoint: str) -> str:
     return f"/{rest}"
 
 
-def _fetch_json(url: str, *, timeout_s: int = 2) -> dict | list | str | int | float | bool | None:
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+def _fetch_json(
+    url: str,
+    *,
+    timeout_s: int = 2,
+    headers: dict[str, str] | None = None,
+) -> dict | list | str | int | float | bool | None:
+    hdrs = {"Accept": "application/json"}
+    if headers:
+        hdrs.update({str(k): str(v) for k, v in headers.items()})
+    req = urllib.request.Request(url, headers=hdrs)
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:  # noqa: S310
         raw = resp.read().decode("utf-8", errors="replace")
     return json.loads(raw)
@@ -3443,7 +3492,7 @@ def list_app_widgets() -> dict:
                     app_entry["widgets"].append(w)
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
-                fut = pool.submit(_fetch_json, url, timeout_s=2)
+                fut = pool.submit(_fetch_json, url, timeout_s=2, headers=_internal_auth_headers())
                 widget_tasks.append((fut, w))
                 app_entry["widgets"].append(w)
 
@@ -3527,7 +3576,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         workers_data: dict | None = None
 
         try:
-            pool_raw = _fetch_json(pool_url, timeout_s=2)
+            pool_raw = _fetch_json(pool_url, timeout_s=2, headers=_internal_auth_headers())
             if isinstance(pool_raw, dict):
                 pool_data = pool_raw
             else:
@@ -3536,7 +3585,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             entry["pool_error"] = str(e)
 
         try:
-            workers_raw = _fetch_json(workers_url, timeout_s=2)
+            workers_raw = _fetch_json(workers_url, timeout_s=2, headers=_internal_auth_headers())
             if isinstance(workers_raw, dict):
                 workers_data = workers_raw
             else:

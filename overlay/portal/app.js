@@ -4355,6 +4355,12 @@
           if (!wasMoved) {
             node.style.left = `${originX}px`;
             node.style.top = `${originY}px`;
+            if (item.type === 'folder') {
+              openFolderModal(itemId);
+            } else {
+              const appId = String(item.appId || '').trim() || String(node.dataset.appId || '').trim() || String(itemId).replace(/^app:/, '');
+              if (appId) ensureAppOpen({ id: appId });
+            }
             return;
           }
 
