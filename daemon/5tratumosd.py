@@ -4403,10 +4403,15 @@ def summarize_project_status(project: str) -> dict:
 def summarize_project_status_from_containers(containers: list[dict]) -> dict:
     if not containers:
         return {"status": "not-created", "containers": []}
+    # Many apps use a short-lived `init` service that exits 0 after generating config.
+    # Treat that as normal; otherwise every app would look "degraded" forever.
+    scan = [c for c in containers if "-init-" not in str(c.get("Names") or "")]
+    if not scan:
+        scan = containers
     any_running = False
     any_restarting = False
     any_exited = False
-    for c in containers:
+    for c in scan:
         status = str(c.get("Status", ""))
         if status.startswith("Up "):
             any_running = True
