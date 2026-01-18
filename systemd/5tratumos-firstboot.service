@@ -1,0 +1,14 @@
+[Unit]
+Description=5tratumOS First Boot Tasks
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/etc/5tratumos/firstboot.done
+
+[Service]
+Type=oneshot
+ExecStart=/opt/5tratumos/bootstrap/firstboot.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

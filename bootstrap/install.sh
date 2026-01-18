@@ -85,6 +85,7 @@ install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot.service" /etc/systemd/s
 systemctl daemon-reload
 systemctl enable --now 5tratumosd.service
 systemctl enable --now 5tratumos-overlay.service
+systemctl enable --now 5tratumos-firstboot.service
 
 echo "[5/7] Disabling sleep/suspend..."
 install -d -m 0755 /etc/systemd/logind.conf.d

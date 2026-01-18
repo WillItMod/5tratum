@@ -20,6 +20,20 @@ This should be done on a dedicated “golden image” VM, not on an in-use syste
 - Set the default web UI password (currently: `password123`) and/or plan to force a change on first boot.
 - Bake in the update signing public key at `/etc/5tratumos/update_signing.pub` (optional but recommended).
 
+## Performance tuning (recommended, safe defaults)
+
+Run once on the golden image (as root):
+
+```bash
+sudo /opt/5tratumos/bootstrap/os-tune.sh
+```
+
+Optional ext4 tweak for the data volume (reserved blocks to 0% when `/srv/5tratumos-data` is ext4):
+
+```bash
+sudo FIVETRATUMOS_TUNE_DATA_EXT4=1 /opt/5tratumos/bootstrap/os-tune.sh
+```
+
 ## Converting to an Etcher image
 From a host with `qemu-img` (e.g., the Proxmox node or a Linux workstation):
 
