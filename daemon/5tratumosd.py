@@ -64,6 +64,7 @@ STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") o
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
+CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
 API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
@@ -120,6 +121,119 @@ def _read_json(path: str) -> dict:
     except Exception:
         return {}
     return obj if isinstance(obj, dict) else {}
+
+
+def _default_console_config() -> dict:
+    return {
+        "enabled": True,
+        "prompted": False,
+        "user": str(_env("FIVETRATUMOS_CONSOLE_USER", "forge") or "forge"),
+    }
+
+
+def read_console_config() -> dict:
+    cfg = _read_json(CONSOLE_CONFIG_FILE)
+    if not isinstance(cfg, dict):
+        cfg = {}
+    base = _default_console_config()
+    base.update(cfg)
+    base["enabled"] = bool(base.get("enabled"))
+    base["prompted"] = bool(base.get("prompted"))
+    base["user"] = _normalize_username(str(base.get("user") or "forge"))
+    return base
+
+
+def write_console_config(cfg: dict) -> None:
+    _write_json_atomic(CONSOLE_CONFIG_FILE, cfg)
+    try:
+        os.chmod(CONSOLE_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def _console_unit_for_user(user: str) -> str:
+    u = _normalize_username(user or "forge")
+    return f"5tratumos-console@{u}.service"
+
+
+def console_status() -> dict:
+    cfg = read_console_config()
+    unit = _console_unit_for_user(cfg.get("user") or "forge")
+
+    enabled = bool(cfg.get("enabled"))
+    prompted = bool(cfg.get("prompted"))
+    reason = ""
+    active = None
+
+    if not enabled:
+        reason = "kiosk disabled"
+        return {
+            "ok": True,
+            "enabled": False,
+            "prompted": prompted,
+            "user": cfg.get("user"),
+            "active": False,
+            "unit": unit,
+            "reason": reason,
+        }
+
+    if not os.path.exists("/dev/dri/card0"):
+        reason = "no GPU detected"
+
+    try:
+        is_active = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=2)
+        active = is_active.returncode == 0
+    except Exception:
+        active = None
+
+    return {
+        "ok": True,
+        "enabled": enabled,
+        "prompted": prompted,
+        "user": cfg.get("user"),
+        "unit": unit,
+        "active": active,
+        "reason": reason,
+    }
+
+
+def set_console_enabled(*, enabled: bool) -> dict:
+    cfg = read_console_config()
+    unit = _console_unit_for_user(cfg.get("user") or "forge")
+
+    cfg["enabled"] = bool(enabled)
+    write_console_config(cfg)
+
+    if not enabled:
+        try:
+            subprocess.run(["systemctl", "disable", "--now", unit], check=False, timeout=12)
+        except Exception:
+            pass
+        try:
+            subprocess.run(["systemctl", "enable", "--now", "getty@tty1.service"], check=False, timeout=12)
+        except Exception:
+            pass
+        st = console_status()
+        st["ok"] = True
+        return st
+
+    if not os.path.exists("/usr/local/bin/5tratumos-console") or not os.path.exists("/etc/systemd/system/5tratumos-console@.service"):
+        installer = "/opt/5tratumos/console/install.sh"
+        if os.path.exists(installer):
+            subprocess.run(["bash", installer], check=False, timeout=15 * 60)
+
+    try:
+        subprocess.run(["systemctl", "daemon-reload"], check=False, timeout=15)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["systemctl", "enable", "--now", unit], check=False, timeout=12)
+    except Exception:
+        pass
+
+    st = console_status()
+    st["ok"] = True
+    return st
 
 
 def _api_cache_path(name: str) -> str:
@@ -3887,6 +4001,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, ssh_status())
             return
 
+        if path == "/api/v0/system/console":
+            json_response(self, HTTPStatus.OK, console_status())
+            return
+
         if path == "/api/v0/system/session":
             json_response(self, HTTPStatus.OK, system_session_config_get())
             return
@@ -4180,6 +4298,34 @@ class Handler(BaseHTTPRequestHandler):
             enabled = bool(body.get("enabled")) if isinstance(body, dict) else False
             res = ssh_set_enabled(enabled)
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/console":
+            if not isinstance(body, dict):
+                json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid body"})
+                return
+            patch_enabled = body.get("enabled", None)
+            patch_prompted = body.get("prompted", None)
+
+            if patch_enabled is not None:
+                res = set_console_enabled(enabled=bool(patch_enabled))
+                if patch_prompted is not None:
+                    cfg = read_console_config()
+                    cfg["prompted"] = bool(patch_prompted)
+                    write_console_config(cfg)
+                    res = console_status()
+                json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+                return
+
+            if patch_prompted is not None:
+                cfg = read_console_config()
+                cfg["prompted"] = bool(patch_prompted)
+                write_console_config(cfg)
+                res = console_status()
+                json_response(self, HTTPStatus.OK, res)
+                return
+
+            json_response(self, HTTPStatus.OK, console_status())
             return
 
         if path == "/api/v0/system/session":

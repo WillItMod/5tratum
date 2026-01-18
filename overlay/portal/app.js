@@ -129,6 +129,8 @@
   const autoLockMinutesInput = document.getElementById('setting-autolock-minutes');
   const btnAutoLockSave = document.getElementById('btn-autolock-save');
   const autoLockStatusEl = document.getElementById('autolock-status');
+  const kioskEnabledInput = document.getElementById('setting-kiosk-enabled');
+  const kioskStatusEl = document.getElementById('kiosk-status');
   const mqttCardEl = document.getElementById('settings-mqtt-card');
   const mqttUnavailableEl = document.getElementById('mqtt-unavailable');
   const mqttConfigEl = document.getElementById('mqtt-config');
@@ -208,6 +210,8 @@
 	  let lastWidgets = null;
   let mqttAppsCache = [];
   let discordAppsCache = [];
+  let consoleConfigCache = null;
+  let consolePromptDone = false;
     let hasLoadedInstalled = false;
     let hasLoadedStore = false;
     let hasLoadedWidgets = false;
@@ -4907,6 +4911,60 @@
     } catch {}
   }
 
+  async function refreshConsoleSettings() {
+    if (!kioskEnabledInput && !kioskStatusEl) return;
+    try {
+      const res = await apiJsonTimeout('/api/v0/system/console', {}, 3500).catch(() => null);
+      if (!res || res.ok !== true) return;
+      consoleConfigCache = res;
+      if (kioskEnabledInput) kioskEnabledInput.checked = !!res.enabled;
+      if (kioskStatusEl) {
+        const parts = [];
+        parts.push(res.enabled ? 'Enabled' : 'Disabled');
+        if (res.active === true) parts.push('Active');
+        else if (res.active === false) parts.push('Inactive');
+        if (res.reason) parts.push(String(res.reason));
+        kioskStatusEl.textContent = parts.join(' • ') || '-';
+      }
+    } catch {}
+  }
+
+  async function saveConsoleSettings(patch) {
+    const body = patch && typeof patch === 'object' ? patch : {};
+    const res = await apiJsonTimeout('/api/v0/system/console', { method: 'POST', body: JSON.stringify(body) }, 15_000).catch(() => null);
+    if (!res || res.ok !== true) throw new Error(res && res.error ? String(res.error) : 'save failed');
+    consoleConfigCache = res;
+    await refreshConsoleSettings();
+    return res;
+  }
+
+  async function maybePromptKiosk() {
+    if (consolePromptDone) return;
+    consolePromptDone = true;
+    try {
+      const res = consoleConfigCache && consoleConfigCache.ok === true ? consoleConfigCache : await apiJsonTimeout('/api/v0/system/console', {}, 3500).catch(() => null);
+      if (!res || res.ok !== true) return;
+      consoleConfigCache = res;
+      if (!res.enabled) return;
+      if (res.prompted) return;
+
+      const keep = await openConfirmModal({
+        title: 'Keep kiosk mode enabled?',
+        message:
+          'Kiosk mode launches the 5tratumOS UI fullscreen on an attached monitor (tty1).\n\nChoose “Disable” if this is a headless/VM install.',
+        confirmText: 'Keep enabled',
+        cancelText: 'Disable',
+        danger: false,
+      });
+
+      if (keep) {
+        await saveConsoleSettings({ prompted: true });
+      } else {
+        await saveConsoleSettings({ enabled: false, prompted: true });
+      }
+    } catch {}
+  }
+
 
   function systemUpdateState() {
     const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
@@ -5722,6 +5780,8 @@
 
     const ok = await ensureHealthy();
     if (!ok) return;
+    refreshConsoleSettings().catch(() => {});
+    maybePromptKiosk().catch(() => {});
 
     await Promise.allSettled([
       refreshDesktopStateRemote(),
@@ -8190,6 +8250,20 @@
     applyInstalled(cachedInstalled.apps, { fromCache: true });
   }
   refresh().catch(() => setStatus('UI only'));
+
+  if (kioskEnabledInput) {
+    kioskEnabledInput.addEventListener('change', async () => {
+      try {
+        const enabled = !!kioskEnabledInput.checked;
+        showToast(enabled ? 'Enabling kiosk mode...' : 'Disabling kiosk mode...', null);
+        await saveConsoleSettings({ enabled, prompted: true });
+        showToast('Kiosk setting saved', null);
+      } catch (err) {
+        showToast('Kiosk save failed', err && err.message ? err.message : String(err || ''));
+        kioskEnabledInput.checked = !(kioskEnabledInput.checked);
+      }
+    });
+  }
   refreshStoreCustomConfig().catch(() => {});
   refreshSystemUpdateStatus().catch(() => {});
   refreshSystemUpdateConfig().catch(() => {});
