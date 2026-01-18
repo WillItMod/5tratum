@@ -5435,6 +5435,7 @@
   async function refreshSystemUpdateCheck(opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     const force = !!options.force;
+    const userInitiated = !!options.user;
     const now = Date.now();
     if (!force && systemUpdateCheckAt && now - systemUpdateCheckAt < 60000) {
       renderSystemUpdatePanel();
@@ -5458,6 +5459,26 @@
       };
     } finally {
       renderSystemUpdatePanel();
+      if (userInitiated) {
+        const st = systemUpdateState();
+        const chk = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
+        if (!systemUpdateIsBusy(st) && chk && chk.ok === true) {
+          if (chk.error) {
+            await openNoticeModal({
+              kind: 'Error',
+              title: 'Update check failed',
+              message: String(chk.error),
+              danger: true,
+            });
+          } else if (chk.update_available !== true) {
+            await openNoticeModal({
+              kind: 'System',
+              title: 'No updates found',
+              message: 'Your system is already up to date.',
+            });
+          }
+        }
+      }
     }
   }
 
@@ -8450,7 +8471,7 @@
     }
   });
 
-  btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true }).catch(() => {}));
+  btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true, user: true }).catch(() => {}));
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
   btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
