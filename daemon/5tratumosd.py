@@ -1592,8 +1592,63 @@ _UPDATE_LOCK = threading.Lock()
 _UPDATE_CHECK_WAKE = threading.Event()
 _UPDATE_CHECK_CACHE_LOCK = threading.Lock()
 _UPDATE_CHECK_CACHE: dict[str, object] = {"checked_at": 0.0, "channel": "", "res": None}
-_UPDATE_STATUS_PATH = os.path.join(STATE_DIR, "update", "status.json")
+_UPDATE_STATE_DIR = os.path.join(STATE_DIR, "update")
+_UPDATE_STATUS_PATH = os.path.join(_UPDATE_STATE_DIR, "status.json")
+_UPDATE_LOCK_PATH = os.path.join(_UPDATE_STATE_DIR, "lock.json")
 _UPDATE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        return Path(f"/proc/{pid}").exists()
+    except Exception:
+        return False
+
+
+def _update_lock_read() -> dict | None:
+    return _read_json(_UPDATE_LOCK_PATH)
+
+
+def _update_lock_write(*, target_tag: str) -> None:
+    try:
+        _write_json_atomic(
+            _UPDATE_LOCK_PATH,
+            {"pid": os.getpid(), "started_at": time.time(), "target_tag": str(target_tag or "").strip()},
+        )
+    except Exception:
+        pass
+
+
+def _update_lock_clear() -> None:
+    try:
+        Path(_UPDATE_LOCK_PATH).unlink()
+    except Exception:
+        pass
+
+
+def _update_has_recent_artifacts(*, within_s: float) -> bool:
+    try:
+        root = Path(_UPDATE_STATE_DIR)
+        if not root.is_dir():
+            return False
+        now = time.time()
+        for p in (root / "bundle.tgz", root / "bundle.tgz.tmp"):
+            try:
+                if p.is_file() and (now - p.stat().st_mtime) <= within_s:
+                    return True
+            except Exception:
+                pass
+        for p in root.glob("stage-*"):
+            try:
+                if p.is_dir() and (now - p.stat().st_mtime) <= within_s:
+                    return True
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
 
 
 def update_status_read() -> dict:
@@ -1605,6 +1660,22 @@ def update_status_read() -> dict:
     target = str(st.get("target_tag") or "").strip()
     build = read_build_info()
     installed = str(build.get("tag") or build.get("version") or "").strip()
+
+    if state in {"downloading", "extracting", "deploying", "restarting", "restarting_daemon"}:
+        lock = _update_lock_read()
+        pid = int(lock.get("pid") or 0) if isinstance(lock, dict) else 0
+        started_at = float(lock.get("started_at") or 0.0) if isinstance(lock, dict) else 0.0
+        lock_ok = bool(pid and started_at and _pid_is_alive(pid))
+
+        if not lock_ok:
+            # Be conservative: if we see recent update artifacts, assume an older updater is still running.
+            if not _update_has_recent_artifacts(within_s=15 * 60):
+                st = {"ok": True, "state": "idle", "time": _now_iso()}
+                try:
+                    _write_json_atomic(_UPDATE_STATUS_PATH, st)
+                except Exception:
+                    pass
+                return st
 
     # If the last step was "restart daemon" and we are back online with the target tag, mark done.
     if state in {"restarting_daemon", "restarting"} and target and installed == target:
@@ -2156,6 +2227,27 @@ def _mirror_tree(src: str, dst: str) -> None:
             os.replace(tmp, d)
 
 
+def _coalesce_nested_dir(*, root: Path, nested_name: str, marker: str) -> Path:
+    if not root.is_dir():
+        return root
+    if (root / marker).is_file():
+        return root
+    nested = root / nested_name
+    if nested.is_dir() and (nested / marker).is_file():
+        return nested
+    return root
+
+
+def _flatten_current_install(*, root: Path, nested_name: str, marker: str) -> None:
+    if not root.is_dir():
+        return
+    if (root / marker).is_file():
+        return
+    nested = root / nested_name
+    if nested.is_dir() and (nested / marker).is_file():
+        _mirror_tree(str(nested), str(root))
+
+
 def system_update_apply(channel: str | None = None) -> dict:
     ch = (channel or read_default_channel() or "main").strip().lower() or "main"
     with _UPDATE_LOCK:
@@ -2189,11 +2281,12 @@ def system_update_apply(channel: str | None = None) -> dict:
             return {"ok": False, "error": "update signature required but public key not configured"}
 
         def worker() -> None:
+            _update_lock_write(target_tag=target_tag)
             try:
                 update_status_write("downloading", target_tag=target_tag, progress=0)
-                os.makedirs(os.path.join(STATE_DIR, "update"), exist_ok=True)
-                bundle_path = os.path.join(STATE_DIR, "update", "bundle.tgz")
-                stage_dir = os.path.join(STATE_DIR, "update", f"stage-{int(time.time())}")
+                os.makedirs(_UPDATE_STATE_DIR, exist_ok=True)
+                bundle_path = os.path.join(_UPDATE_STATE_DIR, "bundle.tgz")
+                stage_dir = os.path.join(_UPDATE_STATE_DIR, f"stage-{int(time.time())}")
                 tmp = bundle_path + ".tmp"
                 last_pct = -1
                 last_tick = 0.0
@@ -2253,14 +2346,18 @@ def system_update_apply(channel: str | None = None) -> dict:
                 update_status_write("extracting", target_tag=target_tag, progress=55)
 
                 stage_root = Path(stage_dir)
-                stage_overlay = stage_root / "overlay"
-                stage_daemon = stage_root / "daemon"
+                stage_overlay = _coalesce_nested_dir(root=stage_root / "overlay", nested_name="overlay", marker="docker-compose.yml")
+                stage_daemon = _coalesce_nested_dir(root=stage_root / "daemon", nested_name="daemon", marker="5tratumosd.py")
                 stage_systemd = stage_root / "systemd"
                 stage_bin = stage_root / "bin" / "5tratumos"
 
                 cur_overlay = Path(ROOT_DIR) / "overlay"
                 cur_daemon = Path(ROOT_DIR) / "daemon"
                 cur_systemd = Path("/etc/systemd/system")
+
+                # Self-heal: previous bad bundles may have nested overlay/daemon dirs (overlay/overlay, daemon/daemon).
+                _flatten_current_install(root=cur_overlay, nested_name="overlay", marker="docker-compose.yml")
+                _flatten_current_install(root=cur_daemon, nested_name="daemon", marker="5tratumosd.py")
 
                 # Always restart the daemon after applying a bundle that contains daemon files.
                 # This guarantees new Python code is actually loaded (even if the file contents
@@ -2323,6 +2420,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                         },
                     )
                     _mirror_tree(str(stage_daemon), str(cur_daemon))
+                    _flatten_current_install(root=cur_daemon, nested_name="daemon", marker="5tratumosd.py")
                 if (stage_root / "apps-available").is_dir():
                     update_status_write(
                         "deploying",
@@ -2369,6 +2467,8 @@ def system_update_apply(channel: str | None = None) -> dict:
                 update_status_write("done", target_tag=target_tag, progress=100)
             except Exception as e:
                 update_status_write("error", target_tag=target_tag, error=str(e), progress=100)
+            finally:
+                _update_lock_clear()
 
         threading.Thread(target=worker, daemon=True).start()
         return {"ok": True, "started": True, "target_tag": target_tag}
