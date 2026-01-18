@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import re
+import calendar
 import secrets
 import shlex
 import subprocess
@@ -61,12 +62,16 @@ STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") o
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
+API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
 _AUTH_LOCK = threading.Lock()
 _SESSIONS: dict[str, dict] = {}
+
+_API_CACHE_LOCK = threading.Lock()
+_API_REFRESH_INFLIGHT: set[str] = set()
 
 try:
     import yaml  # type: ignore
@@ -113,6 +118,72 @@ def _read_json(path: str) -> dict:
     except Exception:
         return {}
     return obj if isinstance(obj, dict) else {}
+
+
+def _api_cache_path(name: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(name or "cache").strip())[:120] or "cache"
+    return os.path.join(API_CACHE_DIR, f"{safe}.json")
+
+
+def _api_cache_read(name: str) -> dict:
+    return _read_json(_api_cache_path(name))
+
+
+def _api_cache_write(name: str, payload: dict) -> None:
+    wrapper = {"saved_at": _now_iso(), "payload": payload if isinstance(payload, dict) else {}}
+    _write_json_atomic(_api_cache_path(name), wrapper)
+
+
+def _api_cache_payload(name: str) -> tuple[dict | None, float]:
+    wrapper = _api_cache_read(name)
+    payload = wrapper.get("payload") if isinstance(wrapper, dict) else None
+    saved_at = str(wrapper.get("saved_at") or "").strip() if isinstance(wrapper, dict) else ""
+    age_s = 0.0
+    if saved_at:
+        try:
+            # saved_at is in UTC Z form; parse with time.strptime
+            t = time.strptime(saved_at, "%Y-%m-%dT%H:%M:%SZ")
+            age_s = max(0.0, time.time() - float(calendar.timegm(t)))
+        except Exception:
+            age_s = 0.0
+    return (payload if isinstance(payload, dict) else None), age_s
+
+
+def _api_cache_get_or_refresh(
+    *,
+    cache_key: str,
+    compute: callable,
+    max_age_s: int,
+) -> dict:
+    payload, age_s = _api_cache_payload(cache_key)
+    if payload is not None:
+        out = {**payload}
+        out["_cache"] = {"hit": True, "age_s": round(age_s, 2), "stale": age_s > max_age_s}
+        if age_s > max_age_s:
+            with _API_CACHE_LOCK:
+                if cache_key not in _API_REFRESH_INFLIGHT:
+                    _API_REFRESH_INFLIGHT.add(cache_key)
+
+                    def _bg() -> None:
+                        try:
+                            fresh = compute()
+                            if isinstance(fresh, dict) and fresh.get("ok") is True:
+                                _api_cache_write(cache_key, fresh)
+                        finally:
+                            with _API_CACHE_LOCK:
+                                _API_REFRESH_INFLIGHT.discard(cache_key)
+
+                    t = threading.Thread(target=_bg, name=f"api-cache:{cache_key}", daemon=True)
+                    t.start()
+        return out
+
+    fresh = compute()
+    if isinstance(fresh, dict) and fresh.get("ok") is True:
+        _api_cache_write(cache_key, fresh)
+        return {**fresh, "_cache": {"hit": False, "age_s": 0, "stale": False}}
+
+    # No cache and compute failed: return the failure payload as-is.
+    return fresh if isinstance(fresh, dict) else {"ok": False, "error": "unknown"}
 
 
 def read_build_info() -> dict:
@@ -3872,7 +3943,18 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/v0/apps/widgets":
-            json_response(self, HTTPStatus.OK, list_app_widgets())
+            def _compute_widgets() -> dict:
+                return list_app_widgets()
+
+            json_response(
+                self,
+                HTTPStatus.OK,
+                _api_cache_get_or_refresh(
+                    cache_key="apps_widgets",
+                    compute=_compute_widgets,
+                    max_age_s=30,
+                ),
+            )
             return
 
         if path == "/api/v0/fleet/summary":
@@ -3882,7 +3964,20 @@ class Handler(BaseHTTPRequestHandler):
                     limit = int(str(qs["limit"][0]).strip() or "0")
                 except Exception:
                     limit = None
-            json_response(self, HTTPStatus.OK, axe_fleet_summary(limit_workers=limit))
+            limit_key = str(limit) if isinstance(limit, int) and limit > 0 else "all"
+
+            def _compute_fleet() -> dict:
+                return axe_fleet_summary(limit_workers=limit)
+
+            json_response(
+                self,
+                HTTPStatus.OK,
+                _api_cache_get_or_refresh(
+                    cache_key=f"fleet_summary_{limit_key}",
+                    compute=_compute_fleet,
+                    max_age_s=30,
+                ),
+            )
             return
 
         if path == "/api/v0/apps/available":

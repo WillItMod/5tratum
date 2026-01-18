@@ -235,6 +235,7 @@
   let dashboardCards = new Map();
   let draggingDashboardCardId = null;
   let lastFleet = null;
+  const FLEET_CACHE_KEY = '5tratumos.fleetCache.v1';
   let refreshFleetInFlight = false;
   let fleetSeries = [];
   const OPEN_APPS_KEY = 'forgeos.openApps';
@@ -776,6 +777,9 @@
       renderWorkspace();
       renderDesktop();
       renderAppsLauncher(installedAppsCache);
+    }
+    if (activeViewKey === 'dashboard' && next === 'desktop') {
+      window.requestAnimationFrame(() => renderDesktop());
     }
     if (activeViewKey === 'dashboard' && dashboardMode === 'fleet') {
       refreshFleet().catch(() => {});
@@ -3887,6 +3891,14 @@
 
     desktopState = ensureDesktopStateShape(desktopState);
 
+    // When switching views, the desktop surface can temporarily report 0x0 while hidden.
+    // In that case, defer rendering until layout stabilizes so clamping/snapping is correct.
+    const surfaceRect = desktopSurfaceEl.getBoundingClientRect();
+    if (!surfaceRect.width || !surfaceRect.height) {
+      window.requestAnimationFrame(() => renderDesktop());
+      return;
+    }
+
     let normalized = false;
     const existing = new Map();
     for (const node of Array.from(desktopSurfaceEl.querySelectorAll('[data-desktop-item-id]'))) {
@@ -4042,6 +4054,8 @@
           const p = desktopSurfacePoint(e);
           const ox = parseFloat(node.style.left) || 0;
           const oy = parseFloat(node.style.top) || 0;
+          const isTouch = String(e.pointerType || '') === 'touch';
+          let longPressTimer = 0;
           dragStart = {
             startX: p.x,
             startY: p.y,
@@ -4050,7 +4064,18 @@
             originX: ox,
             originY: oy,
             moved: false,
+            armed: !isTouch,
+            longPressTimer: 0,
           };
+          if (isTouch) {
+            longPressTimer = window.setTimeout(() => {
+              if (!dragStart) return;
+              dragStart.armed = true;
+              dragStart.moved = true;
+              node.classList.add('forgeos-desktop-icon--dragging');
+            }, 220);
+            dragStart.longPressTimer = longPressTimer;
+          }
           try {
             node.setPointerCapture(e.pointerId);
           } catch {}
@@ -4060,8 +4085,13 @@
           const p = desktopSurfacePoint(e);
           const dx = p.x - dragStart.startX;
           const dy = p.y - dragStart.startY;
+          if (!dragStart.armed) {
+            // Touch: only start moving after long-press arms it.
+            return;
+          }
           if (!dragStart.moved) {
-            if (Math.abs(dx) <= 12 && Math.abs(dy) <= 12) return;
+            // Mouse/pen: small threshold so repositioning works without feeling "stuck".
+            if (Math.abs(dx) <= 4 && Math.abs(dy) <= 4) return;
             dragStart.moved = true;
             node.classList.add('forgeos-desktop-icon--dragging');
           }
@@ -4077,6 +4107,7 @@
           const wasMoved = !!dragStart.moved;
           const originX = Number(dragStart.originX) || 0;
           const originY = Number(dragStart.originY) || 0;
+          if (dragStart.longPressTimer) window.clearTimeout(dragStart.longPressTimer);
           node.classList.remove('forgeos-desktop-icon--dragging');
           dragStart = null;
 
@@ -4107,6 +4138,7 @@
         });
         node.addEventListener('pointercancel', () => {
           node.classList.remove('forgeos-desktop-icon--dragging');
+          if (dragStart && dragStart.longPressTimer) window.clearTimeout(dragStart.longPressTimer);
           dragStart = null;
         });
 
@@ -4672,6 +4704,9 @@
     if (!payload || payload.ok !== true) return;
     lastFleet = payload;
     setFleetUpdated(payload.time);
+    try {
+      window.localStorage.setItem(FLEET_CACHE_KEY, JSON.stringify(payload));
+    } catch {}
 
     const total = payload.total && typeof payload.total === 'object' ? payload.total : {};
     const totalThs = Number(total.hashrate_ths);
@@ -4686,6 +4721,19 @@
     renderFleetWorkers(payload);
   }
 
+  function loadFleetCache() {
+    try {
+      const raw = String(window.localStorage.getItem(FLEET_CACHE_KEY) || '').trim();
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (parsed.ok !== true) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
   async function refreshFleet(opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     if (!options.force && !dashboardCardsVisible()) return;
@@ -4696,7 +4744,11 @@
       const ok = await ensureHealthy();
       if (!ok) return;
       const res = await apiJsonTimeout('/api/v0/fleet/summary?limit=200', {}, 7000).catch(() => null);
-      if (!res || res.ok !== true) return;
+      if (!res || res.ok !== true) {
+        const cached = loadFleetCache();
+        if (cached) renderFleet(cached);
+        return;
+      }
       renderFleet(res);
     } finally {
       refreshFleetInFlight = false;
