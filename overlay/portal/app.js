@@ -94,6 +94,11 @@
   const settingSidebarSelect = document.getElementById('setting-sidebar');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
+  const storageDefaultSelect = document.getElementById('setting-storage-default');
+  const btnStorageSave = document.getElementById('btn-storage-save');
+  const btnStorageRefresh = document.getElementById('btn-storage-refresh');
+  const storageListEl = document.getElementById('storage-list');
+  const storageStatusEl = document.getElementById('storage-status');
   const btnOpenTerminal = document.getElementById('btn-open-terminal');
   const settingsWidgetsEl = document.getElementById('settings-widgets');
   const settingsWidgetsEmptyEl = document.getElementById('settings-widgets-empty');
@@ -208,6 +213,7 @@
   let storeAutoSyncEnabled = true;
   let storeAutoSyncInFlight = false;
   let storeCustomStores = [];
+  let storageCache = null;
 	  let lastMetrics = null;
 	  let lastWidgets = null;
   let mqttAppsCache = [];
@@ -2674,6 +2680,11 @@
     }
   }
 
+  function sleep(ms) {
+    const t = Math.max(0, Number(ms) || 0);
+    return new Promise((resolve) => window.setTimeout(resolve, t));
+  }
+
   async function ensureHealthy() {
     const now = Date.now();
     if (healthCache.checkedAt && now - healthCache.checkedAt < 8000) return healthCache.ok;
@@ -5014,6 +5025,113 @@
     } catch {}
   }
 
+  function renderStorageSettings() {
+    if (!storageDefaultSelect && !storageListEl && !storageStatusEl) return;
+    const res = storageCache && typeof storageCache === 'object' ? storageCache : null;
+    if (!res || res.ok !== true) {
+      if (storageStatusEl) storageStatusEl.textContent = 'Storage unavailable.';
+      if (storageListEl) storageListEl.innerHTML = '';
+      if (storageDefaultSelect) storageDefaultSelect.innerHTML = '';
+      return;
+    }
+    const cfg = res.config && typeof res.config === 'object' ? res.config : {};
+    const mounts = Array.isArray(cfg.mounts) ? cfg.mounts : [];
+    const defaultMount = String(cfg.default_mount || '').trim();
+
+    if (storageDefaultSelect) {
+      storageDefaultSelect.innerHTML = '';
+      const optLocal = document.createElement('option');
+      optLocal.value = '';
+      optLocal.textContent = 'Local (system disk)';
+      storageDefaultSelect.appendChild(optLocal);
+      for (const m of mounts) {
+        if (!m || typeof m !== 'object') continue;
+        const mp = String(m.mountpoint || '').trim();
+        if (!mp) continue;
+        const label = String(m.label || '').trim();
+        const opt = document.createElement('option');
+        opt.value = mp;
+        opt.textContent = label ? `${label} (${mp})` : mp;
+        storageDefaultSelect.appendChild(opt);
+      }
+      storageDefaultSelect.value = defaultMount;
+    }
+
+    if (storageListEl) {
+      storageListEl.innerHTML = '';
+      const list = Array.isArray(res.mounts) ? res.mounts : [];
+      if (!list.length) {
+        const empty = document.createElement('div');
+        empty.className = 'forgeos-muted';
+        empty.textContent = 'No mounted drives detected.';
+        storageListEl.appendChild(empty);
+      } else {
+        for (const m of list) {
+          if (!m || typeof m !== 'object') continue;
+          const mp = String(m.mountpoint || '').trim();
+          if (!mp) continue;
+          const row = document.createElement('div');
+          row.className = 'forgeos-mini-card';
+          const k = document.createElement('div');
+          k.className = 'forgeos-mini-card__k';
+          k.textContent = m.label ? `Drive: ${m.label}` : 'Drive';
+          const v = document.createElement('div');
+          v.className = 'forgeos-mini-card__v forgeos-mono';
+          const bits = [];
+          bits.push(mp);
+          if (m.fstype) bits.push(String(m.fstype));
+          if (m.registered) bits.push('registered');
+          if (m.has_5tratumos) bits.push('5tratumOS data');
+          v.textContent = bits.join(' • ');
+          row.appendChild(k);
+          row.appendChild(v);
+          storageListEl.appendChild(row);
+        }
+      }
+    }
+
+    if (storageStatusEl) {
+      storageStatusEl.textContent = 'Tip: Right click an app to move its data between drives.';
+    }
+  }
+
+  async function refreshStorageSettings() {
+    if (!storageDefaultSelect && !storageListEl && !storageStatusEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/storage', {}, 6000).catch(() => null);
+      if (!res || res.ok !== true) return;
+      storageCache = res;
+      renderStorageSettings();
+    } catch {}
+  }
+
+  async function saveStorageSettings() {
+    if (!storageDefaultSelect) return;
+    const mp = String(storageDefaultSelect.value || '').trim();
+    if (btnStorageSave) btnStorageSave.disabled = true;
+    const prev = btnStorageSave ? btnStorageSave.textContent : '';
+    if (btnStorageSave) btnStorageSave.textContent = 'Saving...';
+    if (storageStatusEl) storageStatusEl.textContent = 'Saving...';
+    try {
+      const res = await apiJsonTimeout(
+        '/api/v0/system/storage/config',
+        { method: 'POST', body: JSON.stringify({ default_mount: mp }) },
+        8000,
+      ).catch(() => null);
+      if (!res || res.ok !== true) throw new Error(res && res.error ? String(res.error) : 'save failed');
+      showToast('Storage settings saved', null);
+      storageCache = { ...storageCache, config: res.config };
+      await refreshStorageSettings();
+    } catch (e) {
+      if (storageStatusEl) storageStatusEl.textContent = `Save failed: ${e && e.message ? String(e.message) : String(e)}`;
+    } finally {
+      if (btnStorageSave) btnStorageSave.disabled = false;
+      if (btnStorageSave) btnStorageSave.textContent = prev || 'Save';
+    }
+  }
+
   async function refreshConsoleSettings() {
     if (!kioskEnabledInput && !kioskStatusEl) return;
     try {
@@ -5841,8 +5959,9 @@
 
     const ok = await ensureHealthy();
     if (!ok) return;
-    refreshConsoleSettings().catch(() => {});
-    maybePromptKiosk().catch(() => {});
+      refreshConsoleSettings().catch(() => {});
+      refreshStorageSettings().catch(() => {});
+      maybePromptKiosk().catch(() => {});
 
     await Promise.allSettled([
       refreshDesktopStateRemote(),
@@ -5852,6 +5971,119 @@
       refreshWidgets(),
       refreshFleet(),
     ]);
+  }
+
+  async function openMoveAppDataModal(appId) {
+    const id = String(appId || '').trim().toLowerCase();
+    if (!id) return;
+    const label = metaFor(id).name || id;
+
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) throw new Error('Service unavailable');
+
+      const storageRes = await apiJsonTimeout('/api/v0/system/storage', {}, 8000).catch(() => null);
+      if (!storageRes || storageRes.ok !== true) throw new Error('Storage unavailable');
+      storageCache = storageRes;
+      renderStorageSettings();
+
+      const cfg = storageRes.config && typeof storageRes.config === 'object' ? storageRes.config : {};
+      const mounts = Array.isArray(cfg.mounts) ? cfg.mounts : [];
+
+      const installed = installedById.get(id) || null;
+      const currentTarget =
+        installed && installed.storage && typeof installed.storage === 'object' ? String(installed.storage.target || '').trim() : '';
+
+      const choices = [{ label: 'Local (system disk)', value: '' }];
+      for (const m of mounts) {
+        if (!m || typeof m !== 'object') continue;
+        const mp = String(m.mountpoint || '').trim();
+        if (!mp) continue;
+        const l = String(m.label || '').trim();
+        choices.push({ label: l ? `${l} (${mp})` : mp, value: mp });
+      }
+
+      const pick = await openChoiceModal({
+        title: `Move ${label} data`,
+        message: currentTarget ? `Current data path:\n${currentTarget}\n\nChoose a destination drive:` : 'Choose a destination drive:',
+        kind: 'System',
+        choices: choices.concat([{ label: 'Cancel', value: 'cancel', danger: true }]),
+      });
+      if (!pick || pick === 'cancel') return;
+
+      const mountpoint = String(pick).trim();
+      const alreadyOnMount = mountpoint && currentTarget && currentTarget.startsWith(mountpoint);
+      if (!mountpoint && (!currentTarget || currentTarget.startsWith('/var/lib/5tratumos'))) {
+        showToast('Already on local storage', null);
+        return;
+      }
+      if (alreadyOnMount) {
+        showToast('Already on that drive', null);
+        return;
+      }
+
+      const splashToken = showGlobalSplash({ title: `Moving ${label}`, sub: 'Starting migration...' });
+      updateGlobalSplashProgress(5);
+      const start = await apiJsonTimeout(
+        '/api/v0/apps/migrate',
+        { method: 'POST', body: JSON.stringify({ id, mountpoint }) },
+        15000,
+      ).catch(() => null);
+      if (!start || start.ok !== true) throw new Error((start && (start.error || start.stderr)) || 'migration failed to start');
+
+      const deadline = Date.now() + 60 * 60 * 1000;
+      let lastState = '';
+      while (Date.now() < deadline) {
+        await sleep(1200);
+        const st = await apiJsonTimeout(`/api/v0/apps/migrate/status?id=${encodeURIComponent(id)}`, {}, 6000).catch(() => null);
+        if (!st || typeof st !== 'object') continue;
+        const state = String(st.state || '').trim().toLowerCase();
+        if (state && state !== lastState) {
+          lastState = state;
+          const sub =
+            state === 'stopping'
+              ? 'Stopping app...'
+              : state === 'copying'
+                ? 'Copying data...'
+                : state === 'switching'
+                  ? 'Switching paths...'
+                  : state === 'starting'
+                    ? 'Starting app...'
+                    : 'Working...';
+          updateGlobalSplash(`Moving ${label}`, sub);
+        }
+        if (Number.isFinite(Number(st.pct))) updateGlobalSplashProgress(Number(st.pct));
+        if (state === 'done') {
+          updateGlobalSplashProgress(100);
+          hideGlobalSplash(splashToken);
+          showToast('Migration complete', null);
+          await refreshInstalled();
+          await refreshStorageSettings();
+          return;
+        }
+        if (state === 'error') {
+          hideGlobalSplash(splashToken);
+          await openNoticeModal({
+            kind: 'Error',
+            title: 'Migration failed',
+            message: st.error ? String(st.error) : 'Migration failed.',
+            danger: true,
+          });
+          await refreshInstalled();
+          return;
+        }
+      }
+      hideGlobalSplash(splashToken);
+      showToast('Migration timed out', 'error');
+    } catch (e) {
+      showToast('Migration failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Migration failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    }
   }
 
   function openInstalledAppMenu(app, x, y) {
@@ -5953,6 +6185,12 @@
         hint: 'Recreate containers (keeps data)',
         disabled: pendingAppActions.has(id),
         onClick: async () => runAppAction(id, 'redeploy'),
+      },
+      {
+        label: 'Move data…',
+        hint: 'Move app data to another drive',
+        disabled: pendingAppActions.has(id),
+        onClick: async () => openMoveAppDataModal(id),
       },
     ];
 
@@ -8086,6 +8324,8 @@
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
   btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
+  btnStorageRefresh?.addEventListener('click', () => refreshStorageSettings().catch(() => {}));
+  btnStorageSave?.addEventListener('click', () => saveStorageSettings().catch(() => {}));
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   mqttEnabledInput?.addEventListener('change', () => {

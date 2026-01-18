@@ -352,6 +352,24 @@
                 </div>
               </section>
 
+              <section class="axe-card" id="settings-storage-card">
+                <div class="text-sm text-slate-300">Storage</div>
+                <div class="mt-1 text-2xl font-extrabold tracking-tight">Storage & Drives</div>
+                <div class="mt-3 text-sm text-slate-300">
+                  Register and manage storage targets for app data. Moving an app preserves user data.
+                </div>
+                <div class="mt-4 forgeos-form">
+                  <label class="forgeos-label" for="setting-storage-default">Default storage for new apps</label>
+                  <select id="setting-storage-default" class="forgeos-input"></select>
+                  <div class="mt-3 flex items-center gap-2 flex-wrap">
+                    <button id="btn-storage-save" class="axe-btn" type="button">Save</button>
+                    <button id="btn-storage-refresh" class="axe-btn" type="button">Refresh</button>
+                  </div>
+                  <div id="storage-list" class="mt-4 grid grid-cols-1 gap-2"></div>
+                  <div id="storage-status" class="forgeos-muted mt-2">-</div>
+                </div>
+              </section>
+
               <section class="axe-card">
                 <div class="text-sm text-slate-300">Users</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Admin & Access</div>

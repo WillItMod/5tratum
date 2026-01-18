@@ -66,6 +66,7 @@ SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.js
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
+STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
 API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
@@ -119,6 +120,15 @@ def run_cmd(
         text=True,
         check=False,
     )
+
+
+def _is_path_under(path: str, root: str) -> bool:
+    try:
+        p = os.path.realpath(path)
+        r = os.path.realpath(root)
+        return p == r or p.startswith(r.rstrip("/") + "/")
+    except Exception:
+        return False
 
 
 def _write_json_atomic(path: str, obj: dict) -> None:
@@ -614,6 +624,299 @@ def desktop_state_set(body: dict) -> dict:
         return {"ok": False, "error": "state.items must be an object"}
     _write_desktop_state(state)
     return {"ok": True, "saved": True, "state": _read_desktop_state()}
+
+
+def _storage_defaults() -> dict:
+    return {
+        # When empty, use the local state dir (/var/lib/5tratumos).
+        "default_mount": "",
+        # Explicitly registered mountpoints (disks formatted/mounted externally are fine too).
+        # Each item: { "mountpoint": "/srv/5tratumos-data", "label": "Internal" }
+        "mounts": [],
+    }
+
+
+def _normalize_mountpoint(mp: str) -> str:
+    p = str(mp or "").strip()
+    if not p:
+        return ""
+    if not p.startswith("/"):
+        return ""
+    return p.rstrip("/") or "/"
+
+
+def storage_config_get() -> dict:
+    cfg = _read_json(STORAGE_CONFIG_FILE)
+    base = _storage_defaults()
+    if isinstance(cfg, dict):
+        base.update(cfg)
+    default_mount = _normalize_mountpoint(str(base.get("default_mount") or ""))
+    mounts = []
+    raw_mounts = base.get("mounts")
+    if isinstance(raw_mounts, list):
+        for item in raw_mounts:
+            if not isinstance(item, dict):
+                continue
+            mp = _normalize_mountpoint(str(item.get("mountpoint") or ""))
+            if not mp:
+                continue
+            mounts.append(
+                {
+                    "mountpoint": mp,
+                    "label": str(item.get("label") or "").strip(),
+                }
+            )
+    # Always include the main data dir mountpoint if present.
+    data_mp = _normalize_mountpoint(DATA_DIR)
+    if data_mp and all(m.get("mountpoint") != data_mp for m in mounts):
+        mounts.append({"mountpoint": data_mp, "label": "Internal"})
+    # De-dupe
+    dedup: dict[str, dict] = {}
+    for m in mounts:
+        mp = str(m.get("mountpoint") or "")
+        if mp:
+            dedup[mp] = m
+    mounts = list(dedup.values())
+    mounts.sort(key=lambda it: it.get("mountpoint") or "")
+
+    base["default_mount"] = default_mount
+    base["mounts"] = mounts
+    return {"ok": True, "config": base}
+
+
+def storage_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    cfg = storage_config_get().get("config") if isinstance(storage_config_get(), dict) else _storage_defaults()
+    cfg = cfg if isinstance(cfg, dict) else _storage_defaults()
+
+    if "default_mount" in body:
+        cfg["default_mount"] = _normalize_mountpoint(str(body.get("default_mount") or ""))
+    if "mounts" in body and isinstance(body.get("mounts"), list):
+        cleaned = []
+        for item in body.get("mounts") or []:
+            if not isinstance(item, dict):
+                continue
+            mp = _normalize_mountpoint(str(item.get("mountpoint") or ""))
+            if not mp:
+                continue
+            cleaned.append({"mountpoint": mp, "label": str(item.get("label") or "").strip()})
+        cfg["mounts"] = cleaned
+
+    _write_json_atomic(STORAGE_CONFIG_FILE, cfg)
+    try:
+        os.chmod(STORAGE_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+    return {"ok": True, "saved": True, "config": storage_config_get().get("config")}
+
+
+def _lsblk_json() -> dict:
+    proc = run_cmd(
+        [
+            "lsblk",
+            "-J",
+            "-o",
+            "NAME,KNAME,TYPE,SIZE,FSTYPE,MOUNTPOINT,UUID,LABEL,MODEL,RM,ROTA",
+        ],
+        timeout_s=6,
+    )
+    if proc.returncode != 0:
+        return {}
+    try:
+        obj = json.loads(proc.stdout or "{}")
+    except Exception:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _flatten_lsblk(node: dict, out: list[dict]) -> None:
+    if not isinstance(node, dict):
+        return
+    out.append(node)
+    children = node.get("children")
+    if isinstance(children, list):
+        for c in children:
+            if isinstance(c, dict):
+                _flatten_lsblk(c, out)
+
+
+def system_storage_status() -> dict:
+    cfg = storage_config_get().get("config") if isinstance(storage_config_get(), dict) else _storage_defaults()
+    cfg = cfg if isinstance(cfg, dict) else _storage_defaults()
+    registered = cfg.get("mounts") if isinstance(cfg.get("mounts"), list) else []
+    reg_set = {str(m.get("mountpoint") or "") for m in registered if isinstance(m, dict)}
+
+    devices: list[dict] = []
+    mounts: list[dict] = []
+    lsblk = _lsblk_json()
+    blockdevices = lsblk.get("blockdevices") if isinstance(lsblk, dict) else None
+    flat: list[dict] = []
+    if isinstance(blockdevices, list):
+        for bd in blockdevices:
+            if isinstance(bd, dict):
+                _flatten_lsblk(bd, flat)
+    for entry in flat:
+        tp = str(entry.get("type") or "")
+        name = str(entry.get("name") or "")
+        kname = str(entry.get("kname") or name)
+        mp = str(entry.get("mountpoint") or "").strip()
+        fstype = str(entry.get("fstype") or "").strip()
+        uuid = str(entry.get("uuid") or "").strip()
+        label = str(entry.get("label") or "").strip()
+        size = str(entry.get("size") or "").strip()
+        model = str(entry.get("model") or "").strip()
+        rm = bool(entry.get("rm")) if "rm" in entry else False
+        rota = bool(entry.get("rota")) if "rota" in entry else False
+        path = f"/dev/{kname}" if kname else ""
+        if tp in {"disk", "part"}:
+            devices.append(
+                {
+                    "type": tp,
+                    "name": name,
+                    "path": path,
+                    "size": size,
+                    "fstype": fstype,
+                    "uuid": uuid,
+                    "label": label,
+                    "model": model,
+                    "removable": rm,
+                    "rotational": rota,
+                    "mountpoint": mp,
+                }
+            )
+        if mp:
+            marker = os.path.isdir(os.path.join(mp, "5tratumos")) or os.path.isdir(os.path.join(mp, "5tratumos", "apps"))
+            mounts.append(
+                {
+                    "mountpoint": mp,
+                    "fstype": fstype,
+                    "uuid": uuid,
+                    "label": label,
+                    "size": size,
+                    "registered": mp in reg_set,
+                    "has_5tratumos": bool(marker),
+                }
+            )
+    # De-dupe mountpoints
+    mounts_by_mp: dict[str, dict] = {}
+    for m in mounts:
+        mounts_by_mp[str(m.get("mountpoint") or "")] = m
+    mounts = sorted(mounts_by_mp.values(), key=lambda it: it.get("mountpoint") or "")
+    return {"ok": True, "config": cfg, "mounts": mounts, "devices": devices}
+
+
+_MIGRATE_LOCK = threading.Lock()
+
+
+def _app_state_dir(app_id: str) -> str:
+    return os.path.join(STATE_DIR, "apps", app_id)
+
+
+def _app_state_target(app_id: str) -> tuple[str, bool]:
+    p = _app_state_dir(app_id)
+    if os.path.islink(p):
+        try:
+            return os.path.realpath(p), True
+        except Exception:
+            return p, True
+    return p, False
+
+
+def _migrate_status_path(app_id: str) -> str:
+    safe = re.sub(r"[^a-z0-9_-]+", "", (app_id or "").strip().lower())
+    return os.path.join(STATE_DIR, "storage", "migrate", f"{safe}.json")
+
+
+def migrate_status_read(app_id: str) -> dict:
+    return _read_json(_migrate_status_path(app_id))
+
+
+def migrate_status_write(app_id: str, state: str, *, pct: int | None = None, **extra: object) -> None:
+    obj = {"ok": True, "app_id": app_id, "state": state, "time": _now_iso()}
+    if pct is not None:
+        obj["pct"] = max(0, min(100, int(pct)))
+    for k, v in extra.items():
+        obj[k] = v
+    _write_json_atomic(_migrate_status_path(app_id), obj)
+
+
+def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
+    aid = str(app_id or "").strip().lower()
+    if not aid:
+        return {"ok": False, "error": "missing app id"}
+    if not os.path.isdir(os.path.join(APPS_DIR, aid)):
+        return {"ok": False, "error": "app not installed"}
+
+    mp = _normalize_mountpoint(str(mountpoint or ""))
+    cfg = storage_config_get().get("config") if isinstance(storage_config_get(), dict) else _storage_defaults()
+    cfg = cfg if isinstance(cfg, dict) else _storage_defaults()
+    reg = cfg.get("mounts") if isinstance(cfg.get("mounts"), list) else []
+    reg_set = {str(m.get("mountpoint") or "") for m in reg if isinstance(m, dict)}
+    if mp and mp not in reg_set:
+        return {"ok": False, "error": "mountpoint not registered"}
+
+    with _MIGRATE_LOCK:
+        st = migrate_status_read(aid)
+        if str(st.get("state") or "").strip().lower() in {"stopping", "copying", "switching", "starting"}:
+            return {"ok": False, "error": "migration already in progress"}
+
+        def worker() -> None:
+            try:
+                src_real, src_is_link = _app_state_target(aid)
+                src_path = _app_state_dir(aid)
+                os.makedirs(os.path.dirname(src_path), exist_ok=True)
+
+                if mp:
+                    dest_root = os.path.join(mp, "5tratumos", "apps")
+                    dest_path = os.path.join(dest_root, aid)
+                else:
+                    dest_root = os.path.join(STATE_DIR, "apps")
+                    dest_path = os.path.join(dest_root, aid)
+
+                migrate_status_write(aid, "stopping", pct=10, from_path=src_real, to_path=dest_path)
+                stratumos_cmd(["app", "down", aid], timeout_s=600)
+
+                if os.path.exists(dest_path):
+                    migrate_status_write(aid, "error", error="destination already exists", pct=100)
+                    return
+
+                os.makedirs(dest_root, exist_ok=True)
+                os.makedirs(dest_path, exist_ok=True)
+                migrate_status_write(aid, "copying", pct=45)
+                # Prefer cp -a for speed/preservation; fall back to python if needed.
+                proc = run_cmd(["cp", "-a", os.path.join(src_real, "."), dest_path], timeout_s=3600)
+                if proc.returncode != 0:
+                    migrate_status_write(aid, "error", error=(proc.stderr or proc.stdout or "copy failed").strip(), pct=100)
+                    return
+
+                migrate_status_write(aid, "switching", pct=75)
+                ts = int(time.time())
+                if os.path.islink(src_path):
+                    try:
+                        os.unlink(src_path)
+                    except Exception:
+                        pass
+                else:
+                    # Keep a local backup so migrations are reversible.
+                    try:
+                        os.rename(src_path, f"{src_path}.bak.{ts}")
+                    except Exception:
+                        pass
+                try:
+                    os.symlink(dest_path, src_path)
+                except Exception as e:
+                    migrate_status_write(aid, "error", error=f"symlink failed: {e}", pct=100)
+                    return
+
+                migrate_status_write(aid, "starting", pct=90)
+                stratumos_cmd(["app", "up", aid], timeout_s=600)
+                migrate_status_write(aid, "done", pct=100, mountpoint=mp or "")
+            except Exception as e:
+                migrate_status_write(aid, "error", error=str(e), pct=100)
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {"ok": True, "started": True, "app_id": aid, "mountpoint": mp}
 
 
 AXE_SUITE_APP_IDS = {
@@ -4221,6 +4524,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_session_config_get())
             return
 
+        if path == "/api/v0/system/storage":
+            json_response(self, HTTPStatus.OK, system_storage_status())
+            return
+
         if path == "/api/v0/desktop/state":
             json_response(self, HTTPStatus.OK, desktop_state_get())
             return
@@ -4235,6 +4542,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/proxy":
             json_response(self, HTTPStatus.OK, {"ok": True, "repair": "/api/v0/system/proxy/repair"})
+            return
+
+        if path == "/api/v0/apps/migrate/status":
+            app_id = (qs.get("id") or [""])[0].strip().lower()
+            if not app_id:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "missing id"})
+                return
+            json_response(self, HTTPStatus.OK, migrate_status_read(app_id))
             return
 
         if path == "/api/v0/system/update/check":
@@ -4328,6 +4643,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not installed_version and latest_version:
                     installed_version = latest_version
                 update_available = is_update_available(installed_version, latest_version)
+
+                data_dir = _app_state_dir(app_id)
+                data_target, data_is_link = _app_state_target(app_id)
+                storage_missing = data_is_link and not os.path.exists(data_target)
+                if storage_missing:
+                    st["status"] = "offline"
+                    st["containers"] = []
+                    resources = {"ok": False}
                 apps.append(
                     {
                         "id": app_id,
@@ -4345,6 +4668,12 @@ class Handler(BaseHTTPRequestHandler):
                         },
                         "containers": st["containers"],
                         "resources": resources if resources.get("ok") else None,
+                        "storage": {
+                            "data_dir": data_dir,
+                            "target": data_target,
+                            "is_link": bool(data_is_link),
+                            "missing": bool(storage_missing),
+                        },
                         "ui": {
                             "path": f"/apps/{app_id}/",
                             "port": port,
@@ -4548,6 +4877,11 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
+        if path == "/api/v0/system/storage/config":
+            res = storage_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         if path == "/api/v0/desktop/state":
             res = desktop_state_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
@@ -4609,6 +4943,13 @@ class Handler(BaseHTTPRequestHandler):
             if res.get("ok"):
                 proxy_res = system_proxy_repair()
                 res["proxy"] = proxy_res
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/apps/migrate":
+            app_id = str(body.get("id") or body.get("app_id") or "").strip().lower() if isinstance(body, dict) else ""
+            mountpoint = str(body.get("mountpoint") or body.get("mount") or "").strip() if isinstance(body, dict) else ""
+            res = app_migrate_data(app_id, mountpoint)
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
