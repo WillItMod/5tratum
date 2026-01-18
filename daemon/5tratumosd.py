@@ -412,8 +412,23 @@ def _axesuite_installed_apps() -> list[dict]:
     return apps
 
 
-def _mosquitto_available() -> bool:
+def _mosquitto_installed() -> bool:
     return "mosquitto" in list_installed_app_ids()
+
+
+def _mosquitto_running() -> bool:
+    if not _mosquitto_installed():
+        return False
+    try:
+        project = docker_compose_project("mosquitto")
+        status = str(summarize_project_status(project).get("status") or "")
+        return status == "running"
+    except Exception:
+        return False
+
+
+def _mosquitto_available() -> bool:
+    return _mosquitto_running()
 
 
 def mqtt_config_get() -> dict:
@@ -443,13 +458,21 @@ def mqtt_config_set(body: dict) -> dict:
         if isinstance(raw_apps, list):
             mqtt["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
 
-    if not _mosquitto_available() and mqtt["enabled"]:
-        return {"ok": False, "error": "mosquitto not installed"}
+    if mqtt["enabled"] and not _mosquitto_installed():
+        install_res = stratumos_cmd(["app", "install", "mosquitto"], timeout_s=600)
+        if not install_res.get("ok"):
+            return {"ok": False, "error": "mosquitto install failed", "detail": install_res}
+    if mqtt["enabled"] and not _mosquitto_running():
+        start_res = stratumos_cmd(["app", "up", "mosquitto"], timeout_s=300)
+        if not start_res.get("ok"):
+            return {"ok": False, "error": "mosquitto start failed", "detail": start_res}
+    if mqtt["enabled"] and not _mosquitto_running():
+        return {"ok": False, "error": "mosquitto not running"}
 
     mqtt["apps"] = [a for a in mqtt.get("apps") or [] if a in AXE_SUITE_APP_IDS]
     cfg["mqtt"] = mqtt
     _write_notify_config(cfg)
-    return {**mqtt_config_get(), "saved": True}
+    return {"ok": True, "saved": True}
 
 
 def discord_config_get() -> dict:
@@ -483,7 +506,7 @@ def discord_config_set(body: dict) -> dict:
     discord["apps"] = [a for a in discord.get("apps") or [] if a in AXE_SUITE_APP_IDS]
     cfg["discord"] = discord
     _write_notify_config(cfg)
-    return {**discord_config_get(), "saved": True}
+    return {"ok": True, "saved": True}
 
 
 _NOTIFY_LOCK = threading.Lock()

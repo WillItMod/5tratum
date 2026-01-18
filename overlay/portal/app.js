@@ -438,14 +438,7 @@
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
       const available = !!res.available;
       if (mqttUnavailableEl) mqttUnavailableEl.classList.toggle('hidden', available);
-      if (mqttConfigEl) mqttConfigEl.classList.toggle('hidden', !available);
-      if (btnMqttSave) btnMqttSave.disabled = !available;
-      if (mqttEnabledInput) mqttEnabledInput.disabled = !available;
-      if (mqttPrefixInput) mqttPrefixInput.disabled = !available;
-      if (!available) {
-        if (mqttStatusEl) mqttStatusEl.textContent = 'Mosquitto not installed.';
-        return;
-      }
+      if (mqttConfigEl) mqttConfigEl.classList.remove('hidden');
       const cfg = res.config || {};
       if (mqttEnabledInput) mqttEnabledInput.checked = !!cfg.enabled;
       if (mqttPrefixInput) mqttPrefixInput.value = String(cfg.prefix || '5tratumos');
@@ -459,7 +452,7 @@
       if (mqttEventHashrateInput) mqttEventHashrateInput.checked = !!events.hashrate_drop;
       if (mqttEventWorkersInput) mqttEventWorkersInput.checked = !!events.worker_offline;
       if (mqttEventBlockInput) mqttEventBlockInput.checked = !!events.block_found;
-      if (mqttStatusEl) mqttStatusEl.textContent = 'Loaded.';
+      if (mqttStatusEl) mqttStatusEl.textContent = available ? 'Loaded.' : 'Mosquitto will be installed on save.';
     } catch (e) {
       if (mqttStatusEl) mqttStatusEl.textContent = 'Load failed.';
     }
