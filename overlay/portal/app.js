@@ -2650,8 +2650,10 @@
     if (!Number.isFinite(n)) return '-';
     const abs = Math.abs(n);
     const units = [
+      { v: 1e18, s: 'E' },
+      { v: 1e15, s: 'P' },
       { v: 1e12, s: 'T' },
-      { v: 1e9, s: 'B' },
+      { v: 1e9, s: 'G' },
       { v: 1e6, s: 'M' },
       { v: 1e3, s: 'K' },
     ];
