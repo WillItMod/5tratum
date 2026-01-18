@@ -4443,6 +4443,45 @@
     return raw.replace(/^v/i, '').trim();
   }
 
+  function cssEscape(val) {
+    const s = String(val || '');
+    try {
+      if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(s);
+    } catch {}
+    return s.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+  }
+
+  function withCacheBust(url) {
+    const raw = String(url || '').trim();
+    if (!raw) return '';
+    try {
+      const u = new URL(raw, window.location.origin);
+      u.searchParams.set('_r', String(Date.now()));
+      return u.toString();
+    } catch {
+      const sep = raw.includes('?') ? '&' : '?';
+      return `${raw}${sep}_r=${Date.now()}`;
+    }
+  }
+
+  function reloadOpenAppFrames(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return;
+    const entry = openWindows.get(id) || null;
+    if (entry && entry.iframe) {
+      try {
+        entry.iframe.src = withCacheBust(appLaunchUrl(id));
+      } catch {}
+    }
+    try {
+      const tile = document.querySelector(`.forgeos-tile[data-app-id="${cssEscape(id)}"]`);
+      if (tile) {
+        const iframe = tile.querySelector('iframe.forgeos-tile__frame');
+        if (iframe) iframe.src = withCacheBust(appLaunchUrl(id));
+      }
+    } catch {}
+  }
+
   async function waitForAppUpdate(appId, options) {
     const id = String(appId || '').trim();
     if (!id) return { ok: false, reason: 'missing app id' };
@@ -6501,8 +6540,8 @@
                 const res = await waitForAppUpdate(id, { expectedVersion: meta.version, previousVersion: beforeVer });
                 if (res && res.ok) {
                   finishProgress(id);
-                  await refreshInstalled();
-                  await refreshStore();
+                  await refresh();
+                  reloadOpenAppFrames(id);
                   showToast('App updated', null);
                 } else {
                   cancelProgress(id);
@@ -7490,9 +7529,10 @@
               const res = await waitForAppUpdate(id, { expectedVersion: meta.version, previousVersion: beforeVer });
               if (res && res.ok) {
                 finishProgress(id);
-                await refreshInstalled();
+                await refresh();
                 // Re-render this details panel so the installed version / update badge update immediately.
                 openStoreModal(id);
+                reloadOpenAppFrames(id);
                 showToast('App updated', null);
               } else {
                 cancelProgress(id);
