@@ -9,8 +9,8 @@
     <title>5tratumOS</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/5tratumos.css?v=33" />
-    <script defer src="/app.js?v=67"></script>
+    <link rel="stylesheet" href="/5tratumos.css?v=34" />
+    <script defer src="/app.js?v=68"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <button id="mobile-backdrop" class="forgeos-mobile-backdrop" type="button" aria-label="Close menu"></button>
@@ -43,28 +43,6 @@
             </span>
             <span class="forgeos-nav-item__label">Fleet</span>
           </button>
-          <button class="forgeos-nav-item" type="button" data-view="dashboard" data-dashboard-mode="desktop" id="btn-mode-desktop">
-            <span class="forgeos-nav-item__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
-                <path
-                  fill="currentColor"
-                  d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5Zm2 0v9h12V5H6Zm-1 14a1 1 0 0 1 1-1h12a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1Z"
-                />
-              </svg>
-            </span>
-            <span class="forgeos-nav-item__label">Desktop</span>
-          </button>
-          <button class="forgeos-nav-item" type="button" data-view="dashboard" data-dashboard-mode="apps" id="btn-mode-apps">
-            <span class="forgeos-nav-item__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
-                <path
-                  fill="currentColor"
-                  d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
-                />
-              </svg>
-            </span>
-            <span class="forgeos-nav-item__label">Workbench</span>
-          </button>
           <button class="forgeos-nav-item" type="button" data-view="dashboard" data-dashboard-mode="appslist" id="btn-mode-appslist">
             <span class="forgeos-nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
@@ -75,6 +53,17 @@
               </svg>
             </span>
             <span class="forgeos-nav-item__label">Apps</span>
+          </button>
+          <button class="forgeos-nav-item" type="button" data-view="dashboard" data-dashboard-mode="apps" id="btn-mode-workbench">
+            <span class="forgeos-nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z"
+                />
+              </svg>
+            </span>
+            <span class="forgeos-nav-item__label">Workbench</span>
           </button>
           <button id="btn-open-store" class="forgeos-nav-item" type="button" data-view="store">
             <span class="forgeos-nav-item__icon" aria-hidden="true">
@@ -178,25 +167,6 @@
             </div>
 
             <div class="forgeos-workspace-wrap">
-              <div id="pane-desktop" class="forgeos-home hidden" aria-label="Desktop">
-                <div class="forgeos-home__head">
-                  <div class="forgeos-home__title">Desktop</div>
-                </div>
-                <div class="forgeos-home__sub">Drag apps onto the desktop to pin launchers. Drop onto another icon to create a folder.</div>
-                <div id="desktop-surface" class="forgeos-desktop-surface" aria-label="Desktop surface">
-                  <div id="desktop-empty" class="forgeos-muted forgeos-desktop-empty">No launchers pinned yet.</div>
-                  <div id="desktop-bin" class="forgeos-desktop-bin" aria-label="Recycle bin" title="Drop here to remove">
-                    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-                      <path
-                        fill="currentColor"
-                        d="M9 3a1 1 0 0 0-1 1v1H5a1 1 0 1 0 0 2h14a1 1 0 1 0 0-2h-3V4a1 1 0 0 0-1-1H9Zm2 0h2v1h-2V3ZM7 9a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0v-8a1 1 0 0 1 1-1Zm5 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0v-8a1 1 0 0 1 1-1Zm5 0a1 1 0 0 1 1 1v8a1 1 0 1 1-2 0v-8a1 1 0 0 1 1-1Z"
-                      />
-                    </svg>
-                    <span class="forgeos-desktop-bin__label">Bin</span>
-                  </div>
-                </div>
-              </div>
-
               <div id="pane-apps-launcher" class="forgeos-home hidden" aria-label="Apps">
                 <div class="forgeos-home__head">
                   <div class="forgeos-home__title">Apps</div>

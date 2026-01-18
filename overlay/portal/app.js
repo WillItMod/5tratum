@@ -65,15 +65,14 @@
   const mobileBackdrop = document.getElementById('mobile-backdrop');
   const btnDashboardMode = document.getElementById('btn-dashboard-mode');
     const btnWidgetsRefresh = document.getElementById('btn-widgets-refresh');
-  const btnModeDesktop = document.getElementById('btn-mode-desktop');
-  const btnModeApps = document.getElementById('btn-mode-apps');
   const btnModeFleet = document.getElementById('btn-mode-fleet');
   const btnModeAppsList = document.getElementById('btn-mode-appslist');
+  const btnModeWorkbench = document.getElementById('btn-mode-workbench');
   const btnOpenStore = document.getElementById('btn-open-store');
-  const paneDesktopEl = document.getElementById('pane-desktop');
   const paneAppsLauncherEl = document.getElementById('pane-apps-launcher');
   const appsLauncherGridEl = document.getElementById('apps-launcher-grid');
   const appsLauncherEmptyEl = document.getElementById('apps-launcher-empty');
+  const paneDesktopEl = document.getElementById('pane-desktop');
   const desktopSurfaceEl = document.getElementById('desktop-surface');
   const desktopEmptyEl = document.getElementById('desktop-empty');
   const desktopBinEl = document.getElementById('desktop-bin');
@@ -897,7 +896,7 @@
   function loadDashboardMode() {
     try {
       const raw = String(window.localStorage.getItem(DASHBOARD_MODE_KEY) || '').trim().toLowerCase();
-      if (raw === 'desktop' || raw === 'apps' || raw === 'fleet' || raw === 'appslist') return raw;
+      if (raw === 'apps' || raw === 'fleet' || raw === 'appslist') return raw;
     } catch {}
     return 'fleet';
   }
@@ -910,18 +909,14 @@
 
   function setDashboardMode(nextMode) {
     const next = String(nextMode || '').trim().toLowerCase();
-    if (next !== 'desktop' && next !== 'apps' && next !== 'fleet' && next !== 'appslist') return;
+    if (next !== 'apps' && next !== 'fleet' && next !== 'appslist') return;
     if (dashboardMode === next) return;
     dashboardMode = next;
     saveDashboardMode();
     syncDashboardModeUi();
     if (activeViewKey === 'dashboard') {
       renderWorkspace();
-      renderDesktop();
       renderAppsLauncher(installedAppsCache);
-    }
-    if (activeViewKey === 'dashboard' && next === 'desktop') {
-      window.requestAnimationFrame(() => renderDesktop());
     }
     if (activeViewKey === 'dashboard' && dashboardMode === 'fleet') {
       refreshFleet().catch(() => {});
@@ -1297,7 +1292,7 @@
     syncInstalledSelection();
     updateAppHeader();
     renderWidgetSettings();
-    renderDesktop();
+    if (desktopSurfaceEl) renderDesktop();
 
     if (fromCache && !healthCache.ok) setStatus('Cached');
   }
@@ -5177,59 +5172,175 @@
       return;
     }
     const cfg = res.config && typeof res.config === 'object' ? res.config : {};
-    const mounts = Array.isArray(cfg.mounts) ? cfg.mounts : [];
+    const mountsCfg = Array.isArray(cfg.mounts) ? cfg.mounts : [];
     const defaultMount = String(cfg.default_mount || '').trim();
+    const mountsDetected = Array.isArray(res.mounts) ? res.mounts : [];
+
+    const normalizeMp = (mp) => {
+      const s = String(mp || '').trim();
+      if (!s) return '';
+      if (!s.startsWith('/')) return '';
+      if (s === '/') return '/';
+      return s.replace(/\/+$/, '');
+    };
+
+    const isSystemMount = (mp, fstype) => {
+      const p = String(mp || '').trim();
+      const fs = String(fstype || '').trim().toLowerCase();
+      if (!p) return true;
+      if (p === '/') return false;
+      if (fs === 'tmpfs' || fs === 'devtmpfs' || fs === 'overlay') return true;
+      if (p === '/boot' || p === '/boot/efi') return true;
+      if (p.startsWith('/run') || p.startsWith('/proc') || p.startsWith('/sys') || p.startsWith('/dev')) return true;
+      return false;
+    };
+
+    const findDetected = (mp) => {
+      const needle = normalizeMp(mp);
+      if (!needle) return null;
+      for (const m of mountsDetected) {
+        if (!m || typeof m !== 'object') continue;
+        if (normalizeMp(m.mountpoint) === needle) return m;
+      }
+      return null;
+    };
+
+    const mountDisplayName = (mp, detected) => {
+      const p = normalizeMp(mp);
+      if (!p) return 'OS disk (system)';
+      if (p === '/srv/5tratumos-data') return String((detected && detected.label) || 'Internal').trim() || 'Internal';
+      const label = String((detected && detected.label) || '').trim();
+      return label || 'External drive';
+    };
 
     if (storageDefaultSelect) {
       storageDefaultSelect.innerHTML = '';
       const optLocal = document.createElement('option');
       optLocal.value = '';
-      optLocal.textContent = 'Local (system disk)';
+      optLocal.textContent = 'OS disk (system)';
       storageDefaultSelect.appendChild(optLocal);
-      for (const m of mounts) {
+      for (const m of mountsCfg) {
         if (!m || typeof m !== 'object') continue;
-        const mp = String(m.mountpoint || '').trim();
+        const mp = normalizeMp(m.mountpoint);
         if (!mp) continue;
-        const label = String(m.label || '').trim();
+        const detected = findDetected(mp);
+        const label = mountDisplayName(mp, detected);
         const opt = document.createElement('option');
         opt.value = mp;
-        opt.textContent = label ? `${label} (${mp})` : mp;
+        opt.textContent = label;
         storageDefaultSelect.appendChild(opt);
       }
-      storageDefaultSelect.value = defaultMount;
+      const selected = normalizeMp(defaultMount);
+      const allowed = selected && mountsCfg.some((m) => m && typeof m === 'object' && normalizeMp(m.mountpoint) === selected);
+      storageDefaultSelect.value = allowed ? selected : '';
     }
 
     if (storageListEl) {
       storageListEl.innerHTML = '';
-      const list = Array.isArray(res.mounts) ? res.mounts : [];
-      if (!list.length) {
+      const list = Array.isArray(mountsDetected) ? mountsDetected : [];
+      const root = findDetected('/') || null;
+      const rows = list
+        .filter((m) => m && typeof m === 'object' && normalizeMp(m.mountpoint) && normalizeMp(m.mountpoint) !== '/' && !isSystemMount(m.mountpoint, m.fstype))
+        .sort((a, b) => String(a.mountpoint || '').localeCompare(String(b.mountpoint || '')));
+      const cfgSet = new Set(
+        mountsCfg
+          .map((m) => (m && typeof m === 'object' ? normalizeMp(m.mountpoint) : ''))
+          .filter((v) => v),
+      );
+
+      const renderRow = (m) => {
+        const mp = normalizeMp(m && m.mountpoint);
+        if (!mp) return;
+        const isRoot = mp === '/';
+        const isInternal = mp === '/srv/5tratumos-data';
+        const title = isRoot ? 'OS disk (system)' : mountDisplayName(mp, m);
+        const readonly = isRoot;
+        const toggleDisabled = isRoot || isInternal;
+        const registered = isRoot ? true : cfgSet.has(mp) || !!m.registered || isInternal;
+
+        const row = document.createElement('div');
+        row.className = 'forgeos-mini-card';
+        row.dataset.storageMp = mp;
+
+        const k = document.createElement('div');
+        k.className = 'forgeos-mini-card__k';
+        k.textContent = title;
+
+        const v = document.createElement('div');
+        v.className = 'forgeos-mini-card__v';
+
+        const meta = document.createElement('div');
+        meta.className = 'forgeos-muted forgeos-mono';
+        const metaBits = [];
+        if (!isRoot) metaBits.push(mp);
+        if (m.fstype) metaBits.push(String(m.fstype));
+        if (m.size) metaBits.push(String(m.size));
+        if (m.has_5tratumos) metaBits.push('5tratumOS apps detected');
+        meta.textContent = metaBits.join(' • ') || '-';
+
+        const form = document.createElement('div');
+        form.className = 'mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-end';
+
+        const labelWrap = document.createElement('div');
+        const labelLbl = document.createElement('label');
+        labelLbl.className = 'forgeos-label';
+        labelLbl.textContent = 'Label';
+        const labelInput = document.createElement('input');
+        labelInput.type = 'text';
+        labelInput.className = 'forgeos-input';
+        labelInput.placeholder = isRoot ? 'OS disk' : 'Drive name';
+        labelInput.value = String(m.config_label || m.label || '').trim();
+        labelInput.disabled = readonly;
+        labelInput.dataset.storageField = 'label';
+        labelWrap.appendChild(labelLbl);
+        labelWrap.appendChild(labelInput);
+
+        const regWrap = document.createElement('div');
+        const regLbl = document.createElement('label');
+        regLbl.className = 'forgeos-toggle mt-6';
+        regLbl.title = toggleDisabled ? 'This drive is always available for apps.' : 'Allow apps to be stored on this drive.';
+        const regInput = document.createElement('input');
+        regInput.type = 'checkbox';
+        regInput.checked = registered;
+        regInput.disabled = toggleDisabled;
+        regInput.dataset.storageField = 'registered';
+        const regText = document.createElement('span');
+        regText.textContent = 'Use for apps';
+        regLbl.appendChild(regInput);
+        regLbl.appendChild(regText);
+        regWrap.appendChild(regLbl);
+
+        const hintWrap = document.createElement('div');
+        hintWrap.className = 'text-xs text-slate-300 sm:col-span-1';
+        hintWrap.textContent = isRoot
+          ? 'The OS disk holds system files and can store apps by default.'
+          : isInternal
+            ? 'Internal app storage (recommended).'
+            : registered
+              ? 'Registered for app installs and migrations.'
+              : 'Not used for apps until registered.';
+
+        form.appendChild(labelWrap);
+        form.appendChild(regWrap);
+        form.appendChild(hintWrap);
+
+        v.appendChild(meta);
+        v.appendChild(form);
+        row.appendChild(k);
+        row.appendChild(v);
+        storageListEl.appendChild(row);
+      };
+
+      if (root && typeof root === 'object') renderRow({ ...root, mountpoint: '/' });
+
+      if (!rows.length && !root) {
         const empty = document.createElement('div');
         empty.className = 'forgeos-muted';
         empty.textContent = 'No mounted drives detected.';
         storageListEl.appendChild(empty);
-      } else {
-        for (const m of list) {
-          if (!m || typeof m !== 'object') continue;
-          const mp = String(m.mountpoint || '').trim();
-          if (!mp) continue;
-          const row = document.createElement('div');
-          row.className = 'forgeos-mini-card';
-          const k = document.createElement('div');
-          k.className = 'forgeos-mini-card__k';
-          k.textContent = m.label ? `Drive: ${m.label}` : 'Drive';
-          const v = document.createElement('div');
-          v.className = 'forgeos-mini-card__v forgeos-mono';
-          const bits = [];
-          bits.push(mp);
-          if (m.fstype) bits.push(String(m.fstype));
-          if (m.registered) bits.push('registered');
-          if (m.has_5tratumos) bits.push('5tratumOS data');
-          v.textContent = bits.join(' • ');
-          row.appendChild(k);
-          row.appendChild(v);
-          storageListEl.appendChild(row);
-        }
       }
+
+      for (const m of rows) renderRow(m);
     }
 
     if (storageStatusEl) {
@@ -5257,9 +5368,36 @@
     if (btnStorageSave) btnStorageSave.textContent = 'Saving...';
     if (storageStatusEl) storageStatusEl.textContent = 'Saving...';
     try {
+      const normalizeMp = (mountpoint) => String(mountpoint || '').trim().replace(/\/+$/, '');
+      const cfg = storageCache && typeof storageCache === 'object' ? storageCache.config : null;
+      const existing = cfg && typeof cfg === 'object' && Array.isArray(cfg.mounts) ? cfg.mounts : [];
+      const mountsByMp = new Map();
+      for (const m of existing) {
+        if (!m || typeof m !== 'object') continue;
+        const mpRow = normalizeMp(m.mountpoint);
+        if (!mpRow || mpRow === '/') continue;
+        mountsByMp.set(mpRow, String(m.label || '').trim());
+      }
+      if (storageListEl) {
+        const rows = Array.from(storageListEl.querySelectorAll('[data-storage-mp]'));
+        for (const row of rows) {
+          const mpRow = normalizeMp(row && row.dataset ? row.dataset.storageMp || '' : '');
+          if (!mpRow || mpRow === '/') continue;
+          const regEl = row.querySelector('input[data-storage-field=\"registered\"]');
+          const registered = !!(regEl && regEl.checked);
+          const labelEl = row.querySelector('input[data-storage-field=\"label\"]');
+          const label = String(labelEl && 'value' in labelEl ? labelEl.value : '').trim();
+          if (registered) mountsByMp.set(mpRow, label);
+          else mountsByMp.delete(mpRow);
+        }
+      }
+
+      const mpDefault = String(mp || '').trim();
+      const mounts = Array.from(mountsByMp.entries()).map(([mountpoint, label]) => ({ mountpoint, label }));
+      const allowedDefault = !mpDefault || mountsByMp.has(normalizeMp(mpDefault));
       const res = await apiJsonTimeout(
         '/api/v0/system/storage/config',
-        { method: 'POST', body: JSON.stringify({ default_mount: mp }) },
+        { method: 'POST', body: JSON.stringify({ default_mount: allowedDefault ? mpDefault : '', mounts }) },
         8000,
       ).catch(() => null);
       if (!res || res.ok !== true) throw new Error(res && res.error ? String(res.error) : 'save failed');
@@ -6198,7 +6336,6 @@
       maybePromptKiosk().catch(() => {});
 
     await Promise.allSettled([
-      refreshDesktopStateRemote(),
       refreshInstalled(),
       refreshStore(),
       refreshMetrics(),
@@ -6212,6 +6349,7 @@
     if (!id) return;
     const label = metaFor(id).name || id;
 
+    let splashToken = '';
     try {
       const ok = await ensureHealthy();
       if (!ok) throw new Error('Service unavailable');
@@ -6223,40 +6361,54 @@
 
       const cfg = storageRes.config && typeof storageRes.config === 'object' ? storageRes.config : {};
       const mounts = Array.isArray(cfg.mounts) ? cfg.mounts : [];
+      const detected = Array.isArray(storageRes.mounts) ? storageRes.mounts : [];
+
+      const normalizeMp = (mp) => {
+        const s = String(mp || '').trim();
+        if (!s) return '';
+        if (s === '/') return '/';
+        return s.replace(/\/+$/, '');
+      };
+
+      const mountLabel = (mountpoint) => {
+        const mp = normalizeMp(mountpoint);
+        if (!mp) return 'OS disk (system)';
+        const hit = detected.find((m) => m && typeof m === 'object' && normalizeMp(m.mountpoint) === mp) || null;
+        const lbl = String(hit && hit.label ? hit.label : '').trim();
+        if (lbl) return lbl;
+        if (mp === '/srv/5tratumos-data') return 'Internal';
+        return 'External drive';
+      };
 
       const installed = installedById.get(id) || null;
       const currentTarget =
         installed && installed.storage && typeof installed.storage === 'object' ? String(installed.storage.target || '').trim() : '';
+      const status = installed ? String(installed.status || '').trim().toLowerCase() : '';
 
-      const resolveMountLabel = (mountpoint) => {
-        const mp = String(mountpoint || '').trim();
-        if (!mp) return '';
-        const m = mounts.find((x) => x && typeof x === 'object' && String(x.mountpoint || '').trim() === mp);
-        if (!m) return '';
-        return String(m.label || '').trim();
-      };
-
-      let currentLocation = 'Local (system disk)';
+      let currentMount = '';
+      let currentLocation = 'OS disk (system)';
       if (currentTarget) {
         for (const m of mounts) {
           if (!m || typeof m !== 'object') continue;
-          const mp = String(m.mountpoint || '').trim();
+          const mp = normalizeMp(m.mountpoint);
           if (!mp) continue;
           if (currentTarget.startsWith(mp)) {
-            const label = String(m.label || '').trim();
-            currentLocation = label || 'External drive';
+            currentMount = mp;
+            currentLocation = mountLabel(mp);
             break;
           }
         }
       }
 
-      const choices = [{ label: 'Local (system disk)', value: '' }];
+      const choices = [{ label: 'OS disk (system)', value: '' }];
+      const seen = new Set(['']);
       for (const m of mounts) {
         if (!m || typeof m !== 'object') continue;
-        const mp = String(m.mountpoint || '').trim();
+        const mp = normalizeMp(m.mountpoint);
         if (!mp) continue;
-        const l = String(m.label || '').trim();
-        choices.push({ label: l || 'External drive', value: mp });
+        if (seen.has(mp)) continue;
+        seen.add(mp);
+        choices.push({ label: mountLabel(mp), value: mp });
       }
 
       const pick = await openChoiceModal({
@@ -6268,8 +6420,8 @@
       if (!pick || pick === 'cancel') return;
 
       const mountpoint = String(pick).trim();
-      const alreadyOnMount = mountpoint && currentTarget && currentTarget.startsWith(mountpoint);
-      if (!mountpoint && (!currentTarget || currentTarget.startsWith('/var/lib/5tratumos'))) {
+      const alreadyOnMount = mountpoint && currentMount && normalizeMp(currentMount) === normalizeMp(mountpoint);
+      if (!mountpoint && (!currentTarget || currentMount === '' || currentTarget.startsWith('/var/lib/5tratumos'))) {
         showToast('Already on local storage', null);
         return;
       }
@@ -6278,7 +6430,18 @@
         return;
       }
 
-      const splashToken = showGlobalSplash({ title: `Moving ${label}`, sub: 'Starting migration...' });
+      if (status === 'running' || status === 'restarting') {
+        const okStop = await openConfirmModal({
+          title: `Stop ${label} to move data?`,
+          message: 'This app must be stopped to move its data. The OS will stop it, migrate the files, then start it again.',
+          confirmText: 'Stop & move',
+          cancelText: 'Cancel',
+          danger: false,
+        });
+        if (!okStop) return;
+      }
+
+      splashToken = showGlobalSplash({ title: `Moving ${label}`, sub: 'Starting migration...' });
       updateGlobalSplashProgress(5);
       const start = await apiJsonTimeout(
         '/api/v0/apps/migrate',
@@ -6332,6 +6495,7 @@
       hideGlobalSplash(splashToken);
       showToast('Migration timed out', 'error');
     } catch (e) {
+      if (splashToken) hideGlobalSplash(splashToken);
       showToast('Migration failed', 'error');
       await openNoticeModal({
         kind: 'Error',
@@ -8812,7 +8976,6 @@
   if (storeHideInstalledInput) storeHideInstalled = !!storeHideInstalledInput.checked;
   openAppIds = loadOpenApps();
   widgetPrefs = loadWidgetPrefs();
-  desktopState = loadDesktopState();
   drawerPinned = loadDrawerPinned();
   activeStoreChannel = loadStoreChannel();
   storeAutoSyncEnabled = loadStoreAutoSyncEnabled();
@@ -8824,7 +8987,6 @@
   saveDashboardMode();
   syncDashboardModeUi();
   renderWorkspace();
-  renderDesktop();
   applySidebarMode(loadSidebarMode());
   fleetSeries = loadFleetSeries();
   initDashboard();

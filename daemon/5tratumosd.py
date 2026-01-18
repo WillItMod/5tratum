@@ -748,6 +748,11 @@ def system_storage_status() -> dict:
     cfg = cfg if isinstance(cfg, dict) else _storage_defaults()
     registered = cfg.get("mounts") if isinstance(cfg.get("mounts"), list) else []
     reg_set = {str(m.get("mountpoint") or "") for m in registered if isinstance(m, dict)}
+    label_by_mp = {
+        str(m.get("mountpoint") or ""): str(m.get("label") or "").strip()
+        for m in registered
+        if isinstance(m, dict) and str(m.get("mountpoint") or "")
+    }
 
     devices: list[dict] = []
     mounts: list[dict] = []
@@ -789,12 +794,14 @@ def system_storage_status() -> dict:
             )
         if mp:
             marker = os.path.isdir(os.path.join(mp, "5tratumos")) or os.path.isdir(os.path.join(mp, "5tratumos", "apps"))
+            cfg_label = label_by_mp.get(mp) or ""
             mounts.append(
                 {
                     "mountpoint": mp,
                     "fstype": fstype,
                     "uuid": uuid,
-                    "label": label,
+                    "label": cfg_label or label,
+                    "config_label": cfg_label,
                     "size": size,
                     "registered": mp in reg_set,
                     "has_5tratumos": bool(marker),
@@ -879,7 +886,54 @@ def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
                 migrate_status_write(aid, "stopping", pct=10, from_path=src_real, to_path=dest_path)
                 stratumos_cmd(["app", "down", aid], timeout_s=600)
 
+                # If moving back to local storage from a symlinked app dir, the destination
+                # path equals src_path (currently a symlink). Handle as a special case.
+                moving_to_local = not mp
+                if moving_to_local and src_is_link:
+                    ts = int(time.time())
+                    tmp_path = f"{src_path}.migrating.{ts}"
+                    if os.path.exists(tmp_path):
+                        migrate_status_write(aid, "error", error="stale migration directory exists", pct=100)
+                        return
+                    migrate_status_write(aid, "copying", pct=45)
+                    os.makedirs(os.path.dirname(tmp_path), exist_ok=True)
+                    os.makedirs(tmp_path, exist_ok=True)
+                    proc = run_cmd(["cp", "-a", os.path.join(src_real, "."), tmp_path], timeout_s=3600)
+                    if proc.returncode != 0:
+                        migrate_status_write(aid, "error", error=(proc.stderr or proc.stdout or "copy failed").strip(), pct=100)
+                        return
+                    migrate_status_write(aid, "switching", pct=75)
+                    try:
+                        os.unlink(src_path)
+                    except Exception as e:
+                        migrate_status_write(aid, "error", error=f"unlink failed: {e}", pct=100)
+                        return
+                    try:
+                        os.rename(tmp_path, src_path)
+                    except Exception as e:
+                        migrate_status_write(aid, "error", error=f"rename failed: {e}", pct=100)
+                        return
+                    migrate_status_write(aid, "starting", pct=90)
+                    stratumos_cmd(["app", "up", aid], timeout_s=600)
+                    migrate_status_write(aid, "done", pct=100, mountpoint="")
+                    return
+                if moving_to_local and not src_is_link:
+                    # Already local (no-op).
+                    migrate_status_write(aid, "starting", pct=90)
+                    stratumos_cmd(["app", "up", aid], timeout_s=600)
+                    migrate_status_write(aid, "done", pct=100, mountpoint="")
+                    return
+
+                # Moving to an external/internal mountpoint.
                 if os.path.exists(dest_path):
+                    # If destination already contains the same data, treat as no-op.
+                    try:
+                        if os.path.realpath(dest_path) == os.path.realpath(src_real):
+                            migrate_status_write(aid, "done", pct=100, mountpoint=mp or "")
+                            stratumos_cmd(["app", "up", aid], timeout_s=600)
+                            return
+                    except Exception:
+                        pass
                     migrate_status_write(aid, "error", error="destination already exists", pct=100)
                     return
 
@@ -905,11 +959,12 @@ def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
                         os.rename(src_path, f"{src_path}.bak.{ts}")
                     except Exception:
                         pass
-                try:
-                    os.symlink(dest_path, src_path)
-                except Exception as e:
-                    migrate_status_write(aid, "error", error=f"symlink failed: {e}", pct=100)
-                    return
+                if mp:
+                    try:
+                        os.symlink(dest_path, src_path)
+                    except Exception as e:
+                        migrate_status_write(aid, "error", error=f"symlink failed: {e}", pct=100)
+                        return
 
                 migrate_status_write(aid, "starting", pct=90)
                 stratumos_cmd(["app", "up", aid], timeout_s=600)
