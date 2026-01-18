@@ -2296,6 +2296,20 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   color: rgba(100, 116, 139, 0.95);
 }
 
+.forgeos-splash__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.forgeos-splash__actions.hidden {
+  display: none;
+}
+
 .forgeos-splash__progress {
   width: 100%;
   display: flex;

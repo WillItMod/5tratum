@@ -187,6 +187,9 @@
   const globalSplashTitleEl = document.getElementById('global-splash-title');
   const globalSplashSubEl = document.getElementById('global-splash-sub');
   const globalSplashDismissEl = document.getElementById('global-splash-dismiss');
+  const globalSplashActionsEl = document.getElementById('global-splash-actions');
+  const globalSplashPrimaryBtn = document.getElementById('global-splash-primary');
+  const globalSplashSecondaryBtn = document.getElementById('global-splash-secondary');
   const globalSplashProgressEl = document.getElementById('global-splash-progress');
   const globalSplashProgressFillEl = document.getElementById('global-splash-progress-fill');
   const globalSplashProgressLabelEl = document.getElementById('global-splash-progress-label');
@@ -291,6 +294,7 @@
   let desktopRemoteLoaded = false;
   let desktopRemoteSaveTimer = 0;
   let drawerPinned = new Set();
+  let globalSplashActionsEnabled = false;
 
   function refreshGlobalSplashLock() {
     if (!globalSplashEl) return;
@@ -306,6 +310,11 @@
       globalSplashDismissEl.classList.toggle('hidden', locked);
       if (!locked) globalSplashDismissEl.textContent = 'Click anywhere to dismiss';
     }
+    if (globalSplashActionsEl) {
+      const show = globalSplashActionsEnabled && !locked;
+      globalSplashActionsEl.classList.toggle('hidden', !show);
+      globalSplashActionsEl.setAttribute('aria-hidden', show ? 'false' : 'true');
+    }
   }
 
   function showGlobalSplash(opts) {
@@ -316,6 +325,44 @@
     const progress = Number.isFinite(Number(options.progress)) ? Number(options.progress) : null;
     const showProgress = options.showProgress === true || progress !== null;
     const dismissable = options.dismissable !== false;
+    const primary = options.primary && typeof options.primary === 'object' ? options.primary : null;
+    const secondary = options.secondary && typeof options.secondary === 'object' ? options.secondary : null;
+
+    globalSplashActionsEnabled = !!(primary || secondary);
+    if (globalSplashPrimaryBtn) {
+      const show = !!(primary && primary.label);
+      globalSplashPrimaryBtn.classList.toggle('hidden', !show);
+      if (show) {
+        globalSplashPrimaryBtn.textContent = String(primary.label);
+        globalSplashPrimaryBtn.classList.toggle('forgeos-btn--danger', primary.danger !== false);
+        globalSplashPrimaryBtn.disabled = !!primary.disabled;
+        globalSplashPrimaryBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          primary.onClick?.();
+        };
+      } else {
+        globalSplashPrimaryBtn.onclick = null;
+      }
+    }
+
+    if (globalSplashSecondaryBtn) {
+      const show = !!(secondary && secondary.label);
+      globalSplashSecondaryBtn.classList.toggle('hidden', !show);
+      if (show) {
+        globalSplashSecondaryBtn.textContent = String(secondary.label);
+        globalSplashSecondaryBtn.classList.toggle('forgeos-btn--danger', !!secondary.danger);
+        globalSplashSecondaryBtn.disabled = !!secondary.disabled;
+        globalSplashSecondaryBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          secondary.onClick?.();
+        };
+      } else {
+        globalSplashSecondaryBtn.onclick = null;
+      }
+    }
+
     splashTokenSeq += 1;
     const token = `splash-${splashTokenSeq}`;
     splashTokens.set(token, { title, sub, dismissable });
@@ -343,6 +390,11 @@
         globalSplashEl.classList.add('hidden');
         globalSplashEl.setAttribute('aria-hidden', 'true');
         splashTokens.clear();
+        globalSplashActionsEnabled = false;
+        if (globalSplashActionsEl) {
+          globalSplashActionsEl.classList.add('hidden');
+          globalSplashActionsEl.setAttribute('aria-hidden', 'true');
+        }
         refreshGlobalSplashLock();
       });
     }
@@ -356,6 +408,11 @@
     if (splashTokens.size) return;
     globalSplashEl.classList.add('hidden');
     globalSplashEl.setAttribute('aria-hidden', 'true');
+    globalSplashActionsEnabled = false;
+    if (globalSplashActionsEl) {
+      globalSplashActionsEl.classList.add('hidden');
+      globalSplashActionsEl.setAttribute('aria-hidden', 'true');
+    }
   }
 
   function updateGlobalSplash(title, sub) {
@@ -5454,6 +5511,12 @@
       if (!ok) return;
       const res = await apiJsonTimeout('/api/v0/system/update/check', {}, 20000);
       if (res && typeof res === 'object') systemUpdateCheckCache = res;
+
+      if (userInitiated && res && typeof res === 'object' && res.update_available === true) {
+        const tag =
+          res.available && typeof res.available === 'object' && res.available.tag ? String(res.available.tag).trim() : '';
+        if (tag) updateAvailableModalShownFor = tag;
+      }
     } catch (e) {
       systemUpdateCheckCache = {
         ok: true,
@@ -5475,6 +5538,41 @@
               title: 'Update check failed',
               message: String(chk.error),
               danger: true,
+            });
+          } else if (chk.update_available === true) {
+            const tag =
+              chk.available && typeof chk.available === 'object' && chk.available.tag ? String(chk.available.tag).trim() : '';
+            const notes =
+              chk.available && typeof chk.available === 'object' && chk.available.notes ? String(chk.available.notes).trim() : '';
+            const notesPreview = notes
+              ? notes
+                  .split('\n')
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .join('\n')
+              : '';
+
+            let splashToken = null;
+            splashToken = showGlobalSplash({
+              title: tag ? `Update available: ${tag}` : 'Update available',
+              sub: notesPreview || 'An OS update is ready to install.',
+              dismissable: true,
+              primary: {
+                label: 'Install update',
+                danger: true,
+                onClick: async () => {
+                  if (splashToken) hideGlobalSplash(splashToken);
+                  await applySystemUpdate();
+                },
+              },
+              secondary: {
+                label: 'Later',
+                danger: false,
+                onClick: () => {
+                  if (splashToken) hideGlobalSplash(splashToken);
+                },
+              },
             });
           } else if (chk.update_available !== true) {
             await openNoticeModal({
