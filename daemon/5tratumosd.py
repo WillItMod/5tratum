@@ -18,6 +18,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -67,6 +68,7 @@ DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
+WATCHDOG_CONFIG_FILE = str(_env("WATCHDOG_CONFIG_FILE", "/etc/5tratumos/watchdog.json") or "/etc/5tratumos/watchdog.json")
 API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
@@ -1139,6 +1141,129 @@ def discord_config_set(body: dict) -> dict:
     return {"ok": True, "saved": True}
 
 
+def _watchdog_defaults() -> dict:
+    return {"enabled": False, "interval_s": 30, "apps": []}
+
+
+def _read_watchdog_config() -> dict:
+    cfg = _read_json(WATCHDOG_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _normalize_watchdog_config(raw: dict) -> dict:
+    base = _watchdog_defaults()
+    cfg = raw if isinstance(raw, dict) else {}
+    out = {**base}
+    out["enabled"] = bool(cfg.get("enabled"))
+    try:
+        interval = int(str(cfg.get("interval_s") or base["interval_s"]).strip() or base["interval_s"])
+    except Exception:
+        interval = int(base["interval_s"])
+    out["interval_s"] = max(10, min(300, interval))
+    apps = cfg.get("apps")
+    if isinstance(apps, list):
+        out["apps"] = [str(a).strip().lower() for a in apps if str(a).strip()]
+    return out
+
+
+def _installed_apps_for_watchdog() -> list[dict]:
+    apps: list[dict] = []
+    for app_id in list_installed_app_ids():
+        meta = store_app_by_id(app_id) or {}
+        name = str(meta.get("name") or app_id)
+        apps.append({"id": app_id, "name": name})
+    return apps
+
+
+def watchdog_config_get() -> dict:
+    cfg = _normalize_watchdog_config(_read_watchdog_config())
+    installed = {a["id"] for a in _installed_apps_for_watchdog()}
+    cfg["apps"] = [a for a in cfg.get("apps") or [] if a in installed]
+    return {"ok": True, "apps": _installed_apps_for_watchdog(), "config": cfg}
+
+
+def watchdog_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    cfg = _normalize_watchdog_config(_read_watchdog_config())
+    if "enabled" in body:
+        cfg["enabled"] = bool(body.get("enabled"))
+    if "interval_s" in body:
+        try:
+            interval = int(str(body.get("interval_s") or "").strip() or cfg.get("interval_s") or 30)
+        except Exception:
+            interval = int(cfg.get("interval_s") or 30)
+        cfg["interval_s"] = max(10, min(300, interval))
+    if "apps" in body:
+        raw_apps = body.get("apps")
+        if isinstance(raw_apps, list):
+            cfg["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
+
+    installed = set(list_installed_app_ids())
+    cfg["apps"] = [a for a in cfg.get("apps") or [] if a in installed]
+    _write_json_atomic(WATCHDOG_CONFIG_FILE, cfg)
+    return {"ok": True, "saved": True}
+
+
+_WATCHDOG_LOCK = threading.Lock()
+_WATCHDOG_STATE: dict[str, dict] = {}
+
+
+def watchdog_note_manual_stop(app_id: str) -> None:
+    aid = str(app_id or "").strip().lower()
+    if not aid:
+        return
+    with _WATCHDOG_LOCK:
+        cfg = _normalize_watchdog_config(_read_watchdog_config())
+        if not cfg.get("enabled"):
+            return
+        apps = list(cfg.get("apps") or [])
+        if aid not in apps:
+            return
+        cfg["apps"] = [a for a in apps if a != aid]
+        try:
+            _write_json_atomic(WATCHDOG_CONFIG_FILE, cfg)
+        except Exception:
+            pass
+
+
+def _watchdog_loop() -> None:
+    while True:
+        try:
+            cfg = _normalize_watchdog_config(_read_watchdog_config())
+            interval_s = int(cfg.get("interval_s") or 30)
+            time.sleep(max(10, interval_s))
+            if not cfg.get("enabled"):
+                continue
+            apps = [str(a).strip().lower() for a in (cfg.get("apps") or []) if str(a).strip()]
+            if not apps:
+                continue
+
+            now = time.time()
+            for app_id in apps:
+                project = docker_compose_project(app_id)
+                st = summarize_project_status(project)
+                status = str(st.get("status") or "")
+                if status in {"running", "restarting"}:
+                    continue
+                if status == "not-created":
+                    continue
+
+                with _WATCHDOG_LOCK:
+                    prev = _WATCHDOG_STATE.get(app_id) or {}
+                    last = float(prev.get("last_attempt") or 0.0)
+                    if (now - last) < 60:
+                        continue
+                    _WATCHDOG_STATE[app_id] = {"last_attempt": now}
+
+                res = stratumos_cmd(["app", "up", app_id], timeout_s=600)
+                if not res.get("ok"):
+                    with _WATCHDOG_LOCK:
+                        _WATCHDOG_STATE[app_id] = {"last_attempt": now, "last_error": str(res.get("error") or res.get("stderr") or "")}
+        except Exception:
+            time.sleep(10)
+
+
 _NOTIFY_LOCK = threading.Lock()
 _NOTIFY_STATE: dict[str, dict] = {"apps": {}, "update": {}}
 _NOTIFY_POLL_S = 30
@@ -1483,7 +1608,7 @@ def update_status_read() -> dict:
 
     # If the last step was "restart daemon" and we are back online with the target tag, mark done.
     if state in {"restarting_daemon", "restarting"} and target and installed == target:
-        st = {**st, "state": "done", "time": _now_iso(), "ok": True}
+        st = {**st, "state": "done", "time": _now_iso(), "ok": True, "progress": 100}
         try:
             _write_json_atomic(_UPDATE_STATUS_PATH, st)
         except Exception:
@@ -1657,6 +1782,43 @@ def _github_bytes(url: str, *, timeout_s: int = 60) -> bytes:
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
         return r.read()
+
+
+def _github_download_file(
+    url: str,
+    dest_path: str,
+    *,
+    timeout_s: int = 600,
+    progress_cb: Callable[[int, int | None], None] | None = None,
+) -> None:
+    token = update_token()
+    headers = {"User-Agent": "5tratumOS"}
+    if "/releases/assets/" in url:
+        headers["Accept"] = "application/octet-stream"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
+        total = None
+        try:
+            total_raw = str(r.headers.get("Content-Length") or "").strip()
+            if total_raw:
+                total = int(total_raw)
+        except Exception:
+            total = None
+        written = 0
+        with open(dest_path, "wb") as f:
+            while True:
+                chunk = r.read(256 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                written += len(chunk)
+                if progress_cb:
+                    try:
+                        progress_cb(written, total)
+                    except Exception:
+                        pass
 
 
 def _select_release(channel: str) -> dict:
@@ -2028,18 +2190,37 @@ def system_update_apply(channel: str | None = None) -> dict:
 
         def worker() -> None:
             try:
-                update_status_write("downloading", target_tag=target_tag)
+                update_status_write("downloading", target_tag=target_tag, progress=0)
                 os.makedirs(os.path.join(STATE_DIR, "update"), exist_ok=True)
                 bundle_path = os.path.join(STATE_DIR, "update", "bundle.tgz")
                 stage_dir = os.path.join(STATE_DIR, "update", f"stage-{int(time.time())}")
                 tmp = bundle_path + ".tmp"
-                Path(tmp).write_bytes(_github_bytes(bundle_url, timeout_s=600))
+                last_pct = -1
+                last_tick = 0.0
+
+                def download_progress(written: int, total: int | None) -> None:
+                    nonlocal last_pct, last_tick
+                    if not total or total <= 0:
+                        return
+                    now = time.time()
+                    if now - last_tick < 0.35:
+                        return
+                    last_tick = now
+                    pct = int((written / total) * 35.0)
+                    pct = max(0, min(35, pct))
+                    if pct == last_pct:
+                        return
+                    last_pct = pct
+                    update_status_write("downloading", target_tag=target_tag, progress=pct)
+
+                _github_download_file(bundle_url, tmp, timeout_s=600, progress_cb=download_progress)
                 os.replace(tmp, bundle_path)
+                update_status_write("downloading", target_tag=target_tag, progress=35)
 
                 if bundle_sha:
                     got = _sha256_file(bundle_path)
                     if got.lower() != bundle_sha.lower():
-                        update_status_write("error", target_tag=target_tag, error="checksum mismatch")
+                        update_status_write("error", target_tag=target_tag, error="checksum mismatch", progress=100)
                         return
 
                 if sig_required:
@@ -2048,10 +2229,10 @@ def system_update_apply(channel: str | None = None) -> dict:
                     except Exception:
                         sig_bytes = b""
                     if not sig_bytes or not _verify_ed25519_sig(file_path=bundle_path, sig_bytes=sig_bytes, pubkey_pem=pubkey):
-                        update_status_write("error", target_tag=target_tag, error="signature verification failed")
+                        update_status_write("error", target_tag=target_tag, error="signature verification failed", progress=100)
                         return
 
-                update_status_write("extracting", target_tag=target_tag)
+                update_status_write("extracting", target_tag=target_tag, progress=40)
                 if os.path.isdir(stage_dir):
                     for p in sorted(Path(stage_dir).rglob("*"), reverse=True):
                         try:
@@ -2069,6 +2250,7 @@ def system_update_apply(channel: str | None = None) -> dict:
 
                 with tarfile.open(bundle_path, "r:gz") as tar:
                     _safe_extract_tar(tar, stage_dir)
+                update_status_write("extracting", target_tag=target_tag, progress=55)
 
                 stage_root = Path(stage_dir)
                 stage_overlay = stage_root / "overlay"
@@ -2106,6 +2288,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                 update_status_write(
                     "deploying",
                     target_tag=target_tag,
+                    progress=60,
                     restarts={
                         "overlay": bool(overlay_cfg_changed),
                         "daemon": bool(daemon_changed),
@@ -2114,10 +2297,40 @@ def system_update_apply(channel: str | None = None) -> dict:
                 )
 
                 if stage_overlay.is_dir():
+                    update_status_write(
+                        "deploying",
+                        target_tag=target_tag,
+                        progress=70,
+                        restarts={
+                            "overlay": bool(overlay_cfg_changed),
+                            "daemon": bool(daemon_changed),
+                            "systemd": bool(systemd_changed),
+                        },
+                    )
                     _mirror_tree(str(stage_overlay), str(cur_overlay))
                 if stage_daemon.is_dir():
+                    update_status_write(
+                        "deploying",
+                        target_tag=target_tag,
+                        progress=80,
+                        restarts={
+                            "overlay": bool(overlay_cfg_changed),
+                            "daemon": bool(daemon_changed),
+                            "systemd": bool(systemd_changed),
+                        },
+                    )
                     _mirror_tree(str(stage_daemon), str(cur_daemon))
                 if (stage_root / "apps-available").is_dir():
+                    update_status_write(
+                        "deploying",
+                        target_tag=target_tag,
+                        progress=84,
+                        restarts={
+                            "overlay": bool(overlay_cfg_changed),
+                            "daemon": bool(daemon_changed),
+                            "systemd": bool(systemd_changed),
+                        },
+                    )
                     _mirror_tree(str(stage_root / "apps-available"), str(Path(ROOT_DIR) / "apps-available"))
                 if (stage_root / "console").is_dir():
                     _mirror_tree(str(stage_root / "console"), str(Path(ROOT_DIR) / "console"))
@@ -2142,17 +2355,17 @@ def system_update_apply(channel: str | None = None) -> dict:
                     run_cmd(["systemctl", "daemon-reload"], timeout_s=60)
 
                 if overlay_cfg_changed:
-                    update_status_write("restarting", target_tag=target_tag, service="overlay")
+                    update_status_write("restarting", target_tag=target_tag, service="overlay", progress=92)
                     run_cmd(["systemctl", "restart", "5tratumos-overlay.service"], timeout_s=180)
 
                 if daemon_changed:
-                    update_status_write("restarting_daemon", target_tag=target_tag, service="daemon")
+                    update_status_write("restarting_daemon", target_tag=target_tag, service="daemon", progress=96)
                     run_cmd(["systemctl", "restart", "5tratumosd.service"], timeout_s=180)
                     return
 
-                update_status_write("done", target_tag=target_tag)
+                update_status_write("done", target_tag=target_tag, progress=100)
             except Exception as e:
-                update_status_write("error", target_tag=target_tag, error=str(e))
+                update_status_write("error", target_tag=target_tag, error=str(e), progress=100)
 
         threading.Thread(target=worker, daemon=True).start()
         return {"ok": True, "started": True, "target_tag": target_tag}
@@ -4541,6 +4754,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, discord_config_get())
             return
 
+        if path == "/api/v0/system/watchdog/config":
+            json_response(self, HTTPStatus.OK, watchdog_config_get())
+            return
+
         if path == "/api/v0/system/proxy":
             json_response(self, HTTPStatus.OK, {"ok": True, "repair": "/api/v0/system/proxy/repair"})
             return
@@ -4898,6 +5115,11 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
+        if path == "/api/v0/system/watchdog/config":
+            res = watchdog_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         if path == "/api/v0/system/proxy/repair":
             res = system_proxy_repair()
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
@@ -5003,6 +5225,8 @@ class Handler(BaseHTTPRequestHandler):
 
             if action == "down":
                 res = stratumos_cmd(["app", "down", app_id], timeout_s=600)
+                if res.get("ok"):
+                    watchdog_note_manual_stop(app_id)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -5053,6 +5277,7 @@ def main() -> int:
     threading.Thread(target=_notify_loop, daemon=True).start()
     threading.Thread(target=_system_update_check_loop, daemon=True).start()
     threading.Thread(target=_support_checkin_loop, daemon=True).start()
+    threading.Thread(target=_watchdog_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

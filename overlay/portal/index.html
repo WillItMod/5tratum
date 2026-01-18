@@ -561,6 +561,26 @@
                 </div>
               </section>
 
+              <section class="axe-card" id="settings-watchdog-card">
+                <div class="text-sm text-slate-300">Reliability</div>
+                <div class="mt-1 text-2xl font-extrabold tracking-tight">App Watchdog</div>
+                <div class="mt-3 text-sm text-slate-300">
+                  Automatically restarts selected apps if they stop unexpectedly.
+                </div>
+                <div class="mt-4 forgeos-form">
+                  <label class="forgeos-toggle" title="Keep selected apps running">
+                    <input id="setting-watchdog-enabled" type="checkbox" />
+                    <span>Enable watchdog</span>
+                  </label>
+                  <div class="mt-4 text-sm text-slate-300">Apps</div>
+                  <div id="setting-watchdog-apps" class="mt-2 forgeos-form"></div>
+                  <div class="mt-4">
+                    <button id="btn-watchdog-save" class="axe-btn" type="button">Save Watchdog</button>
+                  </div>
+                  <div id="watchdog-status" class="forgeos-muted mt-2">-</div>
+                </div>
+              </section>
+
               <section class="axe-card">
                 <div class="text-sm text-slate-300">Security</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Session Lock</div>

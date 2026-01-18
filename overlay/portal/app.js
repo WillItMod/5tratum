@@ -164,6 +164,11 @@
   const discordEventUpdateFailureInput = document.getElementById('setting-discord-event-update-failure');
   const discordEventRestartInput = document.getElementById('setting-discord-event-restart');
   const btnDiscordSave = document.getElementById('btn-discord-save');
+  const watchdogCardEl = document.getElementById('settings-watchdog-card');
+  const watchdogEnabledInput = document.getElementById('setting-watchdog-enabled');
+  const watchdogAppsEl = document.getElementById('setting-watchdog-apps');
+  const watchdogStatusEl = document.getElementById('watchdog-status');
+  const btnWatchdogSave = document.getElementById('btn-watchdog-save');
 
   // Legacy "selected app" controls (removed from UI; keep null-safe until context menus land)
   const selectedControlsEl = document.getElementById('selected-app-controls');
@@ -181,6 +186,7 @@
   const globalSplashEl = document.getElementById('global-splash');
   const globalSplashTitleEl = document.getElementById('global-splash-title');
   const globalSplashSubEl = document.getElementById('global-splash-sub');
+  const globalSplashDismissEl = document.getElementById('global-splash-dismiss');
   const globalSplashProgressEl = document.getElementById('global-splash-progress');
   const globalSplashProgressFillEl = document.getElementById('global-splash-progress-fill');
   const globalSplashProgressLabelEl = document.getElementById('global-splash-progress-label');
@@ -218,6 +224,7 @@
 	  let lastWidgets = null;
   let mqttAppsCache = [];
   let discordAppsCache = [];
+  let watchdogAppsCache = [];
   let consoleConfigCache = null;
   let consolePromptDone = false;
     let hasLoadedInstalled = false;
@@ -285,6 +292,19 @@
   let desktopRemoteSaveTimer = 0;
   let drawerPinned = new Set();
 
+  function refreshGlobalSplashLock() {
+    if (!globalSplashEl) return;
+    let locked = false;
+    for (const value of splashTokens.values()) {
+      if (value && value.dismissable === false) {
+        locked = true;
+        break;
+      }
+    }
+    globalSplashEl.dataset.locked = locked ? 'true' : 'false';
+    if (globalSplashDismissEl) globalSplashDismissEl.classList.toggle('hidden', locked);
+  }
+
   function showGlobalSplash(opts) {
     if (!globalSplashEl) return null;
     const options = opts && typeof opts === 'object' ? opts : {};
@@ -292,9 +312,10 @@
     const sub = String(options.sub || options.subtitle || '').trim();
     const progress = Number.isFinite(Number(options.progress)) ? Number(options.progress) : null;
     const showProgress = options.showProgress === true || progress !== null;
+    const dismissable = options.dismissable !== false;
     splashTokenSeq += 1;
     const token = `splash-${splashTokenSeq}`;
-    splashTokens.set(token, { title, sub });
+    splashTokens.set(token, { title, sub, dismissable });
     if (globalSplashTitleEl) globalSplashTitleEl.textContent = title;
     if (globalSplashSubEl) globalSplashSubEl.textContent = sub || 'Please wait';
     if (globalSplashProgressEl) {
@@ -308,12 +329,15 @@
     }
     globalSplashEl.classList.remove('hidden');
     globalSplashEl.setAttribute('aria-hidden', 'false');
+    refreshGlobalSplashLock();
     if (!splashClickBound) {
       splashClickBound = true;
       globalSplashEl.addEventListener('click', () => {
+        if (globalSplashEl.dataset.locked === 'true') return;
         globalSplashEl.classList.add('hidden');
         globalSplashEl.setAttribute('aria-hidden', 'true');
         splashTokens.clear();
+        refreshGlobalSplashLock();
       });
     }
     return token;
@@ -322,6 +346,7 @@
   function hideGlobalSplash(token) {
     if (!globalSplashEl) return;
     if (token) splashTokens.delete(token);
+    refreshGlobalSplashLock();
     if (splashTokens.size) return;
     globalSplashEl.classList.add('hidden');
     globalSplashEl.setAttribute('aria-hidden', 'true');
@@ -646,6 +671,47 @@
       showToast('Discord save failed', 'error');
     } finally {
       btnDiscordSave.disabled = false;
+    }
+  }
+
+  async function refreshWatchdogConfig() {
+    if (!watchdogCardEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/watchdog/config', {}, 5000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      const cfg = res.config || {};
+      if (watchdogEnabledInput) watchdogEnabledInput.checked = !!cfg.enabled;
+      const apps = Array.isArray(res.apps) ? res.apps : [];
+      watchdogAppsCache = apps;
+      const selected = new Set(Array.isArray(cfg.apps) ? cfg.apps.map((id) => String(id)) : []);
+      renderNotifyAppList(watchdogAppsEl, apps, selected, 'No apps installed yet.');
+      if (watchdogStatusEl) watchdogStatusEl.textContent = 'Loaded.';
+    } catch {
+      if (watchdogStatusEl) watchdogStatusEl.textContent = 'Load failed.';
+    }
+  }
+
+  async function saveWatchdogConfig() {
+    if (!btnWatchdogSave) return;
+    btnWatchdogSave.disabled = true;
+    if (watchdogStatusEl) watchdogStatusEl.textContent = 'Saving...';
+    try {
+      const body = {
+        enabled: !!(watchdogEnabledInput && watchdogEnabledInput.checked),
+        apps: collectNotifyAppSelection(watchdogAppsEl),
+      };
+      const res = await apiJsonTimeout('/api/v0/system/watchdog/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      showToast('Watchdog saved', null);
+      await refreshWatchdogConfig();
+      if (watchdogStatusEl) watchdogStatusEl.textContent = 'Saved.';
+    } catch {
+      if (watchdogStatusEl) watchdogStatusEl.textContent = 'Save failed.';
+      showToast('Watchdog save failed', 'error');
+    } finally {
+      btnWatchdogSave.disabled = false;
     }
   }
 
@@ -1826,6 +1892,7 @@
       refreshSystemUpdateCheck().catch(() => {});
       refreshMqttConfig().catch(() => {});
       refreshDiscordConfig().catch(() => {});
+      refreshWatchdogConfig().catch(() => {});
       renderWidgetSettings();
     }
 
@@ -5197,7 +5264,13 @@
     return ['downloading', 'extracting', 'deploying', 'restarting', 'restarting_daemon'].includes(s);
   }
 
-  function systemUpdateProgressPct(state) {
+  function systemUpdateProgressPct(state, status) {
+    const st = status && typeof status === 'object' ? status : null;
+    const raw = st && Number.isFinite(Number(st.progress)) ? Number(st.progress) : null;
+    if (raw !== null) {
+      const n = Math.max(0, Math.min(100, Math.round(raw)));
+      return Number.isFinite(n) ? n : 0;
+    }
     const s = String(state || '').trim().toLowerCase();
     if (s === 'downloading') return 22;
     if (s === 'extracting') return 46;
@@ -5240,13 +5313,21 @@
 
     const state = status && status.state ? String(status.state).trim().toLowerCase() : 'idle';
     const busy = systemUpdateIsBusy(state);
+    const pct = busy ? systemUpdateProgressPct(state, status) : null;
 
     if (busy) {
       const label = systemUpdateStateLabel(state, status);
       if (!systemUpdateSplashToken) {
-        systemUpdateSplashToken = showGlobalSplash({ title: 'Updating 5tratumOS', sub: label });
+        systemUpdateSplashToken = showGlobalSplash({
+          title: 'Updating 5tratumOS',
+          sub: label,
+          showProgress: true,
+          progress: pct,
+          dismissable: false,
+        });
       } else {
         updateGlobalSplash('Updating 5tratumOS', label);
+        updateGlobalSplashProgress(pct);
       }
     } else if (systemUpdateSplashToken) {
       hideGlobalSplash(systemUpdateSplashToken);
@@ -5261,7 +5342,8 @@
     if (updateStatusEl) {
       let line = '-';
       if (busy) {
-        line = systemUpdateStateLabel(state, status);
+        const base = systemUpdateStateLabel(state, status);
+        line = pct !== null ? `${base} (${pct}%)` : base;
       } else if (state === 'done') {
         const tgt = status && status.target_tag ? String(status.target_tag) : availableTag || installedTag;
         line = tgt ? `Updated to ${tgt}.` : 'Update complete.';
@@ -5283,7 +5365,7 @@
       const show = busy;
       updateProgressEl.classList.toggle('hidden', !show);
       updateProgressEl.setAttribute('aria-hidden', show ? 'false' : 'true');
-      setMaskedGradientBar(updateProgressBarEl, systemUpdateProgressPct(state));
+      setMaskedGradientBar(updateProgressBarEl, pct !== null ? pct : systemUpdateProgressPct(state, status));
     }
 
     maybePromptSystemUpdateAvailable(check, status).catch(() => {});
@@ -5494,7 +5576,13 @@
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
     if (!systemUpdateSplashToken) {
-      systemUpdateSplashToken = showGlobalSplash({ title: 'Updating 5tratumOS', sub: 'Starting update...' });
+      systemUpdateSplashToken = showGlobalSplash({
+        title: 'Updating 5tratumOS',
+        sub: 'Starting update...',
+        showProgress: true,
+        progress: 0,
+        dismissable: false,
+      });
     }
 
     try {
@@ -8337,6 +8425,7 @@
   btnStorageSave?.addEventListener('click', () => saveStorageSettings().catch(() => {}));
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
+  btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
   mqttEnabledInput?.addEventListener('change', () => {
     setMqttInputsEnabled(!!(mqttEnabledInput && mqttEnabledInput.checked));
     saveMqttConfig().catch(() => {});
@@ -8582,6 +8671,7 @@
   refreshSessionConfig().catch(() => {});
   refreshMqttConfig().catch(() => {});
   refreshDiscordConfig().catch(() => {});
+  refreshWatchdogConfig().catch(() => {});
   window.setTimeout(() => refreshSystemUpdateCheck().catch(() => {}), 2500);
   window.setInterval(() => refreshMetrics().catch(() => {}), 5000);
   window.setInterval(() => {
