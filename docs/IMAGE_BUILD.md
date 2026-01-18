@@ -2,14 +2,15 @@
 
 Goal: produce a clean, app-free 5tratumOS image with default configuration (no installed apps, no secrets) that can be written to a disk/SSD using Balena Etcher.
 
-This should be done on a dedicated “golden image” VM, not on an in-use system.
+This should be done on a dedicated "golden image" VM, not on an in-use system.
 
 ## High-level approach
-1) Provision a fresh Debian 12 (or Ubuntu Server 24.04) VM.
+1) Provision a fresh Debian 13 (Trixie) VM.
 2) Run `bootstrap/install.sh` to install Docker + 5tratumOS services.
 3) Do not install any apps.
 4) Clean/reset machine-specific state.
-5) Shut down, then convert the VM disk to a raw image for Etcher.
+5) Update to the latest MAIN release.
+6) Shut down, then convert the VM disk to a raw image for Etcher.
 
 On first boot, the image will auto-expand the root filesystem (ext4) to fill the disk.
 
@@ -17,12 +18,19 @@ On first boot, the image will auto-expand the root filesystem (ext4) to fill the
 - Remove installed app state:
   - `/var/lib/5tratumos/apps/*`
   - `/opt/5tratumos/apps/*`
-- Remove machine-specific secrets you don’t want to ship (SSH host keys, etc.).
+- Remove machine-specific secrets you don't want to ship (SSH host keys, authorized keys, tokens, etc.).
 - Ensure `/etc/5tratumos/*.json` contains only defaults (no tokens).
 - Reset web UI login so first boot prompts for setup:
   - Remove `/etc/5tratumos/auth.json`
   - `systemctl restart 5tratumosd`
 - Bake in the update signing public key at `/etc/5tratumos/update_signing.pub` (optional but recommended).
+
+## Bring the golden image to the latest MAIN build
+Before capturing the disk image, update the system to the latest MAIN release (e.g. `v0.3.33`):
+
+- In the UI: `Settings -> Updates -> Check updates -> Install update`
+
+This pulls from GitHub Releases in `WillItMod/5tratum`.
 
 ## Performance tuning (recommended, safe defaults)
 
@@ -43,15 +51,15 @@ From a host with `qemu-img` (e.g., the Proxmox node or a Linux workstation):
 
 ```bash
 # Example: convert qcow2 to raw
-qemu-img convert -p -O raw input.qcow2 5tratumos-v0.3.32.img
+qemu-img convert -p -O raw input.qcow2 5tratumos-v0.3.33.img
 ```
 
 Then write with Balena Etcher:
-- Select `5tratumos-v0.3.32.img`
+- Select `5tratumos-v0.3.33.img`
 - Select target disk
 - Flash
 
-## USB installer vs “direct flash”
+## USB installer vs "direct flash"
 - Direct flash: Etcher writes the OS image straight to disk.
 - USB installer: a bootable USB that runs an installer/flash tool (more work, but can be friendlier for end users).
 
