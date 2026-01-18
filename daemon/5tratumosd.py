@@ -4367,6 +4367,8 @@ def summarize_project_status_from_containers(containers: list[dict]) -> dict:
             any_exited = True
     if any_restarting:
         status = "restarting"
+    elif any_running and any_exited:
+        status = "degraded"
     elif any_running:
         status = "running"
     elif any_exited:
@@ -4374,6 +4376,57 @@ def summarize_project_status_from_containers(containers: list[dict]) -> dict:
     else:
         status = "unknown"
     return {"status": status, "containers": containers}
+
+
+def _reconcile_container_restart_policies_once() -> None:
+    # Some older installs created app containers with restart=on-failure, which does not
+    # restart cleanly-stopped services after a reboot (exit code 0). Normalize to
+    # unless-stopped for non-init services to preserve expected post-reboot behavior.
+    installed = list_installed_app_ids()
+    for app_id in installed:
+        project = docker_compose_project(app_id)
+        containers = docker_containers_for_project(project)
+        for c in containers:
+            name = str(c.get("Names") or "").strip()
+            if not name:
+                continue
+            # Compose service name is embedded in the container name.
+            if "-init-" in name:
+                continue
+            proc = run_cmd(
+                ["docker", "inspect", "-f", "{{.HostConfig.RestartPolicy.Name}}", name],
+                timeout_s=10,
+            )
+            policy = (proc.stdout or "").strip().lower()
+            if proc.returncode != 0:
+                continue
+            if not policy or policy.startswith("on-failure"):
+                run_cmd(["docker", "update", "--restart", "unless-stopped", name], timeout_s=15)
+
+
+def _autoheal_degraded_projects_once() -> None:
+    # After reboots or partial failures, some projects may be missing a critical service
+    # (e.g., pool) while others remain running. Bring them back via a lightweight compose up.
+    installed = list_installed_app_ids()
+    for app_id in installed:
+        project = docker_compose_project(app_id)
+        st = summarize_project_status(project)
+        if str(st.get("status") or "") != "degraded":
+            continue
+        stratumos_cmd(["app", "up", app_id], timeout_s=600)
+
+
+def _boot_reconcile_loop() -> None:
+    # Give docker a moment on fresh boots.
+    time.sleep(8)
+    while True:
+        try:
+            _reconcile_container_restart_policies_once()
+            _autoheal_degraded_projects_once()
+        except Exception:
+            pass
+        # Re-run periodically to self-heal long-running hosts.
+        time.sleep(10 * 60)
 
 
 def default_ui_ports(app_id: str) -> int | None:
@@ -5381,6 +5434,7 @@ def main() -> int:
     threading.Thread(target=_system_update_check_loop, daemon=True).start()
     threading.Thread(target=_support_checkin_loop, daemon=True).start()
     threading.Thread(target=_watchdog_loop, daemon=True).start()
+    threading.Thread(target=_boot_reconcile_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

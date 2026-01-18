@@ -6123,18 +6123,40 @@
       const currentTarget =
         installed && installed.storage && typeof installed.storage === 'object' ? String(installed.storage.target || '').trim() : '';
 
+      const resolveMountLabel = (mountpoint) => {
+        const mp = String(mountpoint || '').trim();
+        if (!mp) return '';
+        const m = mounts.find((x) => x && typeof x === 'object' && String(x.mountpoint || '').trim() === mp);
+        if (!m) return '';
+        return String(m.label || '').trim();
+      };
+
+      let currentLocation = 'Local (system disk)';
+      if (currentTarget) {
+        for (const m of mounts) {
+          if (!m || typeof m !== 'object') continue;
+          const mp = String(m.mountpoint || '').trim();
+          if (!mp) continue;
+          if (currentTarget.startsWith(mp)) {
+            const label = String(m.label || '').trim();
+            currentLocation = label || 'External drive';
+            break;
+          }
+        }
+      }
+
       const choices = [{ label: 'Local (system disk)', value: '' }];
       for (const m of mounts) {
         if (!m || typeof m !== 'object') continue;
         const mp = String(m.mountpoint || '').trim();
         if (!mp) continue;
         const l = String(m.label || '').trim();
-        choices.push({ label: l ? `${l} (${mp})` : mp, value: mp });
+        choices.push({ label: l || 'External drive', value: mp });
       }
 
       const pick = await openChoiceModal({
         title: `Move ${label} data`,
-        message: currentTarget ? `Current data path:\n${currentTarget}\n\nChoose a destination drive:` : 'Choose a destination drive:',
+        message: `Current location: ${currentLocation}\n\nChoose a destination drive:`,
         kind: 'System',
         choices: choices.concat([{ label: 'Cancel', value: 'cancel', danger: true }]),
       });
