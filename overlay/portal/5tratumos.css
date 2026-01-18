@@ -27,15 +27,22 @@
   --forgeos-watermark-y: 84%;
   --forgeos-watermark-size: 86vmin;
   --forgeos-footer-tile: 60px;
-  --forgeos-topbar-logo-width: 280px;
-  --forgeos-topbar-logo-height: 84px;
-  --forgeos-topbar-logo-offset-y: -6px;
+  --forgeos-topbar-logo-width: 300px;
+  --forgeos-topbar-logo-height: 90px;
+  --forgeos-topbar-logo-offset-x: 12px;
+  --forgeos-topbar-logo-offset-y: 2px;
 }
 
 html,
 body {
   height: 100%;
   overflow: hidden;
+}
+
+/* Mobile nav: hidden by default (enabled via media queries). */
+.forgeos-mobile-menu,
+.forgeos-mobile-backdrop {
+  display: none;
 }
 
 /* Generic utility used throughout app.js (tiles, modals, overlays, etc.). */
@@ -1239,17 +1246,17 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 .forgeos-desktop-topbar__brand-mark {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   opacity: 0.9;
   filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
-  transform: translateY(var(--forgeos-topbar-logo-offset-y));
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y));
 }
 
 @media (max-width: 900px) {
   :root {
-    --forgeos-topbar-logo-width: 210px;
-    --forgeos-topbar-logo-height: 64px;
+    --forgeos-topbar-logo-width: 230px;
+    --forgeos-topbar-logo-height: 70px;
   }
 }
 
@@ -3522,26 +3529,138 @@ select.forgeos-input optgroup {
 }
 
 @media (max-width: 900px) {
-  .forgeos-shell {
-    flex-direction: column;
+  :root {
+    --forgeos-ui-scale: 1;
+    --forgeos-sidebar-width: min(86vw, 360px);
+    --forgeos-sidebar-width-collapsed: min(86vw, 360px);
+    --forgeos-topbar-logo-width: 200px;
+    --forgeos-topbar-logo-height: 60px;
+    --forgeos-topbar-logo-offset-x: 0px;
+    --forgeos-topbar-logo-offset-y: 0px;
   }
+
+  @supports (zoom: 1) {
+    .forgeos-shell {
+      zoom: 1 !important;
+      width: 100vw !important;
+      height: 100dvh !important;
+    }
+  }
+
+  body.forgeos-mobile-sidebar-open {
+    overflow: hidden;
+  }
+
+  .forgeos-mobile-menu {
+    display: inline-flex;
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    left: calc(env(safe-area-inset-left, 0px) + 10px);
+    z-index: 60;
+    width: 44px;
+    height: 44px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    color: rgba(241, 245, 249, 0.95);
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+  }
+
+  body.forgeos-mobile-sidebar-open .forgeos-mobile-menu {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .forgeos-mobile-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, 0.55);
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+
+  body.forgeos-mobile-sidebar-open .forgeos-mobile-backdrop {
+    display: block;
+  }
+
   .forgeos-sidebar {
-    width: auto;
-    flex: 0 0 auto;
-    border-right: none;
-    border-bottom: 1px solid var(--forgeos-border);
-    height: auto;
-    max-height: none;
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--forgeos-sidebar-width);
+    max-width: 92vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-right: 1px solid var(--forgeos-border);
+    border-bottom: none;
+    transform: translateX(-110%);
+    transition: transform 180ms ease;
+    z-index: 55;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.65);
   }
+
+  body.forgeos-mobile-sidebar-open .forgeos-sidebar {
+    transform: translateX(0);
+  }
+
+  .forgeos-shell {
+    flex-direction: row;
+  }
+
+  .forgeos-view {
+    padding: 10px 10px 14px;
+  }
+
   .forgeos-app-frame-wrap {
     height: 70vh;
     min-height: 420px;
   }
+
   .forgeos-taskbar__app-name {
     display: none;
   }
+
   .forgeos-window {
     min-width: 300px;
     min-height: 220px;
+  }
+}
+
+@media (max-width: 600px) {
+  .forgeos-desktop-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .forgeos-desktop-topbar__brand {
+    display: flex;
+    width: 100%;
+    flex: 0 0 auto;
+    height: 56px;
+    padding: 0 6px;
+  }
+
+  .forgeos-desktop-topbar__metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    justify-content: stretch;
+  }
+
+  .forgeos-desktop-metric {
+    min-width: 0;
+    width: 100%;
+    min-height: 86px;
+  }
+
+  .forgeos-desktop-metric--cpu {
+    min-width: 0;
+    grid-column: 1 / -1;
   }
 }

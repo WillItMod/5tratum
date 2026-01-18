@@ -61,6 +61,8 @@
   const btnPower = document.getElementById('btn-power');
   const sidebarClockEl = document.getElementById('sidebar-clock');
   const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
+  const btnMobileMenu = document.getElementById('btn-mobile-menu');
+  const mobileBackdrop = document.getElementById('mobile-backdrop');
   const btnDashboardMode = document.getElementById('btn-dashboard-mode');
     const btnWidgetsRefresh = document.getElementById('btn-widgets-refresh');
   const btnModeDesktop = document.getElementById('btn-mode-desktop');
@@ -703,6 +705,34 @@
       if (raw === 'static' || raw === 'collapsed' || raw === 'auto') return raw;
     } catch {}
     return 'static';
+  }
+
+  function isMobileLayout() {
+    try {
+      return window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+    } catch {
+      return (window.innerWidth || 0) <= 900;
+    }
+  }
+
+  let mobileSidebarPrevMode = '';
+
+  function setMobileSidebarOpen(open) {
+    const next = !!open;
+    if (next) {
+      mobileSidebarPrevMode = loadSidebarMode();
+      applySidebarMode('static');
+    }
+    document.body.classList.toggle('forgeos-mobile-sidebar-open', next);
+    if (!next && mobileSidebarPrevMode) {
+      applySidebarMode(mobileSidebarPrevMode);
+      mobileSidebarPrevMode = '';
+    }
+  }
+
+  function toggleMobileSidebar() {
+    const isOpen = document.body.classList.contains('forgeos-mobile-sidebar-open');
+    setMobileSidebarOpen(!isOpen);
   }
 
   function applySidebarMode(mode) {
@@ -7715,9 +7745,30 @@
   }
 
   btnSidebarCollapse?.addEventListener('click', () => {
+    if (isMobileLayout()) {
+      toggleMobileSidebar();
+      return;
+    }
     const current = loadSidebarMode();
     const next = current === 'collapsed' ? 'static' : 'collapsed';
     setSidebarMode(next);
+  });
+
+  btnMobileMenu?.addEventListener('click', () => toggleMobileSidebar());
+  mobileBackdrop?.addEventListener('click', () => setMobileSidebarOpen(false));
+
+  document.addEventListener('click', (e) => {
+    if (!isMobileLayout()) return;
+    if (!document.body.classList.contains('forgeos-mobile-sidebar-open')) return;
+    const target = e.target instanceof Element ? e.target.closest('.forgeos-nav-item, .forgeos-app-item') : null;
+    if (target) setMobileSidebarOpen(false);
+  });
+
+  window.addEventListener('resize', () => {
+    if (!isMobileLayout()) {
+      setMobileSidebarOpen(false);
+      applySidebarMode(loadSidebarMode());
+    }
   });
 
   settingSidebarSelect?.addEventListener('change', () => setSidebarMode(settingSidebarSelect.value));
