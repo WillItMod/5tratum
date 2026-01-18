@@ -45,6 +45,7 @@ ROOT_DIR = str(_env("ROOT", "/opt/5tratumos") or "/opt/5tratumos")
 APPS_DIR = os.path.join(ROOT_DIR, "apps")
 DATA_DIR = str(_env("DATA_DIR", "/srv/5tratumos-data") or "/srv/5tratumos-data")
 STATE_DIR = str(_env("STATE_DIR", "/var/lib/5tratumos") or "/var/lib/5tratumos")
+SUPPORT_DIR = str(_env("SUPPORT_DIR", os.path.join(STATE_DIR, "support")) or os.path.join(STATE_DIR, "support"))
 CHANNEL_FILE = str(_env("CHANNEL_FILE", "/etc/5tratumos/channel") or "/etc/5tratumos/channel")
 STORE_DIR = str(_env("STORE_DIR", os.path.join(ROOT_DIR, "store")) or os.path.join(ROOT_DIR, "store"))
 GLOBAL_STORE_REPO = str(_env("GLOBAL_STORE_REPO", "WillItMod/global-apps") or "WillItMod/global-apps")
@@ -70,6 +71,12 @@ UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN"
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
+DEFAULT_SUPPORT_BASE_URL = str(_env("SUPPORT_BASE_URL", "http://10.10.10.108") or "http://10.10.10.108").strip()
+SUPPORT_CHECKIN_URL = str(_env("SUPPORT_CHECKIN_URL", f"{DEFAULT_SUPPORT_BASE_URL}/api/telemetry/ping") or "").strip()
+SUPPORT_CHECKIN_ENABLED = str(_env("SUPPORT_CHECKIN_ENABLED", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
+INSTALL_ID_HEADER = "X-Install-Id"
+INSTALL_ID_PATH = os.path.join(SUPPORT_DIR, "install_id.txt")
+CHECKIN_STATE_PATH = os.path.join(SUPPORT_DIR, "checkin.json")
 _AUTH_LOCK = threading.Lock()
 _SESSIONS: dict[str, dict] = {}
 
@@ -121,6 +128,41 @@ def _read_json(path: str) -> dict:
     except Exception:
         return {}
     return obj if isinstance(obj, dict) else {}
+
+
+def _read_text(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace").strip()
+    except Exception:
+        return ""
+
+
+def _write_text(path: str, value: str) -> None:
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(str(value).strip() + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _get_or_create_install_id() -> str:
+    existing = _read_text(INSTALL_ID_PATH)
+    if existing:
+        return existing
+    new_id = secrets.token_hex(16)
+    _write_text(INSTALL_ID_PATH, new_id)
+    return new_id
+
+
+def _post_json(url: str, payload: dict, *, timeout_s: int = 6, headers: dict | None = None) -> None:
+    body = json.dumps(payload).encode("utf-8")
+    all_headers = {"Content-Type": "application/json", "User-Agent": "5tratumOS"}
+    if headers:
+        all_headers.update(headers)
+    req = urllib.request.Request(url, data=body, headers=all_headers, method="POST")
+    with urllib.request.urlopen(req, timeout=timeout_s):  # nosec - expected target
+        return
 
 
 def _default_console_config() -> dict:
@@ -944,8 +986,8 @@ def _notify_loop() -> None:
 
             installed = _axesuite_installed_ids()
             if not installed:
-                time.sleep(_NOTIFY_POLL_S)
-                continue
+            time.sleep(_NOTIFY_POLL_S)
+            continue
 
             mqtt_apps = _selected_notify_apps(mqtt_cfg, installed)
             discord_apps = _selected_notify_apps(discord_cfg, installed)
@@ -1133,6 +1175,48 @@ def update_status_read() -> dict:
             _write_json_atomic(_UPDATE_STATUS_PATH, st)
         except Exception:
             pass
+
+
+def _support_checkin_once() -> None:
+    if not SUPPORT_CHECKIN_ENABLED:
+        return
+    if not SUPPORT_CHECKIN_URL:
+        return
+
+    try:
+        now = time.time()
+        st = _read_json(CHECKIN_STATE_PATH)
+        last = float(st.get("last_ping_at") or 0.0)
+        if (now - last) < float(24 * 60 * 60):
+            return
+
+        build = read_build_info()
+        tag = str(build.get("tag") or build.get("version") or "").strip() or "unknown"
+        channel = str(read_default_channel() or "main").strip().lower() or "main"
+        apps = list_installed_app_ids()
+
+        install_id = _get_or_create_install_id()
+        payload = {
+            "app": "5tratumOS",
+            "version": tag,
+            "channel": channel,
+            "ts": int(now),
+            "hostname": socket.gethostname(),
+            "apps_installed": len(apps),
+            "apps": apps,
+        }
+        _post_json(SUPPORT_CHECKIN_URL, payload, timeout_s=6, headers={INSTALL_ID_HEADER: str(install_id)})
+        _write_json_atomic(CHECKIN_STATE_PATH, {"last_ping_at": now})
+    except Exception:
+        pass
+
+
+def _support_checkin_loop() -> None:
+    _support_checkin_once()
+    # Wake periodically so failed pings retry sooner than 24h, but still enforce the 24h cadence.
+    while True:
+        time.sleep(60 * 60)
+        _support_checkin_once()
     return st
 
 
@@ -4616,6 +4700,7 @@ def main() -> int:
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
     threading.Thread(target=_notify_loop, daemon=True).start()
     threading.Thread(target=_system_update_check_loop, daemon=True).start()
+    threading.Thread(target=_support_checkin_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
