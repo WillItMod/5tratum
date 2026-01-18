@@ -302,7 +302,12 @@
       }
     }
     globalSplashEl.dataset.locked = locked ? 'true' : 'false';
-    if (globalSplashDismissEl) globalSplashDismissEl.classList.toggle('hidden', locked);
+    if (globalSplashDismissEl) {
+      globalSplashDismissEl.classList.remove('hidden');
+      globalSplashDismissEl.textContent = locked
+        ? 'Do not refresh or navigate away from this page.'
+        : 'Click anywhere to dismiss';
+    }
   }
 
   function showGlobalSplash(opts) {
@@ -7640,7 +7645,8 @@
         setStatus(act === 'reboot' ? 'Restarting...' : 'Shutting down...');
         showGlobalSplash({
           title: act === 'reboot' ? 'Restarting 5tratumOS' : 'Shutting down 5tratumOS',
-          sub: 'Please wait',
+          sub: 'Do not refresh or navigate away from this page.',
+          dismissable: false,
         });
         showToast(`${label} requested`, null);
       } catch (e) {
