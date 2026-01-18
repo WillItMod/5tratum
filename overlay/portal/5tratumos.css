@@ -12,9 +12,9 @@
   --forgeos-card-glow-opacity: 0.06;
   --forgeos-card-glow-blur: 8px;
   /* Reserve enough space so the sidebar nav doesn't "bump" between states. */
-  --forgeos-brand-reserve: 72px;
-  --forgeos-brand-height-expanded: 72px;
-  --forgeos-brand-height-collapsed: 72px;
+  --forgeos-brand-reserve: 80px;
+  --forgeos-brand-height-expanded: 80px;
+  --forgeos-brand-height-collapsed: 80px;
   --forgeos-rainbow: linear-gradient(
     135deg,
     rgba(0, 229, 255, 0.62) 0%,
@@ -27,8 +27,9 @@
   --forgeos-watermark-y: 84%;
   --forgeos-watermark-size: 86vmin;
   --forgeos-footer-tile: 60px;
-  --forgeos-topbar-logo-width: 420px;
-  --forgeos-topbar-logo-height: 120px;
+  --forgeos-topbar-logo-width: 280px;
+  --forgeos-topbar-logo-height: 84px;
+  --forgeos-topbar-logo-offset-y: -6px;
 }
 
 html,
@@ -352,6 +353,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) {
   width: 100%;
   object-fit: cover;
   object-position: center;
+  transform: translateY(8px) scale(3.4);
+  transform-origin: center;
 }
 
 .forgeos-brand__mark--icon {
@@ -361,6 +364,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) {
   object-fit: cover;
   object-position: center;
   border-radius: inherit;
+  transform: translateY(8px) scale(3.4);
+  transform-origin: center;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-brand__btn,
@@ -552,6 +557,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__name-wrap {
   color: rgba(148, 163, 184, 0.95);
   margin-bottom: 10px;
 }
+
 
 .forgeos-sidebar .forgeos-section {
   flex: 1 1 auto;
@@ -1205,6 +1211,9 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 4;
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(0, 0, 0, 0.18);
   border-radius: 22px;
@@ -1234,12 +1243,13 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   object-position: center;
   opacity: 0.9;
   filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
+  transform: translateY(var(--forgeos-topbar-logo-offset-y));
 }
 
 @media (max-width: 900px) {
   :root {
-    --forgeos-topbar-logo-width: 300px;
-    --forgeos-topbar-logo-height: 86px;
+    --forgeos-topbar-logo-width: 210px;
+    --forgeos-topbar-logo-height: 64px;
   }
 }
 
@@ -1872,7 +1882,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  text-transform: none;
   color: rgba(226, 232, 240, 0.92);
   white-space: nowrap;
   overflow: hidden;
@@ -2142,6 +2152,132 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   -webkit-backdrop-filter: blur(6px);
 }
 
+.forgeos-app-launch {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: opacity 200ms ease;
+}
+
+.forgeos-app-launch--tile {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.forgeos-app-launch__img {
+  width: min(240px, 60%);
+  height: auto;
+  filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.45));
+}
+
+.forgeos-app-launch--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.forgeos-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.forgeos-splash.hidden {
+  display: none;
+}
+
+.forgeos-splash__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.forgeos-splash__panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 30px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 8, 14, 0.72);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.forgeos-splash__img {
+  width: 240px;
+  max-width: 70vw;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.6));
+}
+
+.forgeos-splash__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgb(226 232 240);
+  letter-spacing: -0.01em;
+}
+
+.forgeos-splash__sub {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.forgeos-splash__dismiss {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(100, 116, 139, 0.95);
+}
+
+.forgeos-splash__progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.forgeos-splash__progress.hidden {
+  display: none;
+}
+
+.forgeos-splash__progress-bar {
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.forgeos-splash__progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #00e5ff 0%, #ff2bd6 52%, #ff9a00 100%);
+  transition: width 220ms ease;
+}
+
+.forgeos-splash__progress-label {
+  min-width: 42px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.9);
+  text-align: right;
+}
+
 .forgeos-tile__overlay-text {
   padding: 10px 14px;
   border-radius: 14px;
@@ -2190,6 +2326,13 @@ body.forgeos-workspace #selected-app-controls,
 body.forgeos-workspace .forgeos-sidebar-footer,
 body.forgeos-workspace #btn-open-store {
   display: none;
+}
+
+.forgeos-home__cta {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 999px;
 }
 
 .forgeos-selected {
@@ -2341,6 +2484,8 @@ body.forgeos-workspace #btn-open-store {
   flex: 1 1 auto;
   min-height: 0;
   background: #000;
+  position: relative;
+  overflow: hidden;
 }
 
 .forgeos-window__frame {
@@ -2777,6 +2922,12 @@ body.forgeos-workspace #btn-open-store {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 
+.forgeos-segment__extras {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+
 .forgeos-segment__btn {
   border: 0;
   background: transparent;
@@ -3146,6 +3297,7 @@ body.forgeos-workspace #btn-open-store {
   display: block;
   aspect-ratio: 16 / 9;
   object-fit: cover;
+  object-position: center;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -3164,6 +3316,7 @@ body.forgeos-workspace #btn-open-store {
   border: 1px solid var(--forgeos-border);
   background: rgba(0, 0, 0, 0.28);
   object-fit: cover;
+  object-position: center;
   cursor: pointer;
   flex: 0 0 auto;
 }

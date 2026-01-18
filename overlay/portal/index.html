@@ -17,8 +17,8 @@
       <aside class="forgeos-sidebar" aria-label="5tratumOS navigation">
         <div class="forgeos-brand">
           <button id="btn-sidebar-collapse" class="forgeos-brand__btn" type="button" title="Toggle sidebar" aria-label="Toggle sidebar">
-            <img class="forgeos-brand__mark forgeos-brand__mark--full" src="/assets/5tratum-icon-crop-56.png" alt="5tratumOS" />
-            <img class="forgeos-brand__mark forgeos-brand__mark--icon" src="/assets/5tratum-icon-crop-56.png" alt="5tratumOS" />
+            <img class="forgeos-brand__mark forgeos-brand__mark--full" src="/assets/New%20Logos/5.png" alt="5tratumOS" />
+            <img class="forgeos-brand__mark forgeos-brand__mark--icon" src="/assets/New%20Logos/5.png" alt="5tratumOS" />
           </button>
         </div>
 
@@ -66,6 +66,17 @@
               </svg>
             </span>
             <span class="forgeos-nav-item__label">Apps</span>
+          </button>
+          <button id="btn-open-store" class="forgeos-nav-item" type="button" data-view="store">
+            <span class="forgeos-nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M5 3h14l1 6H4l1-6Zm2 8h10v9a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-9Zm3 2a2 2 0 0 0 4 0h2a4 4 0 0 1-8 0h2Z"
+                />
+              </svg>
+            </span>
+            <span class="forgeos-nav-item__label">App Store</span>
           </button>
           <button class="forgeos-nav-item" type="button" data-view="settings">
             <span class="forgeos-nav-item__icon" aria-hidden="true">
@@ -143,11 +154,15 @@
                   </div>
                   <div id="metric-disk-sub" class="forgeos-desktop-metric__sub">-</div>
                 </button>
-                <button id="metric-card-ip" class="forgeos-desktop-metric forgeos-desktop-metric--mono" type="button" aria-label="IP address">
+                <button id="metric-card-ip" class="forgeos-desktop-metric forgeos-desktop-metric--mono" type="button" aria-label="Network details">
                   <div class="forgeos-desktop-metric__head">
-                    <div class="forgeos-desktop-metric__k">IP</div>
-                    <div class="forgeos-desktop-metric__v"><span id="metric-ip" class="forgeos-mono">-</span></div>
+                    <div class="forgeos-desktop-metric__k">NETWORK</div>
+                    <div class="forgeos-desktop-metric__v"><span id="metric-net-host" class="forgeos-mono">-</span></div>
                   </div>
+                  <div class="forgeos-meter" aria-hidden="true">
+                    <div id="metric-net-bar" class="forgeos-meter__fill"></div>
+                  </div>
+                  <div id="metric-net-sub" class="forgeos-desktop-metric__sub">-</div>
                 </button>
               </div>
             </div>
@@ -175,9 +190,6 @@
               <div id="pane-apps-launcher" class="forgeos-home hidden" aria-label="Apps">
                 <div class="forgeos-home__head">
                   <div class="forgeos-home__title">Apps</div>
-                  <button id="btn-open-store" class="axe-btn" type="button" aria-label="Open App Store" title="Open App Store">
-                    App Store
-                  </button>
                 </div>
                 <div class="forgeos-home__sub">All installed apps in alphabetical order. Right click for actions.</div>
                 <div id="apps-launcher-grid" class="mt-4 forgeos-launcher-grid"></div>
@@ -195,7 +207,7 @@
 	                      <div class="forgeos-card-head__title">Fleet Hashrate</div>
 	                      <div class="forgeos-card-head__right">
 	                        <span id="fleet-updated" class="forgeos-card-head__sub">-</span>
-	                        <button id="btn-fleet-refresh" class="axe-btn forgeos-card-btn" type="button">Refresh</button>
+                          <!-- refresh removed -->
 	                      </div>
 	                    </div>
 	                    <div class="mt-1 forgeos-muted">Total hashrate across AxeSuite pools.</div>
@@ -241,7 +253,7 @@
 	                      <div class="forgeos-card-head__title">Mining Overview</div>
 	                      <div class="forgeos-card-head__right">
 	                        <span id="dashboard-widgets-updated" class="forgeos-card-head__sub">-</span>
-	                        <button id="btn-widgets-refresh" class="axe-btn forgeos-card-btn" type="button">Refresh</button>
+                        <!-- refresh removed -->
 	                      </div>
 	                    </div>
 	                    <div class="mt-1 forgeos-muted">Live widgets from installed apps.</div>
@@ -268,7 +280,9 @@
                     <button class="forgeos-segment__btn forgeos-segment__btn--active" type="button" data-store-channel="main">MAIN</button>
                     <button class="forgeos-segment__btn" type="button" data-store-channel="dev">DEV</button>
                     <button class="forgeos-segment__btn" type="button" data-store-channel="global">Global</button>
+                    <span id="store-channel-customs" class="forgeos-segment__extras"></span>
                   </div>
+                  <button id="btn-store-custom" class="axe-btn" type="button">Add custom store</button>
                   <button id="btn-store-sync" class="axe-btn" type="button">Sync</button>
                 </div>
               </div>
@@ -297,9 +311,8 @@
                   <input id="setting-hostname" class="forgeos-input" type="text" placeholder="5tratumos" />
                   <div class="mt-3">
                     <label class="forgeos-label" for="setting-channel">Channel</label>
-                    <select id="setting-channel" class="forgeos-input">
+                    <select id="setting-channel" class="forgeos-input" disabled>
                       <option value="main">MAIN</option>
-                      <option value="dev">DEV</option>
                     </select>
                   </div>
                   <div class="mt-3">
@@ -310,9 +323,7 @@
                       <option value="auto">Auto-hide</option>
                     </select>
                   </div>
-                  <div class="mt-4">
-                    <button class="axe-btn" type="button" disabled>Save (coming soon)</button>
-                  </div>
+                  <div class="mt-4 text-xs text-slate-300">Channel is fixed to MAIN for now.</div>
                 </div>
               </section>
 
@@ -334,9 +345,6 @@
               <section class="axe-card">
                 <div class="text-sm text-slate-300">Users</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Admin & Access</div>
-                <div class="mt-3 text-sm text-slate-300">
-                  Multi-user roles are planned. First pass will be a single admin with optional Tailscale.
-                </div>
                 <div class="mt-4 forgeos-form">
                   <label class="forgeos-label" for="setting-username">Username</label>
                   <input id="setting-username" class="forgeos-input" type="text" placeholder="admin" />
@@ -345,7 +353,7 @@
                     <input id="setting-password" class="forgeos-input" type="password" placeholder="********" />
                   </div>
                   <div class="mt-4">
-                    <button class="axe-btn" type="button" disabled>Update credentials (coming soon)</button>
+                    <button id="btn-auth-update" class="axe-btn" type="button">Update credentials</button>
                   </div>
                 </div>
               </section>
@@ -408,6 +416,106 @@
                 <div class="mt-4 text-sm text-slate-300">Choose which installed apps contribute widgets to the Mining Overview.</div>
                 <div id="settings-widgets" class="mt-4 forgeos-form"></div>
                 <div id="settings-widgets-empty" class="mt-3 forgeos-muted">No widget-capable apps installed yet.</div>
+              </section>
+
+              <section class="axe-card" id="settings-mqtt-card">
+                <div class="text-sm text-slate-300">Integrations</div>
+                <div class="mt-1 text-2xl font-extrabold tracking-tight">MQTT Export</div>
+                <div id="mqtt-unavailable" class="mt-3 text-sm text-slate-300 hidden">
+                  Install Mosquitto to enable MQTT export for AxeSuite apps.
+                </div>
+                <div id="mqtt-config" class="mt-4 forgeos-form">
+                  <label class="forgeos-toggle" title="Publish AxeSuite stats to the local MQTT broker">
+                    <input id="setting-mqtt-enabled" type="checkbox" />
+                    <span>Enable MQTT export</span>
+                  </label>
+                  <div class="mt-3">
+                    <label class="forgeos-label" for="setting-mqtt-prefix">Topic prefix</label>
+                    <input id="setting-mqtt-prefix" class="forgeos-input" type="text" placeholder="5tratumos" />
+                  </div>
+                  <div class="mt-4 text-sm text-slate-300">Apps</div>
+                  <div id="setting-mqtt-apps" class="mt-2 forgeos-form"></div>
+                  <div class="mt-4 text-sm text-slate-300">Events</div>
+                  <div id="setting-mqtt-events" class="mt-2 forgeos-form">
+                    <label class="forgeos-toggle">
+                      <input id="setting-mqtt-event-status" type="checkbox" />
+                      <span>Status changes</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-mqtt-event-hashrate" type="checkbox" />
+                      <span>Hashrate drop</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-mqtt-event-workers" type="checkbox" />
+                      <span>Worker offline</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-mqtt-event-block" type="checkbox" />
+                      <span>Block found</span>
+                    </label>
+                  </div>
+                  <div class="mt-4">
+                    <button id="btn-mqtt-save" class="axe-btn" type="button">Save MQTT</button>
+                  </div>
+                  <div id="mqtt-status" class="forgeos-muted mt-2">-</div>
+                </div>
+              </section>
+
+              <section class="axe-card" id="settings-discord-card">
+                <div class="text-sm text-slate-300">Integrations</div>
+                <div class="mt-1 text-2xl font-extrabold tracking-tight">Discord Alerts</div>
+                <div class="mt-3 text-sm text-slate-300">Send alerts for AxeSuite events via a Discord webhook.</div>
+                <div class="mt-4 forgeos-form">
+                  <label class="forgeos-toggle" title="Send alerts to Discord">
+                    <input id="setting-discord-enabled" type="checkbox" />
+                    <span>Enable Discord alerts</span>
+                  </label>
+                  <div class="mt-3">
+                    <label class="forgeos-label" for="setting-discord-webhook">Webhook URL</label>
+                    <input id="setting-discord-webhook" class="forgeos-input" type="text" placeholder="https://discord.com/api/webhooks/..." />
+                  </div>
+                  <div class="mt-3">
+                    <label class="forgeos-label" for="setting-discord-hashrate">Hashrate drop threshold (%)</label>
+                    <input id="setting-discord-hashrate" class="forgeos-input" type="number" min="1" max="90" step="1" placeholder="50" />
+                  </div>
+                  <div class="mt-4 text-sm text-slate-300">Apps</div>
+                  <div id="setting-discord-apps" class="mt-2 forgeos-form"></div>
+                  <div class="mt-4 text-sm text-slate-300">Events</div>
+                  <div id="setting-discord-events" class="mt-2 forgeos-form">
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-status" type="checkbox" />
+                      <span>Status changes</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-hashrate" type="checkbox" />
+                      <span>Hashrate drop</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-workers" type="checkbox" />
+                      <span>Worker offline</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-block" type="checkbox" />
+                      <span>Block found</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-update-success" type="checkbox" />
+                      <span>Update success</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-update-failure" type="checkbox" />
+                      <span>Update failed</span>
+                    </label>
+                    <label class="forgeos-toggle">
+                      <input id="setting-discord-event-restart" type="checkbox" />
+                      <span>Restarting</span>
+                    </label>
+                  </div>
+                  <div class="mt-4">
+                    <button id="btn-discord-save" class="axe-btn" type="button">Save Discord</button>
+                  </div>
+                  <div id="discord-status" class="forgeos-muted mt-2">-</div>
+                </div>
               </section>
 
               <section class="axe-card">
@@ -507,9 +615,7 @@
                 </div>
 
                 <div class="mt-4 forgeos-form">
-                  <label class="forgeos-label" for="update-repo">Update repo</label>
-                  <input id="update-repo" class="forgeos-input" type="text" placeholder="WillItMod/5tratum" autocomplete="off" />
-                  <div class="mt-3 text-xs text-slate-300">
+                  <div class="mt-1 text-xs text-slate-300">
                     Private repos require a GitHub access token (fine-grained PAT with read access to the repo + releases).
                   </div>
                   <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-end">
@@ -541,14 +647,14 @@
 
               <section class="axe-card">
                 <div class="text-sm text-slate-300">Advanced</div>
-                <div class="mt-1 text-2xl font-extrabold tracking-tight">Fix Proxy</div>
+                <div class="mt-1 text-2xl font-extrabold tracking-tight">Fix App</div>
                 <div class="mt-3 text-sm text-slate-300">
-                  Repairs the reverse proxy routes for installed apps. Use this if an app loads on its direct port but shows a 502 via <span class="forgeos-mono">/apps/&lt;id&gt;/</span>.
+                  Rebuilds an app from its base template, keeps user data, refreshes configs, and repairs proxy routes.
                 </div>
                 <div class="mt-4 flex flex-wrap gap-2">
-                  <button id="btn-fix-proxy" class="axe-btn" type="button">Fix proxy</button>
+                  <button id="btn-fix-app" class="axe-btn" type="button">Fix app</button>
                 </div>
-                <div class="mt-2 text-xs text-slate-300">This does not change app data. It restarts the portal proxy.</div>
+                <div class="mt-2 text-xs text-slate-300">Choose an app and we will re-sync config + ports without touching data.</div>
               </section>
             </div>
           </section>
@@ -573,6 +679,22 @@
           </div>
         </div>
         <div id="modal-body" class="forgeos-modal__body"></div>
+      </div>
+    </div>
+
+    <div id="global-splash" class="forgeos-splash hidden" aria-hidden="true">
+      <div class="forgeos-splash__backdrop"></div>
+      <div class="forgeos-splash__panel" role="status" aria-live="polite">
+        <img id="global-splash-img" class="forgeos-splash__img" src="/assets/New%20Logos/video/20260117_2007_New%20Video_simple_compose_01kf6s3p1ff0k9c418pwm2q7ak.gif" alt="Working" />
+        <div id="global-splash-title" class="forgeos-splash__title">Working...</div>
+        <div id="global-splash-sub" class="forgeos-splash__sub">Please wait</div>
+        <div id="global-splash-dismiss" class="forgeos-splash__dismiss">Click anywhere to dismiss</div>
+        <div id="global-splash-progress" class="forgeos-splash__progress hidden" aria-hidden="true">
+          <div class="forgeos-splash__progress-bar">
+            <div id="global-splash-progress-fill" class="forgeos-splash__progress-fill" style="width: 0%"></div>
+          </div>
+          <div id="global-splash-progress-label" class="forgeos-splash__progress-label">0%</div>
+        </div>
       </div>
     </div>
   </body>

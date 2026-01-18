@@ -9,8 +9,11 @@
   const tailscaleStatusEl = document.getElementById('tailscale-status');
   const metricCpu = document.getElementById('metric-cpu');
   const metricMem = document.getElementById('metric-mem');
-	  const metricDisk = document.getElementById('metric-disk');
-	  const metricIp = document.getElementById('metric-ip');
+  const metricDisk = document.getElementById('metric-disk');
+  const metricNetHost = document.getElementById('metric-net-host');
+  const metricNetIp = document.getElementById('metric-net-ip');
+  const metricNetBar = document.getElementById('metric-net-bar');
+  const metricNetSub = document.getElementById('metric-net-sub');
     const metricCardCpu = document.getElementById('metric-card-cpu');
     const metricCardMem = document.getElementById('metric-card-mem');
     const metricCardDisk = document.getElementById('metric-card-disk');
@@ -21,7 +24,7 @@
     const metricMemBar = document.getElementById('metric-mem-bar');
     const metricMemSub = document.getElementById('metric-mem-sub');
     const metricDiskBar = document.getElementById('metric-disk-bar');
-    const metricDiskSub = document.getElementById('metric-disk-sub');
+  const metricDiskSub = document.getElementById('metric-disk-sub');
 	  const dashboardAppsEl = document.getElementById('dashboard-apps');
 	  const dashboardAppsEmptyEl = document.getElementById('dashboard-apps-empty');
 	  const dashboardWidgetsEl = document.getElementById('dashboard-widgets');
@@ -78,13 +81,17 @@
   const btnStoreClear = document.getElementById('btn-store-clear');
   const settingStoreAutoSync = document.getElementById('setting-store-autosync');
   const btnStoreSync = document.getElementById('btn-store-sync');
+  const btnStoreCustom = document.getElementById('btn-store-custom');
   const storeSourceLabel = document.getElementById('store-source-label');
   const storeSourceDesc = document.getElementById('store-source-desc');
-  const storeChannelButtons = Array.from(document.querySelectorAll('[data-store-channel]'));
+  const storeChannelCustomsEl = document.getElementById('store-channel-customs');
+  let storeChannelButtons = Array.from(document.querySelectorAll('[data-store-channel]'));
   const workspaceEl = document.getElementById('workspace');
   const workspaceEmptyEl = document.getElementById('workspace-empty');
   const btnResumeWorkspace = document.getElementById('btn-resume-workspace');
   const settingSidebarSelect = document.getElementById('setting-sidebar');
+  const settingHostnameInput = document.getElementById('setting-hostname');
+  const settingChannelSelect = document.getElementById('setting-channel');
   const btnOpenTerminal = document.getElementById('btn-open-terminal');
   const settingsWidgetsEl = document.getElementById('settings-widgets');
   const settingsWidgetsEmptyEl = document.getElementById('settings-widgets-empty');
@@ -108,15 +115,44 @@
   const updateNotesEl = document.getElementById('update-notes');
   const btnUpdateCheck = document.getElementById('btn-update-check');
   const btnUpdateApply = document.getElementById('btn-update-apply');
-  const btnFixProxy = document.getElementById('btn-fix-proxy');
+  const btnFixApp = document.getElementById('btn-fix-app');
   const updateRepoInput = document.getElementById('update-repo');
   const updateTokenInput = document.getElementById('update-token');
   const updateAuthStatusEl = document.getElementById('update-auth-status');
+  const authUsernameInput = document.getElementById('setting-username');
+  const authPasswordInput = document.getElementById('setting-password');
+  const btnAuthUpdate = document.getElementById('btn-auth-update');
   const btnUpdateSave = document.getElementById('btn-update-save');
   const btnUpdateTokenClear = document.getElementById('btn-update-token-clear');
   const autoLockMinutesInput = document.getElementById('setting-autolock-minutes');
   const btnAutoLockSave = document.getElementById('btn-autolock-save');
   const autoLockStatusEl = document.getElementById('autolock-status');
+  const mqttCardEl = document.getElementById('settings-mqtt-card');
+  const mqttUnavailableEl = document.getElementById('mqtt-unavailable');
+  const mqttConfigEl = document.getElementById('mqtt-config');
+  const mqttEnabledInput = document.getElementById('setting-mqtt-enabled');
+  const mqttPrefixInput = document.getElementById('setting-mqtt-prefix');
+  const mqttAppsEl = document.getElementById('setting-mqtt-apps');
+  const mqttStatusEl = document.getElementById('mqtt-status');
+  const mqttEventStatusInput = document.getElementById('setting-mqtt-event-status');
+  const mqttEventHashrateInput = document.getElementById('setting-mqtt-event-hashrate');
+  const mqttEventWorkersInput = document.getElementById('setting-mqtt-event-workers');
+  const mqttEventBlockInput = document.getElementById('setting-mqtt-event-block');
+  const btnMqttSave = document.getElementById('btn-mqtt-save');
+  const discordCardEl = document.getElementById('settings-discord-card');
+  const discordEnabledInput = document.getElementById('setting-discord-enabled');
+  const discordWebhookInput = document.getElementById('setting-discord-webhook');
+  const discordHashrateInput = document.getElementById('setting-discord-hashrate');
+  const discordAppsEl = document.getElementById('setting-discord-apps');
+  const discordStatusEl = document.getElementById('discord-status');
+  const discordEventStatusInput = document.getElementById('setting-discord-event-status');
+  const discordEventHashrateInput = document.getElementById('setting-discord-event-hashrate');
+  const discordEventWorkersInput = document.getElementById('setting-discord-event-workers');
+  const discordEventBlockInput = document.getElementById('setting-discord-event-block');
+  const discordEventUpdateSuccessInput = document.getElementById('setting-discord-event-update-success');
+  const discordEventUpdateFailureInput = document.getElementById('setting-discord-event-update-failure');
+  const discordEventRestartInput = document.getElementById('setting-discord-event-restart');
+  const btnDiscordSave = document.getElementById('btn-discord-save');
 
   // Legacy "selected app" controls (removed from UI; keep null-safe until context menus land)
   const selectedControlsEl = document.getElementById('selected-app-controls');
@@ -131,6 +167,12 @@
   const modalTitleEl = document.getElementById('modal-title');
   const modalBodyEl = document.getElementById('modal-body');
   const modalCloseBtn = document.getElementById('modal-close');
+  const globalSplashEl = document.getElementById('global-splash');
+  const globalSplashTitleEl = document.getElementById('global-splash-title');
+  const globalSplashSubEl = document.getElementById('global-splash-sub');
+  const globalSplashProgressEl = document.getElementById('global-splash-progress');
+  const globalSplashProgressFillEl = document.getElementById('global-splash-progress-fill');
+  const globalSplashProgressLabelEl = document.getElementById('global-splash-progress-label');
     const toastEl = document.getElementById('toast');
   const contextMenuEl = document.getElementById('context-menu');
   // Legacy windowing (keep dormant for now)
@@ -159,6 +201,7 @@
   let storeLastError = '';
   let storeAutoSyncEnabled = true;
   let storeAutoSyncInFlight = false;
+  let storeCustomStores = [];
 	  let lastMetrics = null;
 	  let lastWidgets = null;
     let hasLoadedInstalled = false;
@@ -167,7 +210,9 @@
     let healthCache = { ok: false, checkedAt: 0 };
     let refreshInstalledInFlight = false;
     let refreshStoreInFlight = false;
-    let refreshMetricsInFlight = false;
+  let refreshMetricsInFlight = false;
+  let lastNetSample = null;
+  const APP_LAUNCH_SPLASH_SRC = '/assets/New%20Logos/video/20260117_2007_New%20Video_simple_compose_01kf6s3p1ff0k9c418pwm2q7ak.gif';
     let refreshWidgetsInFlight = false;
     let systemUpdateConfigCache = null;
     let systemUpdateCheckCache = null;
@@ -175,6 +220,10 @@
     let systemUpdateCheckAt = 0;
     let systemUpdatePollTimer = null;
     let systemUpdatePollInFlight = false;
+    let systemUpdateSplashToken = null;
+    let splashTokenSeq = 0;
+    const splashTokens = new Map();
+    let splashClickBound = false;
   let openAppIds = [];
   let maximizedAppId = null;
   const workspaceTileById = new Map();
@@ -215,6 +264,67 @@
   let desktopState = { items: {} };
   let desktopDragId = '';
   let drawerPinned = new Set();
+
+  function showGlobalSplash(opts) {
+    if (!globalSplashEl) return null;
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const title = String(options.title || 'Working...').trim() || 'Working...';
+    const sub = String(options.sub || options.subtitle || '').trim();
+    const progress = Number.isFinite(Number(options.progress)) ? Number(options.progress) : null;
+    const showProgress = options.showProgress === true || progress !== null;
+    splashTokenSeq += 1;
+    const token = `splash-${splashTokenSeq}`;
+    splashTokens.set(token, { title, sub });
+    if (globalSplashTitleEl) globalSplashTitleEl.textContent = title;
+    if (globalSplashSubEl) globalSplashSubEl.textContent = sub || 'Please wait';
+    if (globalSplashProgressEl) {
+      globalSplashProgressEl.classList.toggle('hidden', !showProgress);
+      globalSplashProgressEl.setAttribute('aria-hidden', showProgress ? 'false' : 'true');
+    }
+    if (showProgress && progress !== null) {
+      const pct = Math.max(0, Math.min(100, Math.round(progress)));
+      if (globalSplashProgressFillEl) globalSplashProgressFillEl.style.width = `${pct}%`;
+      if (globalSplashProgressLabelEl) globalSplashProgressLabelEl.textContent = `${pct}%`;
+    }
+    globalSplashEl.classList.remove('hidden');
+    globalSplashEl.setAttribute('aria-hidden', 'false');
+    if (!splashClickBound) {
+      splashClickBound = true;
+      globalSplashEl.addEventListener('click', () => {
+        globalSplashEl.classList.add('hidden');
+        globalSplashEl.setAttribute('aria-hidden', 'true');
+        splashTokens.clear();
+      });
+    }
+    return token;
+  }
+
+  function hideGlobalSplash(token) {
+    if (!globalSplashEl) return;
+    if (token) splashTokens.delete(token);
+    if (splashTokens.size) return;
+    globalSplashEl.classList.add('hidden');
+    globalSplashEl.setAttribute('aria-hidden', 'true');
+  }
+
+  function updateGlobalSplash(title, sub) {
+    if (!globalSplashEl || globalSplashEl.classList.contains('hidden')) return;
+    if (globalSplashTitleEl && title) globalSplashTitleEl.textContent = String(title);
+    if (globalSplashSubEl && sub) globalSplashSubEl.textContent = String(sub);
+  }
+
+  function updateGlobalSplashProgress(pct) {
+    if (!globalSplashEl || globalSplashEl.classList.contains('hidden')) return;
+    const value = Number(pct);
+    if (!Number.isFinite(value)) return;
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+    if (globalSplashProgressEl) {
+      globalSplashProgressEl.classList.remove('hidden');
+      globalSplashProgressEl.setAttribute('aria-hidden', 'false');
+    }
+    if (globalSplashProgressFillEl) globalSplashProgressFillEl.style.width = `${clamped}%`;
+    if (globalSplashProgressLabelEl) globalSplashProgressLabelEl.textContent = `${clamped}%`;
+  }
 
   function noteUserActivity() {
     const now = Date.now();
@@ -280,6 +390,170 @@
       console.error('Session lock save failed', e);
       setAutoLockUi(autoLockMinutes, 'Save failed.');
       showToast('Session lock save failed', 'error');
+    }
+  }
+
+  function renderNotifyAppList(container, apps, selectedSet, emptyText) {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!Array.isArray(apps) || apps.length === 0) {
+      container.classList.add('forgeos-muted');
+      container.textContent = emptyText || 'No AxeSuite apps installed.';
+      return;
+    }
+    container.classList.remove('forgeos-muted');
+    apps.forEach((app) => {
+      const id = String(app.id || '').trim().toLowerCase();
+      if (!id) return;
+      const label = document.createElement('label');
+      label.className = 'forgeos-toggle';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.dataset.appId = id;
+      input.checked = selectedSet.has(id);
+      const span = document.createElement('span');
+      span.textContent = String(app.name || id);
+      label.appendChild(input);
+      label.appendChild(span);
+      container.appendChild(label);
+    });
+  }
+
+  function collectNotifyAppSelection(container) {
+    if (!container) return [];
+    const ids = [];
+    container.querySelectorAll('input[type="checkbox"][data-app-id]').forEach((input) => {
+      if (!(input instanceof HTMLInputElement)) return;
+      if (input.checked && input.dataset.appId) ids.push(input.dataset.appId);
+    });
+    return ids;
+  }
+
+  async function refreshMqttConfig() {
+    if (!mqttCardEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/mqtt/config', {}, 5000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      const available = !!res.available;
+      if (mqttUnavailableEl) mqttUnavailableEl.classList.toggle('hidden', available);
+      if (mqttConfigEl) mqttConfigEl.classList.toggle('hidden', !available);
+      if (btnMqttSave) btnMqttSave.disabled = !available;
+      if (mqttEnabledInput) mqttEnabledInput.disabled = !available;
+      if (mqttPrefixInput) mqttPrefixInput.disabled = !available;
+      if (!available) {
+        if (mqttStatusEl) mqttStatusEl.textContent = 'Mosquitto not installed.';
+        return;
+      }
+      const cfg = res.config || {};
+      if (mqttEnabledInput) mqttEnabledInput.checked = !!cfg.enabled;
+      if (mqttPrefixInput) mqttPrefixInput.value = String(cfg.prefix || '5tratumos');
+      const apps = Array.isArray(res.apps) ? res.apps : [];
+      const selected = new Set(
+        Array.isArray(cfg.apps) && cfg.apps.length ? cfg.apps.map((id) => String(id)) : apps.map((a) => String(a.id)),
+      );
+      renderNotifyAppList(mqttAppsEl, apps, selected, 'No AxeSuite apps installed.');
+      const events = cfg.events || {};
+      if (mqttEventStatusInput) mqttEventStatusInput.checked = !!events.status_change;
+      if (mqttEventHashrateInput) mqttEventHashrateInput.checked = !!events.hashrate_drop;
+      if (mqttEventWorkersInput) mqttEventWorkersInput.checked = !!events.worker_offline;
+      if (mqttEventBlockInput) mqttEventBlockInput.checked = !!events.block_found;
+      if (mqttStatusEl) mqttStatusEl.textContent = 'Loaded.';
+    } catch (e) {
+      if (mqttStatusEl) mqttStatusEl.textContent = 'Load failed.';
+    }
+  }
+
+  async function saveMqttConfig() {
+    if (!btnMqttSave) return;
+    btnMqttSave.disabled = true;
+    if (mqttStatusEl) mqttStatusEl.textContent = 'Saving...';
+    try {
+      const body = {
+        enabled: !!(mqttEnabledInput && mqttEnabledInput.checked),
+        prefix: mqttPrefixInput ? String(mqttPrefixInput.value || '').trim() : '',
+        apps: collectNotifyAppSelection(mqttAppsEl),
+        events: {
+          status_change: !!(mqttEventStatusInput && mqttEventStatusInput.checked),
+          hashrate_drop: !!(mqttEventHashrateInput && mqttEventHashrateInput.checked),
+          worker_offline: !!(mqttEventWorkersInput && mqttEventWorkersInput.checked),
+          block_found: !!(mqttEventBlockInput && mqttEventBlockInput.checked),
+        },
+      };
+      const res = await apiJsonTimeout('/api/v0/system/mqtt/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      showToast('MQTT settings saved', null);
+      await refreshMqttConfig();
+      if (mqttStatusEl) mqttStatusEl.textContent = 'Saved.';
+    } catch (e) {
+      if (mqttStatusEl) mqttStatusEl.textContent = 'Save failed.';
+      showToast('MQTT save failed', 'error');
+    } finally {
+      btnMqttSave.disabled = false;
+    }
+  }
+
+  async function refreshDiscordConfig() {
+    if (!discordCardEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/discord/config', {}, 5000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      const cfg = res.config || {};
+      if (discordEnabledInput) discordEnabledInput.checked = !!cfg.enabled;
+      if (discordWebhookInput) discordWebhookInput.value = String(cfg.webhook || '');
+      if (discordHashrateInput) discordHashrateInput.value = String(cfg.hashrate_drop_pct || 50);
+      const apps = Array.isArray(res.apps) ? res.apps : [];
+      const selected = new Set(
+        Array.isArray(cfg.apps) && cfg.apps.length ? cfg.apps.map((id) => String(id)) : apps.map((a) => String(a.id)),
+      );
+      renderNotifyAppList(discordAppsEl, apps, selected, 'No AxeSuite apps installed.');
+      const events = cfg.events || {};
+      if (discordEventStatusInput) discordEventStatusInput.checked = !!events.status_change;
+      if (discordEventHashrateInput) discordEventHashrateInput.checked = !!events.hashrate_drop;
+      if (discordEventWorkersInput) discordEventWorkersInput.checked = !!events.worker_offline;
+      if (discordEventBlockInput) discordEventBlockInput.checked = !!events.block_found;
+      if (discordEventUpdateSuccessInput) discordEventUpdateSuccessInput.checked = !!events.update_success;
+      if (discordEventUpdateFailureInput) discordEventUpdateFailureInput.checked = !!events.update_failure;
+      if (discordEventRestartInput) discordEventRestartInput.checked = !!events.restart;
+      if (discordStatusEl) discordStatusEl.textContent = 'Loaded.';
+    } catch (e) {
+      if (discordStatusEl) discordStatusEl.textContent = 'Load failed.';
+    }
+  }
+
+  async function saveDiscordConfig() {
+    if (!btnDiscordSave) return;
+    btnDiscordSave.disabled = true;
+    if (discordStatusEl) discordStatusEl.textContent = 'Saving...';
+    try {
+      const body = {
+        enabled: !!(discordEnabledInput && discordEnabledInput.checked),
+        webhook: discordWebhookInput ? String(discordWebhookInput.value || '').trim() : '',
+        hashrate_drop_pct: discordHashrateInput ? Number(discordHashrateInput.value || 50) : 50,
+        apps: collectNotifyAppSelection(discordAppsEl),
+        events: {
+          status_change: !!(discordEventStatusInput && discordEventStatusInput.checked),
+          hashrate_drop: !!(discordEventHashrateInput && discordEventHashrateInput.checked),
+          worker_offline: !!(discordEventWorkersInput && discordEventWorkersInput.checked),
+          block_found: !!(discordEventBlockInput && discordEventBlockInput.checked),
+          update_success: !!(discordEventUpdateSuccessInput && discordEventUpdateSuccessInput.checked),
+          update_failure: !!(discordEventUpdateFailureInput && discordEventUpdateFailureInput.checked),
+          restart: !!(discordEventRestartInput && discordEventRestartInput.checked),
+        },
+      };
+      const res = await apiJsonTimeout('/api/v0/system/discord/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      showToast('Discord settings saved', null);
+      await refreshDiscordConfig();
+      if (discordStatusEl) discordStatusEl.textContent = 'Saved.';
+    } catch (e) {
+      if (discordStatusEl) discordStatusEl.textContent = 'Save failed.';
+      showToast('Discord save failed', 'error');
+    } finally {
+      btnDiscordSave.disabled = false;
     }
   }
 
@@ -776,12 +1050,66 @@
     if (fromCache && !healthCache.ok) setStatus('Cached');
   }
 
+  const CUSTOM_STORE_SLOTS = ['custom1', 'custom2'];
+
+  function allowedStoreChannels() {
+    const custom = Array.isArray(storeCustomStores)
+      ? storeCustomStores.map((entry) => String(entry.slot || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    return ['main', 'dev', 'global', ...custom];
+  }
+
   function loadStoreChannel() {
     try {
       const raw = String(window.localStorage.getItem(STORE_CHANNEL_KEY) || '').trim().toLowerCase();
+      if (!raw) return 'main';
       if (raw === 'main' || raw === 'dev' || raw === 'global') return raw;
+      if (raw.startsWith('custom')) return raw;
     } catch {}
     return 'main';
+  }
+
+  function findCustomStore(slot) {
+    const key = String(slot || '').trim().toLowerCase();
+    if (!key) return null;
+    return (Array.isArray(storeCustomStores) ? storeCustomStores : []).find(
+      (entry) => String(entry.slot || '').trim().toLowerCase() === key,
+    ) || null;
+  }
+
+  function storeChannelLabel(ch) {
+    const key = String(ch || '').trim().toLowerCase();
+    if (!key) return 'App Store';
+    if (key === 'global') return 'Global App Store';
+    if (key === 'dev') return 'AxeSuite DEV';
+    if (key === 'main') return 'AxeSuite MAIN';
+    const custom = findCustomStore(key);
+    if (custom && custom.label) return String(custom.label);
+    if (custom && custom.url) {
+      const derived = storeLabelFromUrl(custom.url);
+      if (derived) return derived;
+    }
+    if (key.startsWith('custom')) {
+      const num = key.replace('custom', '') || '1';
+      return `Custom ${num}`;
+    }
+    return 'App Store';
+  }
+
+  function storeLabelFromUrl(rawUrl) {
+    const urlText = String(rawUrl || '').trim();
+    if (!urlText) return '';
+    try {
+      const url = new URL(urlText.startsWith('http') ? urlText : `https://${urlText}`);
+      const parts = url.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        let repo = parts[1];
+        if (repo.endsWith('.git')) repo = repo.slice(0, -4);
+        repo = repo.replace(/[-_]+/g, ' ').trim();
+        return repo ? repo.replace(/\b\w/g, (m) => m.toUpperCase()) : '';
+      }
+    } catch {}
+    return '';
   }
 
   function loadStoreAutoSyncEnabled() {
@@ -828,22 +1156,59 @@
     }
 
     if (storeSourceLabel) {
-      storeSourceLabel.textContent =
-        ch === 'global' ? 'Global App Store' : ch === 'dev' ? 'AxeSuite DEV' : 'AxeSuite MAIN';
+      storeSourceLabel.textContent = storeChannelLabel(ch);
     }
 
     if (storeSourceDesc) {
-      storeSourceDesc.textContent =
-        ch === 'global'
-          ? 'Browse community app templates and install them into 5tratumOS.'
-          : ch === 'dev'
-            ? 'Preview channel for AxeSuite apps (use with caution).'
-            : 'Stable releases for AxeSuite apps.';
+      if (ch === 'global') {
+        storeSourceDesc.textContent = 'Browse community app templates and install them into 5tratumOS.';
+      } else if (ch === 'dev') {
+        storeSourceDesc.textContent = 'Preview channel for AxeSuite apps (use with caution).';
+      } else if (ch === 'main') {
+        storeSourceDesc.textContent = 'Stable releases for AxeSuite apps.';
+      } else if (ch.startsWith('custom')) {
+        const custom = findCustomStore(ch);
+        const source = custom && custom.url ? `Source: ${custom.url}` : 'Custom community store.';
+        storeSourceDesc.textContent = source;
+      } else {
+        storeSourceDesc.textContent = 'Install and manage apps.';
+      }
     }
 
     if (storeSearchInput) {
       storeSearchInput.placeholder = ch === 'global' ? 'Search global apps...' : 'Search apps...';
     }
+  }
+
+  function bindStoreChannelButtons() {
+    if (!storeChannelButtons || !storeChannelButtons.length) return;
+    storeChannelButtons.forEach((btn) => {
+      if (!(btn instanceof HTMLElement)) return;
+      if (btn.dataset.storeChannelBound === '1') return;
+      btn.dataset.storeChannelBound = '1';
+      btn.addEventListener('click', () => setStoreChannel(btn.dataset.storeChannel || 'main'));
+    });
+  }
+
+  function renderStoreCustomButtons() {
+    if (!storeChannelCustomsEl) return;
+    storeChannelCustomsEl.innerHTML = '';
+    const entries = Array.isArray(storeCustomStores) ? storeCustomStores : [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue;
+      const slot = String(entry.slot || '').trim().toLowerCase();
+      if (!slot) continue;
+      const label = entry.label ? String(entry.label) : storeChannelLabel(slot);
+      const btn = document.createElement('button');
+      btn.className = 'forgeos-segment__btn';
+      btn.type = 'button';
+      btn.dataset.storeChannel = slot;
+      btn.textContent = label;
+      storeChannelCustomsEl.appendChild(btn);
+    }
+    storeChannelButtons = Array.from(document.querySelectorAll('[data-store-channel]'));
+    bindStoreChannelButtons();
+    applyStoreChannelUi();
   }
 
   function syncStoreCategoryOptions(apps) {
@@ -891,7 +1256,7 @@
 
   function setStoreChannel(next) {
     const ch = String(next || '').trim().toLowerCase();
-    if (!ch || !['main', 'dev', 'global'].includes(ch)) return;
+    if (!ch || !allowedStoreChannels().includes(ch)) return;
     if (activeStoreChannel === ch) return;
 
     activeStoreChannel = ch;
@@ -1109,6 +1474,7 @@
   function fallbackLogoFor(appId, name) {
     const id = String(appId || '').trim();
     const label = String(name || id || '?').trim() || '?';
+    if (id.toLowerCase() === 'axedoom') return '/assets/doom.webp';
     const key = id || label;
     const cached = fallbackLogoCache.get(key);
     if (cached) return cached;
@@ -1168,11 +1534,11 @@
     },
     axedoom: {
       id: 'axedoom',
-      name: 'AxeDoom',
+      name: 'Doom',
       desc: 'Play Doom in your browser (Freedoom). Optional install.',
       tag: 'Fun',
-      logo: makeLogo('D', 'AxeDoom', '#00e5ff', '#ff2bd6'),
-      screenshots: [makeShot('AxeDoom', 'Freedoom + Chocolate Doom (noVNC)')],
+      logo: '/assets/doom.webp',
+      screenshots: [makeShot('Doom', 'Freedoom + Chocolate Doom (noVNC)')],
     },
   };
 
@@ -1184,11 +1550,13 @@
         ? storeById.get(id) || installedStoreById.get(id) || null
         : installedStoreById.get(id) || storeById.get(id) || null;
     if (store && typeof store === 'object') {
-      const name = sanitizeStoreText(String(store.name || id));
+      let name = sanitizeStoreText(String(store.name || id));
       const tagline = sanitizeStoreText(String(store.tagline || '')).trim();
       const description = sanitizeStoreText(String(store.description || '')).trim();
       const category = sanitizeStoreText(String(store.category || '')).trim();
-      const logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
+      let logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
+      if (id === 'axedoom') name = 'Doom';
+      if (id === 'axedoom') logo = '/assets/doom.webp';
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
       return {
@@ -1240,10 +1608,12 @@
     try {
       const h = window.location.hostname || '';
       if (hostIp) hostIp.textContent = h || '-';
-      if (metricIp) metricIp.textContent = h || '-';
+      if (metricNetHost) metricNetHost.textContent = h || '-';
+      if (metricNetIp) metricNetIp.textContent = h || '-';
     } catch {
       if (hostIp) hostIp.textContent = '-';
-      if (metricIp) metricIp.textContent = '-';
+      if (metricNetHost) metricNetHost.textContent = '-';
+      if (metricNetIp) metricNetIp.textContent = '-';
     }
   }
 
@@ -1293,6 +1663,15 @@
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
+  }
+
+  function appLaunchUrl(id) {
+    const appId = String(id || '').trim().toLowerCase();
+    const host = window.location.hostname || '';
+    if (appId === 'tailscale' && host) {
+      return `${window.location.protocol}//${host}:8240/`;
+    }
+    return `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
   }
 
   let toastTimer = null;
@@ -1411,6 +1790,62 @@
       modalEl.setAttribute('aria-hidden', 'false');
       document.body.style.overflow = 'hidden';
       window.setTimeout(() => btnOk.focus(), 20);
+    });
+  }
+
+  function openChoiceModal(options) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve(null);
+    const opts = options && typeof options === 'object' ? options : {};
+    const title = String(opts.title || 'Choose').trim() || 'Choose';
+    const message = String(opts.message || '').trim();
+    const kind = String(opts.kind || 'Confirm').trim() || 'Confirm';
+    const choices = Array.isArray(opts.choices) ? opts.choices : [];
+
+    return new Promise((resolve) => {
+      let settled = false;
+      modalOnClose = () => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      };
+
+      if (modalKindEl) modalKindEl.textContent = kind;
+      modalTitleEl.textContent = title;
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const p = document.createElement('div');
+      p.className = 'text-sm text-slate-200 whitespace-pre-wrap';
+      p.textContent = message || '';
+      wrap.appendChild(p);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2 flex-wrap';
+
+      for (const choice of choices) {
+        if (!choice || typeof choice !== 'object') continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `axe-btn${choice.danger ? ' forgeos-btn--danger' : ''}`;
+        btn.textContent = String(choice.label || 'OK').trim() || 'OK';
+        btn.addEventListener('click', () => {
+          settled = true;
+          resolve(choice.value ?? null);
+          closeModal();
+        });
+        actions.appendChild(btn);
+      }
+
+      wrap.appendChild(actions);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      const first = actions.querySelector('button');
+      if (first) window.setTimeout(() => first.focus(), 20);
     });
   }
 
@@ -1851,9 +2286,27 @@
     const iframe = document.createElement('iframe');
     iframe.className = 'forgeos-window__frame';
     iframe.title = name;
-    const pathUrl = `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
-    iframe.src = pathUrl;
+    iframe.src = appLaunchUrl(id);
+    const launchOverlay = document.createElement('div');
+    launchOverlay.className = 'forgeos-app-launch';
+    launchOverlay.setAttribute('aria-hidden', 'false');
+    const launchImg = document.createElement('img');
+    launchImg.className = 'forgeos-app-launch__img';
+    launchImg.alt = 'Starting app';
+    launchImg.src = APP_LAUNCH_SPLASH_SRC;
+    launchOverlay.appendChild(launchImg);
+    content.appendChild(launchOverlay);
     content.appendChild(iframe);
+
+    let launchHidden = false;
+    const hideLaunch = () => {
+      if (launchHidden) return;
+      launchHidden = true;
+      launchOverlay.classList.add('forgeos-app-launch--hidden');
+      launchOverlay.setAttribute('aria-hidden', 'true');
+    };
+    iframe.addEventListener('load', hideLaunch, { once: true });
+    window.setTimeout(hideLaunch, 12000);
 
     const resize = document.createElement('div');
     resize.className = 'forgeos-window__resize';
@@ -1997,6 +2450,8 @@
     if (metricMemBar) metricMemBar.style.width = '0%';
     if (metricDiskBar) metricDiskBar.style.width = '0%';
     if (metricCpuCores) metricCpuCores.innerHTML = '';
+    if (metricNetBar) metricNetBar.style.width = '0%';
+    if (metricNetSub) metricNetSub.textContent = '-';
     if (trustedNetworksEl) trustedNetworksEl.textContent = 'Setup wizard (coming soon)';
     if (tailscaleStatusEl) tailscaleStatusEl.textContent = 'Optional';
   }
@@ -2032,6 +2487,10 @@
       }
     }
     return String(Math.round(n));
+  }
+
+  function formatBytesPerSec(bytes) {
+    return `${formatBytes(bytes)}/s`;
   }
 
   const _VERSION_RE = /^\s*v?(\d+(?:\.\d+)*)(?:[-+](.*))?\s*$/i;
@@ -2155,6 +2614,26 @@
       if (metricDiskBar) metricDiskBar.style.width = `${Math.max(0, Math.min(100, diskPct))}%`;
       if (metricDiskSub) metricDiskSub.textContent = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
     }
+
+    if (metricNetBar || metricNetSub) {
+      const net = metrics.network || {};
+      const rx = Number(net.rx_bytes) || 0;
+      const tx = Number(net.tx_bytes) || 0;
+      const now = Date.now();
+      let rateRx = 0;
+      let rateTx = 0;
+      if (lastNetSample && Number.isFinite(lastNetSample.time)) {
+        const dt = Math.max(1, (now - lastNetSample.time) / 1000);
+        rateRx = Math.max(0, (rx - lastNetSample.rx) / dt);
+        rateTx = Math.max(0, (tx - lastNetSample.tx) / dt);
+      }
+      lastNetSample = { time: now, rx, tx };
+      const totalRate = rateRx + rateTx;
+      const maxRate = 50 * 1024 * 1024;
+      const pct = maxRate > 0 ? Math.max(0, Math.min(100, (totalRate / maxRate) * 100)) : 0;
+      if (metricNetBar) metricNetBar.style.width = `${pct}%`;
+      if (metricNetSub) metricNetSub.textContent = `Up ${formatBytesPerSec(rateTx)} \u2022 Down ${formatBytesPerSec(rateRx)}`;
+    }
   }
 
   function uniqOrder(ids) {
@@ -2242,6 +2721,10 @@
     for (const btn of Array.from(document.querySelectorAll(`button[data-progress-id=\"${id}\"]`))) {
       if (!(btn instanceof HTMLButtonElement)) continue;
       btn.textContent = progressLabel(st.kind, pct);
+    }
+
+    if (globalSplashEl && !globalSplashEl.classList.contains('hidden')) {
+      updateGlobalSplashProgress(pct);
     }
   }
 
@@ -2423,7 +2906,7 @@
     btnPop.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!isAppLaunchable(id)) return;
-      const url = `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
+      const url = appLaunchUrl(id);
       window.open(url, '_blank', 'noopener');
     });
 
@@ -2439,14 +2922,31 @@
     const frameWrap = document.createElement('div');
     frameWrap.className = 'forgeos-tile__frame-wrap';
 
+    const launchOverlay = document.createElement('div');
+    launchOverlay.className = 'forgeos-app-launch forgeos-app-launch--tile';
+    launchOverlay.setAttribute('aria-hidden', 'false');
+    const launchImg = document.createElement('img');
+    launchImg.className = 'forgeos-app-launch__img';
+    launchImg.alt = 'Starting app';
+    launchImg.src = APP_LAUNCH_SPLASH_SRC;
+    launchOverlay.appendChild(launchImg);
+    frameWrap.appendChild(launchOverlay);
+
+    const pathUrl = appLaunchUrl(id);
     const iframe = document.createElement('iframe');
     iframe.className = 'forgeos-tile__frame';
     iframe.title = meta.name || id;
     iframe.loading = 'lazy';
     iframe.addEventListener('focus', noteUserActivity);
     iframe.addEventListener('pointerdown', noteUserActivity, { passive: true });
-    const pathUrl = `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
     iframe.src = pathUrl;
+    let launchHidden = false;
+    const hideLaunch = () => {
+      if (launchHidden) return;
+      launchHidden = true;
+      launchOverlay.classList.add('forgeos-app-launch--hidden');
+      launchOverlay.setAttribute('aria-hidden', 'true');
+    };
     iframe.addEventListener('load', () => {
       try {
         const doc = iframe.contentDocument;
@@ -2469,7 +2969,9 @@
         `.trim();
         (doc.head || doc.documentElement).appendChild(style);
       } catch {}
+      hideLaunch();
     });
+    window.setTimeout(hideLaunch, 12000);
 
     const ui = installed && installed.ui && typeof installed.ui === 'object' ? installed.ui : null;
     const port = ui && ui.port ? Number(ui.port) : 0;
@@ -3630,6 +4132,17 @@
     }
 
     pendingAppActions.set(id, { kind: k, startedAt: Date.now() });
+    const verb =
+      k === 'up'
+        ? 'Starting'
+        : k === 'down'
+          ? 'Stopping'
+          : k === 'restart'
+            ? 'Restarting'
+            : k === 'redeploy'
+              ? 'Redeploying'
+              : 'Running';
+    const splashToken = showGlobalSplash({ title: `${verb} ${metaFor(id).name || id}`, sub: 'Please wait' });
 
     if (k === 'down') {
       openAppIds = openAppIds.filter((x) => x !== id);
@@ -3664,6 +4177,7 @@
       console.error('App action failed', e);
       showToast('App action failed', 'error');
     } finally {
+      hideGlobalSplash(splashToken);
       await refreshInstalled();
       renderWorkspace();
       updateAppHeader();
@@ -4051,17 +4565,39 @@
       if (updateAuthStatusEl) {
         const tokenConfigured = !!res.token_configured;
         const tokenSource = res.token_source ? String(res.token_source) : 'none';
-        const repoSource = res.repo_source ? String(res.repo_source) : 'env';
         const allowUnverified = !!res.allow_unverified;
         const parts = [
-          tokenConfigured ? `Token: set (${tokenSource})` : 'Token: not set',
-          `Repo: ${repoSource}`,
+          tokenConfigured ? `Token: saved (${tokenSource})` : 'Token: not set',
           allowUnverified ? 'Unverified: allowed' : 'Unverified: blocked',
         ];
         updateAuthStatusEl.textContent = parts.join(' \u2022 ');
       }
+      if (updateTokenInput) {
+        updateTokenInput.placeholder = res.token_configured ? 'Saved' : 'ghp_...';
+        updateTokenInput.setAttribute('aria-label', res.token_configured ? 'GitHub token saved' : 'GitHub token');
+      }
     } catch {}
   }
+
+  async function refreshAuthSettings() {
+    if (!authUsernameInput) return;
+    try {
+      const res = await apiJsonTimeout('/api/v0/auth/status', {}, 3000).catch(() => null);
+      if (!res || res.ok !== true) return;
+      if (res.user) authUsernameInput.value = String(res.user);
+    } catch {}
+  }
+
+  async function refreshSystemSettings() {
+    if (!settingChannelSelect) return;
+    try {
+      const res = await apiJsonTimeout('/api/v0/system/channel', {}, 3000).catch(() => null);
+      if (!res || res.ok !== true) return;
+      if (settingHostnameInput && res.hostname) settingHostnameInput.value = String(res.hostname);
+      if (settingChannelSelect) settingChannelSelect.value = String(res.channel || 'main');
+    } catch {}
+  }
+
 
   function systemUpdateState() {
     const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
@@ -4116,6 +4652,18 @@
 
     const state = status && status.state ? String(status.state).trim().toLowerCase() : 'idle';
     const busy = systemUpdateIsBusy(state);
+
+    if (busy) {
+      const label = systemUpdateStateLabel(state, status);
+      if (!systemUpdateSplashToken) {
+        systemUpdateSplashToken = showGlobalSplash({ title: 'Updating 5tratumOS', sub: label });
+      } else {
+        updateGlobalSplash('Updating 5tratumOS', label);
+      }
+    } else if (systemUpdateSplashToken) {
+      hideGlobalSplash(systemUpdateSplashToken);
+      systemUpdateSplashToken = null;
+    }
 
     if (btnUpdateCheck) btnUpdateCheck.disabled = busy;
 
@@ -4237,7 +4785,6 @@
 
   async function saveSystemUpdateConfig() {
     if (!btnUpdateSave) return;
-    const repo = updateRepoInput ? String(updateRepoInput.value || '').trim() : '';
     const token = updateTokenInput ? String(updateTokenInput.value || '').trim() : '';
 
     btnUpdateSave.disabled = true;
@@ -4246,7 +4793,11 @@
     if (updateAuthStatusEl) updateAuthStatusEl.textContent = 'Saving update settings...';
 
     try {
-      const body = { repo };
+      const body = {};
+      if (updateRepoInput) {
+        const repo = String(updateRepoInput.value || '').trim();
+        if (repo) body.repo = repo;
+      }
       if (token) body.token = token;
       const res = await apiJsonTimeout('/api/v0/system/update/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
       if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
@@ -4254,6 +4805,7 @@
       if (updateTokenInput) updateTokenInput.value = '';
       showToast('Update settings saved', null);
       if (updateAuthStatusEl) updateAuthStatusEl.textContent = 'Saved. Refreshing...';
+      if (updateTokenInput && res.token_configured) updateTokenInput.placeholder = 'Saved';
       await refreshSystemUpdateConfig();
       await refreshSystemUpdateCheck({ force: true });
     } catch (e) {
@@ -4296,6 +4848,7 @@
       if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'clear failed');
       systemUpdateConfigCache = res;
       if (updateTokenInput) updateTokenInput.value = '';
+      if (updateTokenInput) updateTokenInput.placeholder = 'ghp_...';
       showToast('Token cleared', null);
       await refreshSystemUpdateConfig();
       await refreshSystemUpdateCheck({ force: true });
@@ -4323,8 +4876,15 @@
       danger: true,
     });
     if (!okConfirm) return;
+
+    const preflightOk = await maybeRunOsUpdates();
+    if (!preflightOk) return;
+
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
+    if (!systemUpdateSplashToken) {
+      systemUpdateSplashToken = showGlobalSplash({ title: 'Updating 5tratumOS', sub: 'Starting update...' });
+    }
 
     try {
       const ok = await ensureHealthy();
@@ -4341,6 +4901,10 @@
       scheduleSystemUpdatePoll(1200);
     } catch (e) {
       showToast('Update failed', 'error');
+      if (systemUpdateSplashToken) {
+        hideGlobalSplash(systemUpdateSplashToken);
+        systemUpdateSplashToken = null;
+      }
       await openNoticeModal({
         kind: 'Error',
         title: 'System update failed',
@@ -4349,6 +4913,71 @@
       });
     } finally {
       renderSystemUpdatePanel();
+    }
+  }
+
+  async function maybeRunOsUpdates() {
+    const splashToken = showGlobalSplash({ title: 'Checking OS updates', sub: 'Running apt update...' });
+    try {
+      const res = await apiJsonTimeout('/api/v0/system/osupdate/check', {}, 120000);
+      hideGlobalSplash(splashToken);
+      if (!res || res.ok !== true) {
+        const proceed = await openConfirmModal({
+          title: 'OS update check failed',
+          message: 'Unable to check base OS updates. Continue with 5tratumOS update anyway?',
+          confirmText: 'Continue',
+          cancelText: 'Cancel',
+          danger: false,
+        });
+        return proceed;
+      }
+      const count = Number(res.upgradable) || 0;
+      if (count <= 0) return true;
+      const choice = await openChoiceModal({
+        title: 'OS updates available',
+        message: `${count} base OS updates are available. Apply them before the 5tratumOS update?`,
+        kind: 'Update',
+        choices: [
+          { label: 'Apply OS updates', value: 'apply' },
+          { label: 'Skip', value: 'skip' },
+          { label: 'Cancel', value: 'cancel', danger: true },
+        ],
+      });
+      if (choice === 'skip') return true;
+      if (choice !== 'apply') return false;
+
+      const applyToken = showGlobalSplash({ title: 'Updating Debian', sub: 'Applying OS updates...' });
+      const applyRes = await apiJsonTimeout('/api/v0/system/osupdate/apply', { method: 'POST', body: '{}' }, 3600000);
+      hideGlobalSplash(applyToken);
+      if (!applyRes || applyRes.ok !== true) {
+        await openNoticeModal({
+          kind: 'Error',
+          title: 'OS update failed',
+          message: applyRes && (applyRes.error || applyRes.stderr) ? String(applyRes.error || applyRes.stderr) : 'OS update failed.',
+          danger: true,
+        });
+        return false;
+      }
+      if (applyRes.reboot_required) {
+        await openNoticeModal({
+          kind: 'System',
+          title: 'Reboot required',
+          message: 'Debian updates require a reboot. Reboot the host, then retry the 5tratumOS update.',
+          danger: false,
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      hideGlobalSplash(splashToken);
+      const proceed = await openConfirmModal({
+        title: 'OS update check failed',
+        message: 'Unable to check base OS updates. Continue with 5tratumOS update anyway?',
+        confirmText: 'Continue',
+        cancelText: 'Cancel',
+        danger: false,
+      });
+      return proceed;
     }
   }
 
@@ -4399,6 +5028,7 @@
     btnStoreSync.disabled = true;
     const prev = btnStoreSync.textContent;
     btnStoreSync.textContent = 'Syncing...';
+    const splashToken = showGlobalSplash({ title: 'Syncing App Store', sub: 'Refreshing templates...' });
     try {
       await ensureHealthy();
       await apiJsonTimeout(
@@ -4417,53 +5047,291 @@
         danger: true,
       });
     } finally {
+      hideGlobalSplash(splashToken);
       btnStoreSync.disabled = false;
       btnStoreSync.textContent = prev;
     }
   }
 
-  async function fixProxyNow() {
-    if (!btnFixProxy) return;
-    if (btnFixProxy.disabled) return;
+  async function refreshStoreCustomConfig() {
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/store/config', {}, 4000).catch(() => null);
+      if (!res || res.ok !== true) return;
+      const raw = res.custom && typeof res.custom === 'object' ? res.custom : {};
+      const out = [];
+      for (const slot of CUSTOM_STORE_SLOTS) {
+        const entry = raw && typeof raw === 'object' ? raw[slot] : null;
+        if (!entry || typeof entry !== 'object') continue;
+        const url = String(entry.url || '').trim();
+        if (!url) continue;
+        const label = String(entry.label || '').trim();
+        out.push({ slot, url, label });
+      }
+      storeCustomStores = out;
+      renderStoreCustomButtons();
+      if (!allowedStoreChannels().includes(String(activeStoreChannel || '').toLowerCase())) {
+        activeStoreChannel = 'main';
+        saveStoreChannel();
+        applyStoreChannelUi();
+      }
+    } catch {}
+  }
 
-    const ok = await openConfirmModal({
-      title: 'Fix proxy routes?',
+  async function openCustomStoreModal() {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    const slots = CUSTOM_STORE_SLOTS.slice();
+    const existing = new Map(
+      (Array.isArray(storeCustomStores) ? storeCustomStores : []).map((entry) => [String(entry.slot), entry]),
+    );
+    const firstEmpty = slots.find((s) => !existing.has(s)) || slots[0];
+
+    modalTitleEl.textContent = 'Add custom store';
+    if (modalKindEl) modalKindEl.textContent = 'App Store';
+    modalBodyEl.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'flex flex-col gap-4';
+
+    const hint = document.createElement('div');
+    hint.className = 'text-sm text-slate-300';
+    hint.textContent = 'Paste a GitHub repo URL or a direct .tar.gz archive URL for an Umbrel community store.';
+    wrap.appendChild(hint);
+
+    const slotLabel = document.createElement('label');
+    slotLabel.className = 'forgeos-label';
+    slotLabel.textContent = 'Store slot';
+    wrap.appendChild(slotLabel);
+
+    const slotSelect = document.createElement('select');
+    slotSelect.className = 'forgeos-input';
+    for (const slot of slots) {
+      const opt = document.createElement('option');
+      opt.value = slot;
+      opt.textContent = storeChannelLabel(slot);
+      slotSelect.appendChild(opt);
+    }
+    slotSelect.value = firstEmpty;
+    wrap.appendChild(slotSelect);
+
+    const urlLabel = document.createElement('label');
+    urlLabel.className = 'forgeos-label';
+    urlLabel.textContent = 'Store URL';
+    wrap.appendChild(urlLabel);
+
+    const urlInput = document.createElement('input');
+    urlInput.className = 'forgeos-input';
+    urlInput.type = 'text';
+    urlInput.placeholder = 'https://github.com/owner/repo';
+    wrap.appendChild(urlInput);
+
+    const nameLabel = document.createElement('label');
+    nameLabel.className = 'forgeos-label';
+    nameLabel.textContent = 'Label (optional)';
+    wrap.appendChild(nameLabel);
+
+    const nameInput = document.createElement('input');
+    nameInput.className = 'forgeos-input';
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Custom store name';
+    wrap.appendChild(nameInput);
+
+    const updateFields = () => {
+      const current = existing.get(String(slotSelect.value || ''));
+      urlInput.value = current && current.url ? String(current.url) : '';
+      nameInput.value = current && current.label ? String(current.label) : '';
+      const derived = storeLabelFromUrl(urlInput.value);
+      nameInput.placeholder = derived || 'Custom store name';
+    };
+    updateFields();
+
+    slotSelect.addEventListener('change', updateFields);
+    urlInput.addEventListener('input', () => {
+      const derived = storeLabelFromUrl(urlInput.value);
+      nameInput.placeholder = derived || 'Custom store name';
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center justify-end gap-2';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'axe-btn';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.addEventListener('click', () => closeModal());
+
+    const btnSave = document.createElement('button');
+    btnSave.type = 'button';
+    btnSave.className = 'axe-btn';
+    btnSave.textContent = 'Save';
+    btnSave.addEventListener('click', async () => {
+      const slot = String(slotSelect.value || '').trim().toLowerCase();
+      const url = String(urlInput.value || '').trim();
+      const label = String(nameInput.value || '').trim();
+      if (!slot) return;
+      const hasExisting = existing.has(slot);
+      if (!url) {
+        if (!hasExisting) {
+          showToast('Enter a store URL', 'warn');
+          return;
+        }
+        const ok = await openConfirmModal({
+          title: 'Remove custom store?',
+          message: `Remove ${storeChannelLabel(slot)}?`,
+          confirmText: 'Remove',
+          cancelText: 'Cancel',
+          danger: true,
+        });
+        if (!ok) return;
+      } else if (!/^https?:\/\//i.test(url)) {
+        showToast('URL must start with http(s)://', 'warn');
+        return;
+      }
+
+      btnSave.disabled = true;
+      const prev = btnSave.textContent;
+      btnSave.textContent = 'Saving...';
+      try {
+        const res = await apiJsonTimeout(
+          '/api/v0/store/config',
+          { method: 'POST', body: JSON.stringify({ slot, url, label }) },
+          8000,
+        );
+        if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
+        closeModal();
+        await refreshStoreCustomConfig();
+        if (url) {
+          setStoreChannel(slot);
+          await syncStoreNow();
+        } else if (activeStoreChannel === slot) {
+          setStoreChannel('main');
+        }
+      } catch (err) {
+        await openNoticeModal({
+          kind: 'Error',
+          title: 'Save failed',
+          message: err && err.message ? String(err.message) : String(err),
+          danger: true,
+        });
+      } finally {
+        btnSave.disabled = false;
+        btnSave.textContent = prev;
+      }
+    });
+
+    actions.appendChild(btnCancel);
+    actions.appendChild(btnSave);
+    wrap.appendChild(actions);
+
+    modalBodyEl.appendChild(wrap);
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    window.setTimeout(() => urlInput.focus(), 50);
+  }
+
+  async function fixAppNow(appId) {
+    const app_id = String(appId || '').trim();
+    if (!app_id) return;
+    const label = metaFor(app_id).name || app_id;
+    const okConfirm = await openConfirmModal({
+      title: `Fix ${label}?`,
       message:
-        'This repairs the /apps/<id>/ reverse proxy rules for installed apps and restarts the portal proxy.\n\nUse this if an app loads on its direct port but returns 502 via /apps/<id>/.\n\nApp data is not changed.',
-      confirmText: 'Fix proxy',
+        'This rebuilds the app from its store template, keeps existing data, refreshes configs, and repairs proxy routes.\n\nUse this if an app fails to load or ports/proxy look wrong.',
+      confirmText: 'Fix app',
       cancelText: 'Cancel',
       danger: false,
     });
-    if (!ok) return;
+    if (!okConfirm) return;
 
-    btnFixProxy.disabled = true;
-    const prev = btnFixProxy.textContent;
-    btnFixProxy.textContent = 'Fixing...';
+    const splashToken = showGlobalSplash({ title: `Fixing ${label}`, sub: 'Rebuilding app from template...' });
     try {
       await ensureHealthy();
-      const res = await apiJsonTimeout('/api/v0/system/proxy/repair', { method: 'POST', body: '{}' }, 180000);
-      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Proxy repair failed');
-      const updated = Array.isArray(res.updated) ? res.updated.length : 0;
-      const added = Array.isArray(res.added) ? res.added.length : 0;
-      showToast('Proxy repaired', null);
-      await openNoticeModal({
-        kind: 'System',
-        title: 'Proxy repaired',
-        message: `Updated routes: ${updated}\nAdded routes: ${added}\nPortal restarted: ${res.restart && res.restart.ok ? 'yes' : 'no'}`,
-        danger: false,
-      });
-    } catch (e) {
-      showToast('Proxy repair failed', 'error');
+      const res = await apiJsonTimeout('/api/v0/apps/repair', { method: 'POST', body: JSON.stringify({ id: app_id }) }, 900000);
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Fix failed');
+      showToast('App repaired', null);
+      await refresh();
+    } catch (err) {
+      showToast('Fix failed', 'error');
       await openNoticeModal({
         kind: 'Error',
-        title: 'Proxy repair failed',
-        message: e && e.message ? String(e.message) : String(e),
+        title: 'Fix failed',
+        message: err && err.message ? String(err.message) : String(err),
         danger: true,
       });
     } finally {
-      btnFixProxy.disabled = false;
-      btnFixProxy.textContent = prev;
+      hideGlobalSplash(splashToken);
     }
+  }
+
+  async function openFixAppModal() {
+    if (!btnFixApp) return;
+    const apps = Array.isArray(installedAppsCache) ? installedAppsCache : [];
+    if (!apps.length) {
+      await openNoticeModal({
+        kind: 'Notice',
+        title: 'No apps installed',
+        message: 'Install an app first, then use Fix App to repair it.',
+      });
+      return;
+    }
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    modalTitleEl.textContent = 'Fix App';
+    if (modalKindEl) modalKindEl.textContent = 'Maintenance';
+    modalBodyEl.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'flex flex-col gap-4';
+
+    const p = document.createElement('div');
+    p.className = 'text-sm text-slate-300';
+    p.textContent = 'Select the app you want to repair. This keeps data but refreshes config and proxy routes.';
+    wrap.appendChild(p);
+
+    const select = document.createElement('select');
+    select.className = 'forgeos-input';
+    const sorted = apps
+      .map((a) => ({ id: String(a.id || '').trim(), name: metaFor(String(a.id || '').trim()).name || a.name || a.id }))
+      .filter((a) => a.id)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' }));
+    for (const app of sorted) {
+      const opt = document.createElement('option');
+      opt.value = app.id;
+      opt.textContent = app.name;
+      select.appendChild(opt);
+    }
+    wrap.appendChild(select);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center justify-end gap-2';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'axe-btn';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.addEventListener('click', () => closeModal());
+
+    const btnGo = document.createElement('button');
+    btnGo.type = 'button';
+    btnGo.className = 'axe-btn';
+    btnGo.textContent = 'Fix app';
+    btnGo.addEventListener('click', async () => {
+      const id = String(select.value || '').trim();
+      if (!id) return;
+      closeModal();
+      await fixAppNow(id);
+    });
+
+    actions.appendChild(btnCancel);
+    actions.appendChild(btnGo);
+    wrap.appendChild(actions);
+    modalBodyEl.appendChild(wrap);
+
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    window.setTimeout(() => select.focus(), 50);
   }
 
   async function syncStoreBackground() {
@@ -5345,6 +6213,12 @@
               btnUpdate.disabled = true;
               startProgress(id, 'update');
               const beforeVer = installed ? String(installed.installed_version || '') : '';
+              const splashToken = showGlobalSplash({
+                title: `Updating ${meta.name || id}`,
+                sub: 'Applying update...',
+                showProgress: true,
+                progress: 1,
+              });
               let requestErr = null;
               try {
                 try {
@@ -5373,6 +6247,7 @@
                   });
                 }
               } finally {
+                hideGlobalSplash(splashToken);
                 btnUpdate.disabled = false;
                 btnUpdate.textContent = btnUpdate.dataset.defaultLabel || 'Update';
               }
@@ -5395,6 +6270,12 @@
           e.stopPropagation();
           startProgress(id, 'install');
           btnInstall.disabled = true;
+          const splashToken = showGlobalSplash({
+            title: `Installing ${meta.name || id}`,
+            sub: 'Preparing app...',
+            showProgress: true,
+            progress: 1,
+          });
           try {
             await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/install`, {
               method: 'POST',
@@ -5414,6 +6295,8 @@
             });
             btnInstall.disabled = false;
             btnInstall.textContent = btnInstall.dataset.defaultLabel || 'Install';
+          } finally {
+            hideGlobalSplash(splashToken);
           }
         });
 
@@ -5962,6 +6845,10 @@
         await apiJson('/api/v0/system/power', { method: 'POST', body: JSON.stringify({ action: act }) });
         closeModal();
         setStatus(act === 'reboot' ? 'Restarting...' : 'Shutting down...');
+        showGlobalSplash({
+          title: act === 'reboot' ? 'Restarting 5tratumOS' : 'Shutting down 5tratumOS',
+          sub: 'Please wait',
+        });
         showToast(`${label} requested`, null);
       } catch (e) {
         showToast('Power action failed', 'error');
@@ -6123,7 +7010,18 @@
 	    const shotsWrap = document.createElement('div');
 	    shotsWrap.className = 'forgeos-modal__shots';
 
-	    const shots = Array.isArray(meta.screenshots) && meta.screenshots.length ? meta.screenshots : [makeShot(meta.name || id, meta.desc || 'Preview')];
+	    const rawShots = Array.isArray(meta.screenshots) ? meta.screenshots : [];
+      const logoSrc = String(meta.logo || meta.icon || '').trim().toLowerCase();
+	    const shots = rawShots
+        .map((shot) => String(shot || '').trim())
+        .filter((shot) => {
+          if (!shot) return false;
+          const lower = shot.toLowerCase();
+          if (logoSrc && lower === logoSrc) return false;
+          if (lower.includes('/logo') || lower.includes('logo.') || lower.includes('/icon') || lower.includes('icon.')) return false;
+          return true;
+        });
+      if (!shots.length) shots.push(makeShot(meta.name || id, meta.desc || 'Preview'));
 
     const mainShot = document.createElement('img');
     mainShot.className = 'forgeos-modal__shot';
@@ -6303,6 +7201,12 @@
 	          startProgress(id, 'update');
 	          btnUpdate.disabled = true;
             const beforeVer = installed ? String(installed.installed_version || '') : '';
+            const splashToken = showGlobalSplash({
+              title: `Updating ${meta.name || id}`,
+              sub: 'Applying update...',
+              showProgress: true,
+              progress: 1,
+            });
             let requestErr = null;
 	          try {
 	            try {
@@ -6330,9 +7234,10 @@
                   message:
                     'The update appears to have started, but confirmation timed out.\n\n' +
                     (requestErr ? `Request error: ${requestErr && requestErr.message ? requestErr.message : requestErr}` : ''),
-                });
-              }
+	                });
+	              }
 	          } finally {
+            hideGlobalSplash(splashToken);
 	            btnUpdate.disabled = false;
               btnUpdate.textContent = btnUpdate.dataset.defaultLabel || 'Update';
 	          }
@@ -6381,6 +7286,7 @@
             });
             if (!okConfirm) return;
             btnRollback.disabled = true;
+            const splashToken = showGlobalSplash({ title: `Rolling back ${label}`, sub: 'Restoring previous version...' });
             try {
               await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/rollback`, {
                 method: 'POST',
@@ -6396,6 +7302,7 @@
                 danger: true,
               });
             } finally {
+              hideGlobalSplash(splashToken);
               btnRollback.disabled = false;
             }
           });
@@ -6424,7 +7331,8 @@
         if (!okConfirm) return;
         btnUninstall.disabled = true;
         const prev = btnUninstall.textContent;
-        btnUninstall.textContent = 'Uninstalling...';
+      btnUninstall.textContent = 'Uninstalling...';
+        const splashToken = showGlobalSplash({ title: `Uninstalling ${label}`, sub: 'Removing containers...' });
         try {
           openAppIds = openAppIds.filter((x) => x !== id);
           saveOpenApps();
@@ -6440,6 +7348,8 @@
           });
           btnUninstall.disabled = false;
           btnUninstall.textContent = prev;
+        } finally {
+          hideGlobalSplash(splashToken);
         }
       });
 
@@ -6457,6 +7367,12 @@
         if (!isInstallable) return;
         startProgress(id, 'install');
         btnInstall.disabled = true;
+        const splashToken = showGlobalSplash({
+          title: `Installing ${meta.name || id}`,
+          sub: 'Preparing app...',
+          showProgress: true,
+          progress: 1,
+        });
         try {
           await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/install`, {
             method: 'POST',
@@ -6477,6 +7393,8 @@
           });
           btnInstall.disabled = false;
           btnInstall.textContent = btnInstall.dataset.defaultLabel || 'Install';
+        } finally {
+          hideGlobalSplash(splashToken);
         }
       });
 
@@ -6539,7 +7457,6 @@
   btnPower?.addEventListener('click', openPowerModal);
   btnOpenTerminal?.addEventListener('click', openTerminalModal);
   btnAutoLockSave?.addEventListener('click', () => saveSessionConfig(autoLockMinutesInput ? autoLockMinutesInput.value : 0).catch(() => {}));
-  btnFixProxy?.addEventListener('click', () => fixProxyNow().catch(() => {}));
 
   sidebarClockEl?.addEventListener('click', () => {
     const body = document.body;
@@ -6716,6 +7633,45 @@
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
   btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
+  btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
+  btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
+  btnAuthUpdate?.addEventListener('click', async () => {
+    if (!authUsernameInput || !authPasswordInput) return;
+    const username = String(authUsernameInput.value || '').trim();
+    const password = String(authPasswordInput.value || '');
+    if (!username) {
+      showToast('Username required', 'error');
+      return;
+    }
+    if (password.trim().length < 10) {
+      showToast('Password must be at least 10 characters', 'error');
+      return;
+    }
+    btnAuthUpdate.disabled = true;
+    const prev = btnAuthUpdate.textContent;
+    btnAuthUpdate.textContent = 'Saving...';
+    try {
+      const res = await apiJson('/api/v0/auth/credentials', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      if (authPasswordInput) authPasswordInput.value = '';
+      showToast('Credentials updated', null);
+      await refreshAuthSettings();
+    } catch (e) {
+      showToast('Update failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnAuthUpdate.disabled = false;
+      btnAuthUpdate.textContent = prev;
+    }
+  });
 
   btnRefresh?.addEventListener('click', refresh);
   metricCardCpu?.addEventListener('click', () => openSystemDetailModal('cpu'));
@@ -6809,12 +7765,10 @@
   });
 
   btnStoreSync?.addEventListener('click', () => syncStoreNow().catch(() => {}));
+  btnStoreCustom?.addEventListener('click', () => openCustomStoreModal().catch(() => {}));
+  btnFixApp?.addEventListener('click', () => openFixAppModal().catch(() => {}));
 
-  if (storeChannelButtons && storeChannelButtons.length) {
-    storeChannelButtons.forEach((btn) => {
-      btn.addEventListener('click', () => setStoreChannel(btn.dataset.storeChannel || 'main'));
-    });
-  }
+  bindStoreChannelButtons();
 
   // Allow buttons inside content to route via data-view
   document.body.addEventListener('click', (e) => {
@@ -6900,9 +7854,14 @@
     applyInstalled(cachedInstalled.apps, { fromCache: true });
   }
   refresh().catch(() => setStatus('UI only'));
+  refreshStoreCustomConfig().catch(() => {});
   refreshSystemUpdateStatus().catch(() => {});
   refreshSystemUpdateConfig().catch(() => {});
+  refreshAuthSettings().catch(() => {});
+  refreshSystemSettings().catch(() => {});
   refreshSessionConfig().catch(() => {});
+  refreshMqttConfig().catch(() => {});
+  refreshDiscordConfig().catch(() => {});
   window.setTimeout(() => refreshSystemUpdateCheck().catch(() => {}), 2500);
   window.setInterval(() => refreshMetrics().catch(() => {}), 5000);
   window.setInterval(() => {

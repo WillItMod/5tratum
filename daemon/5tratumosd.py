@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import concurrent.futures
 import base64
 import hashlib
 import hmac
@@ -11,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import tarfile
+import socket
 import threading
 import time
 import urllib.error
@@ -55,7 +57,9 @@ FEATURES_FILE = str(_env("FEATURES_FILE", "/etc/5tratumos/features.json") or "/e
 BUILD_FILE = str(_env("BUILD_FILE", "/etc/5tratumos/build.json") or "/etc/5tratumos/build.json")
 UPDATE_REPO = str(_env("UPDATE_REPO", "WillItMod/5tratum") or "WillItMod/5tratum")
 UPDATE_CONFIG_FILE = str(_env("UPDATE_CONFIG_FILE", "/etc/5tratumos/update.json") or "/etc/5tratumos/update.json")
+STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
+NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
@@ -137,10 +141,20 @@ def _write_update_config(cfg: dict) -> None:
         pass
 
 
+def _read_store_config() -> dict:
+    cfg = _read_json(STORE_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_store_config(cfg: dict) -> None:
+    _write_json_atomic(STORE_CONFIG_FILE, cfg)
+    try:
+        os.chmod(STORE_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
 def update_repo() -> str:
-    repo = str(_read_update_config().get("repo") or "").strip()
-    if repo:
-        return repo
     return str(UPDATE_REPO or "").strip()
 
 
@@ -150,6 +164,98 @@ def update_token() -> str:
     if tok:
         return tok
     return str(UPDATE_TOKEN_ENV or "").strip()
+
+
+_STORE_CUSTOM_SLOTS = ("custom1", "custom2")
+
+
+def store_config_get() -> dict:
+    cfg = _read_store_config()
+    custom = cfg.get("custom") if isinstance(cfg, dict) else {}
+    if not isinstance(custom, dict):
+        custom = {}
+    out: dict[str, dict] = {}
+    for slot in _STORE_CUSTOM_SLOTS:
+        entry = custom.get(slot)
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get("url") or "").strip()
+        if not url:
+            continue
+        label = str(entry.get("label") or "").strip()
+        out[slot] = {"url": url, "label": label}
+    return {"ok": True, "custom": out}
+
+
+def _normalize_store_url(url: str) -> str:
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    if raw.startswith("github.com/"):
+        return f"https://{raw}"
+    return raw
+
+
+def store_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    cfg = _read_store_config()
+    custom = cfg.get("custom") if isinstance(cfg, dict) else {}
+    if not isinstance(custom, dict):
+        custom = {}
+
+    slot = str(body.get("slot") or "").strip().lower()
+    if slot and slot not in _STORE_CUSTOM_SLOTS:
+        return {"ok": False, "error": f"invalid slot: {slot}"}
+
+    url = _normalize_store_url(body.get("url") or "")
+    label = str(body.get("label") or "").strip()
+
+    if slot:
+        if url:
+            if not (url.startswith("http://") or url.startswith("https://")):
+                return {"ok": False, "error": "url must start with http:// or https://"}
+            custom[slot] = {"url": url, "label": label}
+        else:
+            custom.pop(slot, None)
+    elif "custom" in body and isinstance(body.get("custom"), dict):
+        for key, entry in body.get("custom", {}).items():
+            key = str(key or "").strip().lower()
+            if key not in _STORE_CUSTOM_SLOTS:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            entry_url = _normalize_store_url(entry.get("url") or "")
+            entry_label = str(entry.get("label") or "").strip()
+            if entry_url:
+                if not (entry_url.startswith("http://") or entry_url.startswith("https://")):
+                    continue
+                custom[key] = {"url": entry_url, "label": entry_label}
+            else:
+                custom.pop(key, None)
+
+    cfg["custom"] = custom
+    _write_store_config(cfg)
+    return {**store_config_get(), "saved": True}
+
+
+def store_custom_channels() -> list[str]:
+    cfg = store_config_get()
+    custom = cfg.get("custom") if isinstance(cfg, dict) else {}
+    if not isinstance(custom, dict):
+        return []
+    out = []
+    for slot in _STORE_CUSTOM_SLOTS:
+        if slot in custom:
+            out.append(slot)
+    return out
+
+
+def allowed_store_channels() -> set[str]:
+    return {"main", "dev", "global", *store_custom_channels()}
 
 
 def _read_session_config() -> dict:
@@ -194,6 +300,507 @@ def system_session_config_set(body: dict) -> dict:
 
     _write_session_config(cfg)
     return {**system_session_config_get(), "saved": True}
+
+
+AXE_SUITE_APP_IDS = {
+    "axebch",
+    "axedgb",
+    "axebtc",
+    "axelive",
+    "axebench",
+    "axemig",
+}
+
+
+def _read_notify_config() -> dict:
+    cfg = _read_json(NOTIFY_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_notify_config(cfg: dict) -> None:
+    _write_json_atomic(NOTIFY_CONFIG_FILE, cfg)
+    try:
+        os.chmod(NOTIFY_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def _notify_defaults() -> dict:
+    return {
+        "mqtt": {
+            "enabled": False,
+            "prefix": "5tratumos",
+            "apps": [],
+            "events": {
+                "status_change": True,
+                "hashrate_drop": True,
+                "worker_offline": True,
+                "block_found": True,
+            },
+        },
+        "discord": {
+            "enabled": False,
+            "webhook": "",
+            "apps": [],
+            "events": {
+                "status_change": True,
+                "hashrate_drop": True,
+                "worker_offline": True,
+                "block_found": True,
+                "update_success": True,
+                "update_failure": True,
+                "restart": True,
+            },
+            "hashrate_drop_pct": 50,
+        },
+    }
+
+
+def _normalize_events(raw: dict, defaults: dict) -> dict:
+    out = dict(defaults)
+    if not isinstance(raw, dict):
+        return out
+    for key in defaults:
+        if key in raw:
+            out[key] = bool(raw.get(key))
+    return out
+
+
+def _normalize_notify_config(cfg: dict) -> dict:
+    base = _notify_defaults()
+    mqtt = base["mqtt"]
+    discord = base["discord"]
+
+    raw_mqtt = cfg.get("mqtt") if isinstance(cfg, dict) else None
+    if isinstance(raw_mqtt, dict):
+        mqtt["enabled"] = bool(raw_mqtt.get("enabled"))
+        prefix = str(raw_mqtt.get("prefix") or "").strip()
+        if prefix:
+            mqtt["prefix"] = prefix
+        raw_apps = raw_mqtt.get("apps")
+        if isinstance(raw_apps, list):
+            mqtt["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
+        mqtt["events"] = _normalize_events(raw_mqtt.get("events") or {}, mqtt["events"])
+
+    raw_discord = cfg.get("discord") if isinstance(cfg, dict) else None
+    if isinstance(raw_discord, dict):
+        discord["enabled"] = bool(raw_discord.get("enabled"))
+        discord["webhook"] = str(raw_discord.get("webhook") or "").strip()
+        raw_apps = raw_discord.get("apps")
+        if isinstance(raw_apps, list):
+            discord["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
+        discord["events"] = _normalize_events(raw_discord.get("events") or {}, discord["events"])
+        try:
+            pct = int(str(raw_discord.get("hashrate_drop_pct") or "").strip() or "50")
+        except Exception:
+            pct = 50
+        discord["hashrate_drop_pct"] = max(1, min(90, pct))
+
+    return {"mqtt": mqtt, "discord": discord}
+
+
+def _axesuite_installed_ids() -> list[str]:
+    return [app_id for app_id in list_installed_app_ids() if app_id in AXE_SUITE_APP_IDS]
+
+
+def _axesuite_installed_apps() -> list[dict]:
+    apps = []
+    for app_id in _axesuite_installed_ids():
+        meta = store_app_by_id(app_id) or {}
+        name = str(meta.get("name") or app_id)
+        apps.append({"id": app_id, "name": name})
+    return apps
+
+
+def _mosquitto_available() -> bool:
+    return "mosquitto" in list_installed_app_ids()
+
+
+def mqtt_config_get() -> dict:
+    cfg = _normalize_notify_config(_read_notify_config())
+    available = _mosquitto_available()
+    if not available:
+        cfg["mqtt"]["enabled"] = False
+    return {"ok": True, "available": available, "apps": _axesuite_installed_apps(), "config": cfg["mqtt"]}
+
+
+def mqtt_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    cfg = _normalize_notify_config(_read_notify_config())
+    mqtt = cfg["mqtt"]
+
+    if "enabled" in body:
+        mqtt["enabled"] = bool(body.get("enabled"))
+    if "prefix" in body:
+        prefix = str(body.get("prefix") or "").strip()
+        if prefix:
+            mqtt["prefix"] = prefix
+    if "events" in body:
+        mqtt["events"] = _normalize_events(body.get("events") or {}, mqtt["events"])
+    if "apps" in body:
+        raw_apps = body.get("apps")
+        if isinstance(raw_apps, list):
+            mqtt["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
+
+    if not _mosquitto_available() and mqtt["enabled"]:
+        return {"ok": False, "error": "mosquitto not installed"}
+
+    mqtt["apps"] = [a for a in mqtt.get("apps") or [] if a in AXE_SUITE_APP_IDS]
+    cfg["mqtt"] = mqtt
+    _write_notify_config(cfg)
+    return {**mqtt_config_get(), "saved": True}
+
+
+def discord_config_get() -> dict:
+    cfg = _normalize_notify_config(_read_notify_config())
+    return {"ok": True, "apps": _axesuite_installed_apps(), "config": cfg["discord"]}
+
+
+def discord_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    cfg = _normalize_notify_config(_read_notify_config())
+    discord = cfg["discord"]
+
+    if "enabled" in body:
+        discord["enabled"] = bool(body.get("enabled"))
+    if "webhook" in body:
+        discord["webhook"] = str(body.get("webhook") or "").strip()
+    if "events" in body:
+        discord["events"] = _normalize_events(body.get("events") or {}, discord["events"])
+    if "apps" in body:
+        raw_apps = body.get("apps")
+        if isinstance(raw_apps, list):
+            discord["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
+    if "hashrate_drop_pct" in body:
+        try:
+            pct = int(str(body.get("hashrate_drop_pct") or "").strip() or "50")
+        except Exception:
+            pct = 50
+        discord["hashrate_drop_pct"] = max(1, min(90, pct))
+
+    discord["apps"] = [a for a in discord.get("apps") or [] if a in AXE_SUITE_APP_IDS]
+    cfg["discord"] = discord
+    _write_notify_config(cfg)
+    return {**discord_config_get(), "saved": True}
+
+
+_NOTIFY_LOCK = threading.Lock()
+_NOTIFY_STATE: dict[str, dict] = {"apps": {}, "update": {}}
+_NOTIFY_POLL_S = 30
+
+
+def _selected_notify_apps(cfg: dict, installed: list[str]) -> list[str]:
+    raw = cfg.get("apps") if isinstance(cfg, dict) else None
+    if not isinstance(raw, list) or not raw:
+        return installed
+    out = [str(a).strip().lower() for a in raw if str(a).strip()]
+    return [a for a in out if a in installed]
+
+
+def _pool_block_signature(pool: dict | None) -> str:
+    if not isinstance(pool, dict):
+        return ""
+    parts: list[str] = []
+    keys = [
+        "lastBlockFound",
+        "last_block_found",
+        "lastBlockFoundTime",
+        "last_block_found_time",
+        "lastPoolBlockTime",
+        "block_height",
+        "height",
+        "blocksFound",
+        "blocks_found",
+        "lastBlockFoundHeight",
+        "last_block_found_height",
+    ]
+    for key in keys:
+        if key in pool:
+            parts.append(f"{key}={pool.get(key)}")
+    stats = pool.get("poolStats")
+    if isinstance(stats, dict):
+        for key in keys:
+            if key in stats:
+                parts.append(f"poolStats.{key}={stats.get(key)}")
+    return "|".join(parts)
+
+
+def _pool_hashrate_ths(pool: dict | None) -> float:
+    if not isinstance(pool, dict):
+        return 0.0
+    for key in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
+        try:
+            val = pool.get(key)
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, str) and val.strip():
+                return float(val.strip())
+        except Exception:
+            continue
+    return 0.0
+
+
+def _pool_workers(pool: dict | None) -> int:
+    if not isinstance(pool, dict):
+        return 0
+    try:
+        return int(pool.get("workers") or 0)
+    except Exception:
+        return 0
+
+
+def _mqtt_publish(topic: str, payload: dict) -> None:
+    pub = None
+    for candidate in ("/usr/bin/mosquitto_pub", "/usr/local/bin/mosquitto_pub"):
+        if os.path.isfile(candidate):
+            pub = candidate
+            break
+    if not pub:
+        return
+    try:
+        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        return
+    run_cmd([pub, "-h", "127.0.0.1", "-t", topic, "-m", raw], timeout_s=5)
+
+
+def _discord_send(webhook: str, payload: dict) -> None:
+    if not webhook:
+        return
+    try:
+        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    except Exception:
+        return
+    req = urllib.request.Request(webhook, data=raw, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=6) as resp:  # noqa: S310
+            resp.read()
+    except Exception:
+        pass
+
+
+def _emit_notify_event(
+    *,
+    app_id: str,
+    app_name: str,
+    event: str,
+    detail: str,
+    extra: dict | None,
+    mqtt_cfg: dict,
+    discord_cfg: dict,
+    mqtt_apps: list[str],
+    discord_apps: list[str],
+) -> None:
+    ts = _now_iso()
+    payload = {
+        "time": ts,
+        "app_id": app_id,
+        "app_name": app_name,
+        "event": event,
+        "detail": detail,
+    }
+    if isinstance(extra, dict):
+        payload["data"] = extra
+
+    if mqtt_cfg.get("enabled") and (app_id == "system" or app_id in mqtt_apps):
+        prefix = str(mqtt_cfg.get("prefix") or "5tratumos").strip() or "5tratumos"
+        topic = f"{prefix}/apps/{app_id}/events/{event}"
+        _mqtt_publish(topic, payload)
+
+    if discord_cfg.get("enabled") and discord_cfg.get("webhook") and (app_id == "system" or app_id in discord_apps):
+        content = f"**{app_name}** {detail}"
+        _discord_send(str(discord_cfg.get("webhook") or ""), {"content": content, "ts": ts})
+
+
+def _publish_mqtt_metrics(
+    *,
+    app_id: str,
+    app_name: str,
+    metrics: dict,
+    mqtt_cfg: dict,
+    mqtt_apps: list[str],
+) -> None:
+    if not mqtt_cfg.get("enabled") or app_id not in mqtt_apps:
+        return
+    prefix = str(mqtt_cfg.get("prefix") or "5tratumos").strip() or "5tratumos"
+    payload = {"time": _now_iso(), "app_id": app_id, "app_name": app_name, **metrics}
+    topic = f"{prefix}/apps/{app_id}/metrics"
+    _mqtt_publish(topic, payload)
+
+
+def _notify_loop() -> None:
+    while True:
+        try:
+            cfg = _normalize_notify_config(_read_notify_config())
+            mqtt_cfg = cfg.get("mqtt") or {}
+            discord_cfg = cfg.get("discord") or {}
+
+            installed = _axesuite_installed_ids()
+            if not installed:
+                time.sleep(_NOTIFY_POLL_S)
+                continue
+
+            mqtt_apps = _selected_notify_apps(mqtt_cfg, installed)
+            discord_apps = _selected_notify_apps(discord_cfg, installed)
+            events_mqtt = mqtt_cfg.get("events") if isinstance(mqtt_cfg, dict) else {}
+            events_discord = discord_cfg.get("events") if isinstance(discord_cfg, dict) else {}
+            drop_pct = int(discord_cfg.get("hashrate_drop_pct") or 50) if isinstance(discord_cfg, dict) else 50
+
+            summary = axe_fleet_summary(limit_workers=0)
+            pools = summary.get("pools") if isinstance(summary, dict) else []
+            pool_by_id: dict[str, dict] = {}
+            if isinstance(pools, list):
+                for entry in pools:
+                    if isinstance(entry, dict) and entry.get("id"):
+                        pool_by_id[str(entry.get("id"))] = entry
+
+            for app_id in installed:
+                meta = store_app_by_id(app_id) or {}
+                app_name = str(meta.get("name") or app_id)
+                project = docker_compose_project(app_id)
+                status = str(summarize_project_status(project).get("status") or "unknown")
+
+                pool_entry = pool_by_id.get(app_id) or {}
+                pool = pool_entry.get("pool") if isinstance(pool_entry, dict) else None
+                hashrate = _pool_hashrate_ths(pool)
+                workers = _pool_workers(pool)
+                block_sig = _pool_block_signature(pool if isinstance(pool, dict) else None)
+
+                metrics = {"status": status, "hashrate_ths": hashrate, "workers": workers}
+                _publish_mqtt_metrics(app_id=app_id, app_name=app_name, metrics=metrics, mqtt_cfg=mqtt_cfg, mqtt_apps=mqtt_apps)
+
+                with _NOTIFY_LOCK:
+                    prev = _NOTIFY_STATE["apps"].get(app_id, {})
+                    _NOTIFY_STATE["apps"][app_id] = {
+                        "status": status,
+                        "hashrate_ths": hashrate,
+                        "workers": workers,
+                        "block_sig": block_sig,
+                    }
+
+                prev_status = str(prev.get("status") or "")
+                prev_hashrate = float(prev.get("hashrate_ths") or 0.0)
+                prev_workers = int(prev.get("workers") or 0)
+                prev_block = str(prev.get("block_sig") or "")
+
+                if status and status != prev_status and (events_mqtt.get("status_change") or events_discord.get("status_change")):
+                    detail = f"status changed to {status}"
+                    _emit_notify_event(
+                        app_id=app_id,
+                        app_name=app_name,
+                        event="status_change",
+                        detail=detail,
+                        extra={"status": status},
+                        mqtt_cfg=mqtt_cfg,
+                        discord_cfg=discord_cfg,
+                        mqtt_apps=mqtt_apps,
+                        discord_apps=discord_apps,
+                    )
+
+                if status and status != prev_status and "restart" in status and events_discord.get("restart"):
+                    detail = f"restarting ({status})"
+                    _emit_notify_event(
+                        app_id=app_id,
+                        app_name=app_name,
+                        event="restart",
+                        detail=detail,
+                        extra={"status": status},
+                        mqtt_cfg=mqtt_cfg,
+                        discord_cfg=discord_cfg,
+                        mqtt_apps=mqtt_apps,
+                        discord_apps=discord_apps,
+                    )
+
+                if (
+                    prev_hashrate > 0
+                    and hashrate >= 0
+                    and hashrate <= prev_hashrate * (1 - (drop_pct / 100.0))
+                    and (events_mqtt.get("hashrate_drop") or events_discord.get("hashrate_drop"))
+                ):
+                    detail = f"hashrate dropped to {hashrate:.2f} TH/s (was {prev_hashrate:.2f})"
+                    _emit_notify_event(
+                        app_id=app_id,
+                        app_name=app_name,
+                        event="hashrate_drop",
+                        detail=detail,
+                        extra={"hashrate_ths": hashrate, "prev_hashrate_ths": prev_hashrate},
+                        mqtt_cfg=mqtt_cfg,
+                        discord_cfg=discord_cfg,
+                        mqtt_apps=mqtt_apps,
+                        discord_apps=discord_apps,
+                    )
+
+                if prev_workers > 0 and workers < prev_workers and (events_mqtt.get("worker_offline") or events_discord.get("worker_offline")):
+                    detail = f"workers dropped to {workers} (was {prev_workers})"
+                    _emit_notify_event(
+                        app_id=app_id,
+                        app_name=app_name,
+                        event="worker_offline",
+                        detail=detail,
+                        extra={"workers": workers, "prev_workers": prev_workers},
+                        mqtt_cfg=mqtt_cfg,
+                        discord_cfg=discord_cfg,
+                        mqtt_apps=mqtt_apps,
+                        discord_apps=discord_apps,
+                    )
+
+                if block_sig and prev_block and block_sig != prev_block and (
+                    events_mqtt.get("block_found") or events_discord.get("block_found")
+                ):
+                    detail = "block detected"
+                    _emit_notify_event(
+                        app_id=app_id,
+                        app_name=app_name,
+                        event="block_found",
+                        detail=detail,
+                        extra={"block_sig": block_sig},
+                        mqtt_cfg=mqtt_cfg,
+                        discord_cfg=discord_cfg,
+                        mqtt_apps=mqtt_apps,
+                        discord_apps=discord_apps,
+                    )
+
+            st = update_status_read()
+            if isinstance(st, dict):
+                state = str(st.get("state") or "").strip().lower()
+                with _NOTIFY_LOCK:
+                    prev_update = _NOTIFY_STATE.get("update") or {}
+                    prev_state = str(prev_update.get("state") or "")
+                    _NOTIFY_STATE["update"] = {"state": state, "tag": str(st.get("target_tag") or "")}
+
+                if state != prev_state:
+                    if state == "done" and events_discord.get("update_success"):
+                        detail = f"update complete ({st.get('target_tag') or 'latest'})"
+                        _emit_notify_event(
+                            app_id="system",
+                            app_name="System update",
+                            event="update_success",
+                            detail=detail,
+                            extra={"target_tag": st.get("target_tag")},
+                            mqtt_cfg=mqtt_cfg,
+                            discord_cfg=discord_cfg,
+                            mqtt_apps=mqtt_apps,
+                            discord_apps=discord_apps,
+                        )
+                    if state == "error" and events_discord.get("update_failure"):
+                        detail = f"update failed ({st.get('error') or 'unknown'})"
+                        _emit_notify_event(
+                            app_id="system",
+                            app_name="System update",
+                            event="update_failure",
+                            detail=detail,
+                            extra={"error": st.get("error")},
+                            mqtt_cfg=mqtt_cfg,
+                            discord_cfg=discord_cfg,
+                            mqtt_apps=mqtt_apps,
+                            discord_apps=discord_apps,
+                        )
+
+            time.sleep(_NOTIFY_POLL_S)
+        except Exception:
+            time.sleep(_NOTIFY_POLL_S)
 
 
 _UPDATE_LOCK = threading.Lock()
@@ -384,14 +991,13 @@ def _parse_sha256(text: str, bundle_name: str) -> str:
 
 def system_update_config_get() -> dict:
     cfg = _read_update_config()
-    repo_cfg = str(cfg.get("repo") or "").strip()
     tok_cfg = str(cfg.get("token") or cfg.get("github_token") or "").strip()
     tok_env = str(UPDATE_TOKEN_ENV or "").strip()
     token_present = bool(tok_cfg or tok_env)
     return {
         "ok": True,
         "repo": str(update_repo()),
-        "repo_source": "config" if repo_cfg else "env",
+        "repo_source": "fixed",
         "token_configured": token_present,
         "token_source": "config" if tok_cfg else ("env" if tok_env else "none"),
         "allow_unverified": bool(UPDATE_ALLOW_UNVERIFIED),
@@ -404,14 +1010,7 @@ def system_update_config_set(body: dict) -> dict:
 
     cfg = _read_update_config()
 
-    if "repo" in body:
-        repo = str(body.get("repo") or "").strip()
-        if not repo:
-            cfg.pop("repo", None)
-        else:
-            if not _UPDATE_REPO_RE.fullmatch(repo):
-                return {"ok": False, "error": "repo must look like 'owner/repo'"}
-            cfg["repo"] = repo
+    cfg.pop("repo", None)
 
     if "token" in body or "github_token" in body:
         token = str(body.get("token") or body.get("github_token") or "").strip()
@@ -985,6 +1584,63 @@ def handle_logout(handler: BaseHTTPRequestHandler) -> tuple[int, dict, list[tupl
     return HTTPStatus.OK, {"ok": True}, [("Set-Cookie", _set_cookie_header("", max_age=0))]
 
 
+def handle_update_credentials(
+    handler: BaseHTTPRequestHandler, body: dict
+) -> tuple[int, dict, list[tuple[str, str]] | None]:
+    if not isinstance(body, dict):
+        return HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid body"}, None
+
+    user = current_user(handler)
+    if not user:
+        return HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"}, None
+
+    username = _normalize_username(str(body.get("username") or user))
+    password = str(body.get("password") or "")
+
+    if err := _validate_username(username):
+        return HTTPStatus.BAD_REQUEST, {"ok": False, "error": err}, None
+
+    with _AUTH_LOCK:
+        auth = _read_auth()
+        users = auth.get("users") if isinstance(auth.get("users"), list) else []
+        if not users:
+            return HTTPStatus.PRECONDITION_REQUIRED, {"ok": False, "error": "setup required"}, None
+
+        current = None
+        for u in users:
+            if not isinstance(u, dict):
+                continue
+            if _normalize_username(str(u.get("username") or "")) == _normalize_username(user):
+                current = u
+                break
+        if not current:
+            return HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "user not found"}, None
+
+        if password:
+            if len(password.strip()) < 10:
+                return HTTPStatus.BAD_REQUEST, {"ok": False, "error": "Password must be at least 10 characters."}, None
+            salt, pw_hash = _hash_password(password)
+        else:
+            salt = str(current.get("salt") or "")
+            pw_hash = str(current.get("hash") or "")
+
+        updated = {
+            "username": username,
+            "salt": salt,
+            "hash": pw_hash,
+            "roles": list(current.get("roles") or ["admin"]),
+            "created_at": str(current.get("created_at") or _now_iso()),
+            "updated_at": _now_iso(),
+        }
+
+        auth["users"] = [updated]
+        _write_auth(auth)
+        _SESSIONS.clear()
+        sid, _ = _make_session(username)
+
+    return HTTPStatus.OK, {"ok": True, "user": username}, [("Set-Cookie", _set_cookie_header(sid, max_age=SESSION_TTL_S))]
+
+
 def list_installed_app_ids() -> list[str]:
     ids: list[str] = []
     if os.path.isdir(APPS_DIR):
@@ -1009,6 +1665,47 @@ def read_default_channel() -> str:
         return "main"
     ch = raw.strip().lower()
     return ch if ch in {"main", "dev"} else "main"
+
+
+def system_channel_get() -> dict:
+    host = socket.gethostname()
+    return {"ok": True, "channel": read_default_channel(), "hostname": host}
+
+
+def system_channel_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    return {"ok": False, "error": "channel is fixed to main"}
+
+
+def os_update_check() -> dict:
+    proc = run_cmd(["/usr/bin/apt-get", "update"], timeout_s=300)
+    if proc.returncode != 0:
+        return {
+            "ok": False,
+            "error": (proc.stderr or proc.stdout or "apt update failed").strip(),
+        }
+    upgradable = 0
+    proc = run_cmd(["/usr/bin/apt", "list", "--upgradable"], timeout_s=120)
+    if proc.returncode == 0:
+        lines = [ln.strip() for ln in proc.stdout.splitlines()]
+        for ln in lines:
+            if not ln or ln.lower().startswith("listing"):
+                continue
+            upgradable += 1
+    reboot_required = os.path.exists("/var/run/reboot-required")
+    return {"ok": True, "upgradable": upgradable, "reboot_required": reboot_required}
+
+
+def os_update_apply() -> dict:
+    proc = run_cmd(["/usr/bin/apt-get", "upgrade", "-y"], timeout_s=3600)
+    if proc.returncode != 0:
+        return {
+            "ok": False,
+            "error": (proc.stderr or proc.stdout or "apt upgrade failed").strip(),
+        }
+    reboot_required = os.path.exists("/var/run/reboot-required")
+    return {"ok": True, "reboot_required": reboot_required}
 
 
 def _safe_str(value: object) -> str:
@@ -1042,8 +1739,8 @@ def map_store_id_to_app_id(store_id: str, channel: str) -> str:
     raw = (store_id or "").strip().lower()
     ch = (channel or "").strip().lower()
 
-    # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
-    if ch == "global":
+    # Global/custom stores use canonical IDs like "bitcoin", "nextcloud", etc.
+    if ch == "global" or ch.startswith("custom"):
         raw = raw.replace(" ", "-")
         raw = re.sub(r"[^a-z0-9_-]+", "", raw)
         return raw or "app"
@@ -1233,8 +1930,10 @@ def _has_pool_widget(store_meta: dict) -> bool:
 
 def list_store_apps(channel: str | None) -> dict:
     ch = (channel or read_default_channel()).strip().lower() or "main"
-    if ch not in {"main", "dev", "global"}:
-        return {"ok": False, "error": f"invalid channel: {ch}", "channel": ch, "apps": []}
+    if ch not in allowed_store_channels():
+        store_root = Path(STORE_DIR) / ch
+        if not store_root.is_dir():
+            return {"ok": False, "error": f"invalid channel: {ch}", "channel": ch, "apps": []}
 
     if yaml is None:
         return {"ok": False, "error": "pyyaml not installed", "channel": ch, "apps": []}
@@ -1352,7 +2051,7 @@ def store_app_by_id(app_id: str) -> dict | None:
     app_id = (app_id or "").strip().lower()
     if not app_id:
         return None
-    for ch in ("main", "dev", "global"):
+    for ch in allowed_store_channels():
         res = list_store_apps(ch)
         if not res.get("ok"):
             continue
@@ -1365,7 +2064,7 @@ def store_app_by_id(app_id: str) -> dict | None:
 def store_app_by_id_in_channel(app_id: str, channel: str) -> dict | None:
     app_id = (app_id or "").strip().lower()
     ch = (channel or "").strip().lower()
-    if not app_id or ch not in {"main", "dev", "global"}:
+    if not app_id or ch not in allowed_store_channels():
         return None
     res = list_store_apps(ch)
     if not res.get("ok"):
@@ -1512,60 +2211,76 @@ def list_app_widgets() -> dict:
         return {"ok": True, "time": _now_iso(), "apps": cache.get("apps") or []}
 
     apps_out: list[dict] = []
+    widget_tasks: list[tuple[concurrent.futures.Future, dict]] = []
 
-    for app_id in list_installed_app_ids():
-        store_meta = store_app_by_id(app_id) or {}
-        widgets = store_meta.get("widgets") or []
-        if not isinstance(widgets, list) or not widgets:
-            continue
-
-        port = default_ui_ports(app_id)
-        if port is None:
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            port = sp or None
-
-        project = docker_compose_project(app_id)
-        st = summarize_project_status(project)
-        status = str(st.get("status") or "unknown")
-
-        app_entry = {
-            "id": app_id,
-            "name": str(store_meta.get("name") or app_id),
-            "status": status,
-            "port": port,
-            "widgets": [],
-        }
-
-        fetchable = status == "running" and port is not None
-
-        for item in widgets[:8]:
-            if not isinstance(item, dict):
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for app_id in list_installed_app_ids():
+            store_meta = store_app_by_id(app_id) or {}
+            widgets = store_meta.get("widgets") or []
+            if not isinstance(widgets, list) or not widgets:
                 continue
-            endpoint = _safe_str(item.get("endpoint")).strip()
-            w = {
-                "id": _safe_str(item.get("id")).strip(),
-                "type": _safe_str(item.get("type")).strip(),
-                "endpoint": endpoint,
-                "refresh": _safe_str(item.get("refresh")).strip(),
-                "ok": False,
+
+            port = default_ui_ports(app_id)
+            if port is None:
+                try:
+                    sp = int(str(store_meta.get("port") or "").strip() or "0")
+                except Exception:
+                    sp = 0
+                port = sp or None
+
+            project = docker_compose_project(app_id)
+            st = summarize_project_status(project)
+            status = str(st.get("status") or "unknown")
+
+            app_entry = {
+                "id": app_id,
+                "name": str(store_meta.get("name") or app_id),
+                "status": status,
+                "port": port,
+                "widgets": [],
             }
-            path = _widget_endpoint_path(endpoint)
-            if not fetchable or not path:
-                w["error"] = "not running" if status != "running" else "missing endpoint"
-                app_entry["widgets"].append(w)
-                continue
-            url = f"http://127.0.0.1:{port}{path}"
-            try:
-                w["data"] = _fetch_json(url, timeout_s=2)
-                w["ok"] = True
-            except Exception as e:
-                w["error"] = str(e)
-            app_entry["widgets"].append(w)
 
-        apps_out.append(app_entry)
+            fetchable = status == "running" and port is not None
+
+            for item in widgets[:8]:
+                if not isinstance(item, dict):
+                    continue
+                endpoint = _safe_str(item.get("endpoint")).strip()
+                w = {
+                    "id": _safe_str(item.get("id")).strip(),
+                    "type": _safe_str(item.get("type")).strip(),
+                    "endpoint": endpoint,
+                    "refresh": _safe_str(item.get("refresh")).strip(),
+                    "ok": False,
+                }
+                path = _widget_endpoint_path(endpoint)
+                if not fetchable or not path:
+                    w["error"] = "not running" if status != "running" else "missing endpoint"
+                    app_entry["widgets"].append(w)
+                    continue
+                url = f"http://127.0.0.1:{port}{path}"
+                fut = pool.submit(_fetch_json, url, timeout_s=2)
+                widget_tasks.append((fut, w))
+                app_entry["widgets"].append(w)
+
+            apps_out.append(app_entry)
+
+        if widget_tasks:
+            done, pending = concurrent.futures.wait(
+                [t[0] for t in widget_tasks],
+                timeout=2.5,
+                return_when=concurrent.futures.ALL_COMPLETED,
+            )
+            for fut, widget in widget_tasks:
+                if fut in done:
+                    try:
+                        widget["data"] = fut.result()
+                        widget["ok"] = True
+                    except Exception as e:
+                        widget["error"] = str(e)
+                else:
+                    widget["error"] = "timeout"
+                    fut.cancel()
 
     _WIDGET_CACHE["widgets"] = {"time": now, "apps": apps_out}
     return {"ok": True, "time": _now_iso(), "apps": apps_out}
@@ -1585,10 +2300,10 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
     total_hashrate_ths = 0.0
     total_workers = 0
 
-    for app_id in list_installed_app_ids():
+    def _fetch_pool(app_id: str) -> tuple[dict, list[dict]]:
         store_meta = store_app_by_id(app_id) or {}
         if not isinstance(store_meta, dict) or not _has_pool_widget(store_meta):
-            continue
+            return {}, []
 
         name = str(store_meta.get("name") or app_id).strip() or app_id
         coin = name[3:].strip().upper() if name.lower().startswith("axe") else name.strip().upper()
@@ -1619,8 +2334,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         if status != "running" or port is None:
             entry["pool_error"] = "not running"
             entry["workers_error"] = "not running"
-            pools.append(entry)
-            continue
+            return entry, []
 
         pool_url = f"http://127.0.0.1:{port}/api/pool"
         workers_url = f"http://127.0.0.1:{port}/api/pool/workers"
@@ -1648,26 +2362,44 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
 
         if pool_data is not None:
             entry["pool"] = pool_data
-            try:
-                total_hashrate_ths += float(pool_data.get("hashrate_ths") or 0.0)
-            except Exception:
-                pass
-            try:
-                total_workers += int(pool_data.get("workers") or 0)
-            except Exception:
-                pass
-
         if workers_data is not None:
             entry["workers"] = workers_data
-            details = workers_data.get("workers_details")
-            if isinstance(details, list):
-                for w in details:
-                    if not isinstance(w, dict):
-                        continue
-                    workers_out.append({"app_id": app_id, "coin": coin, **w})
-
         entry["ok"] = pool_data is not None
-        pools.append(entry)
+
+        details: list[dict] = []
+        if workers_data and isinstance(workers_data.get("workers_details"), list):
+            for w in workers_data.get("workers_details"):
+                if not isinstance(w, dict):
+                    continue
+                details.append({"app_id": app_id, "coin": coin, **w})
+        return entry, details
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
+        done, pending = concurrent.futures.wait(
+            futures,
+            timeout=3.0,
+            return_when=concurrent.futures.ALL_COMPLETED,
+        )
+        for fut in done:
+            entry, details = fut.result()
+            if not entry:
+                continue
+            pools.append(entry)
+            if "pool" in entry:
+                try:
+                    total_hashrate_ths += float(entry["pool"].get("hashrate_ths") or 0.0)
+                except Exception:
+                    pass
+                try:
+                    total_workers += int(entry["pool"].get("workers") or 0)
+                except Exception:
+                    pass
+            for w in details:
+                if isinstance(w, dict):
+                    workers_out.append(w)
+        for fut in pending:
+            fut.cancel()
 
     def worker_hashrate_key(w: dict) -> float:
         for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
@@ -1716,6 +2448,31 @@ def read_meminfo_bytes() -> dict[str, int]:
     except Exception:
         return {}
     return info
+
+
+def read_netdev_bytes() -> tuple[int, int]:
+    rx_total = 0
+    tx_total = 0
+    try:
+        with open("/proc/net/dev", "r", encoding="utf-8") as f:
+            for line in f:
+                if ":" not in line:
+                    continue
+                iface, data = line.split(":", 1)
+                name = iface.strip()
+                if not name or name == "lo":
+                    continue
+                parts = data.strip().split()
+                if len(parts) < 16:
+                    continue
+                try:
+                    rx_total += int(parts[0])
+                    tx_total += int(parts[8])
+                except ValueError:
+                    continue
+    except Exception:
+        return 0, 0
+    return rx_total, tx_total
 
 
 def disk_usage(path: str) -> dict | None:
@@ -1816,6 +2573,8 @@ def system_metrics() -> dict:
     avail = int(meminfo.get("MemAvailable", 0))
     used = max(0, total - avail) if total and avail else 0
 
+    rx_bytes, tx_bytes = read_netdev_bytes()
+
     disks: list[dict] = []
     for p in ["/", DATA_DIR]:
         du = disk_usage(p)
@@ -1841,6 +2600,10 @@ def system_metrics() -> dict:
             "total_bytes": total,
             "available_bytes": avail,
             "used_bytes": used,
+        },
+        "network": {
+            "rx_bytes": rx_bytes,
+            "tx_bytes": tx_bytes,
         },
         "disks": disks,
     }
@@ -2337,6 +3100,22 @@ def summarize_resources(containers: list[dict]) -> dict:
     stats_by_name = docker_stats_for(running_names)
     if not stats_by_name:
         return {"ok": False}
+    return summarize_resources_from_stats(containers, stats_by_name)
+
+
+def summarize_resources_from_stats(containers: list[dict], stats_by_name: dict[str, dict]) -> dict:
+    running_names: list[str] = []
+    for c in containers:
+        name = str(c.get("Names") or "").strip()
+        if not name:
+            continue
+        state = str(c.get("State") or "").strip()
+        status = str(c.get("Status") or "").strip()
+        if state == "running" or status.startswith("Up "):
+            running_names.append(name)
+
+    if not running_names or not stats_by_name:
+        return {"ok": False}
 
     cpu_total = 0.0
     mem_used_total = 0
@@ -2385,6 +3164,10 @@ def summarize_resources(containers: list[dict]) -> dict:
 
 def summarize_project_status(project: str) -> dict:
     containers = docker_containers_for_project(project)
+    return summarize_project_status_from_containers(containers)
+
+
+def summarize_project_status_from_containers(containers: list[dict]) -> dict:
     if not containers:
         return {"status": "not-created", "containers": []}
     any_running = False
@@ -2411,7 +3194,14 @@ def summarize_project_status(project: str) -> dict:
 
 def default_ui_ports(app_id: str) -> int | None:
     # Transitional: until apps are proxied via internal networks, we map known UIs.
-    return {"axelive": 5210, "axebench": 5000, "axedoom": 5300}.get(app_id)
+    return {
+        "axelive": 5210,
+        "axebench": 5000,
+        "axedoom": 5300,
+        "axebtc": 21214,
+        "axebtcf": 21214,
+        "axedgb": 21213,
+    }.get(app_id)
 
 
 def _nginx_proxy_block(app_id: str, port: int) -> str:
@@ -2534,11 +3324,12 @@ def system_proxy_repair() -> dict:
         meta_ch = str(install_meta.get("channel") or "").strip().lower()
         preferred_channels: list[str] = []
         sys_ch = str(read_default_channel() or "").strip().lower()
-        if sys_ch in {"main", "dev", "global"}:
+        allowed = allowed_store_channels()
+        if sys_ch in allowed:
             preferred_channels.append(sys_ch)
-        if meta_ch in {"main", "dev", "global"} and meta_ch not in preferred_channels:
+        if meta_ch in allowed and meta_ch not in preferred_channels:
             preferred_channels.append(meta_ch)
-        for ch in ("main", "dev", "global"):
+        for ch in allowed:
             if ch not in preferred_channels:
                 preferred_channels.append(ch)
 
@@ -2862,6 +3653,14 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_session_config_get())
             return
 
+        if path == "/api/v0/system/mqtt/config":
+            json_response(self, HTTPStatus.OK, mqtt_config_get())
+            return
+
+        if path == "/api/v0/system/discord/config":
+            json_response(self, HTTPStatus.OK, discord_config_get())
+            return
+
         if path == "/api/v0/system/proxy":
             json_response(self, HTTPStatus.OK, {"ok": True, "repair": "/api/v0/system/proxy/repair"})
             return
@@ -2881,18 +3680,50 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, update_status_read())
             return
 
+        if path == "/api/v0/system/channel":
+            json_response(self, HTTPStatus.OK, system_channel_get())
+            return
+
+        if path == "/api/v0/system/osupdate/check":
+            json_response(self, HTTPStatus.OK, os_update_check())
+            return
+
+        if path == "/api/v0/store/config":
+            json_response(self, HTTPStatus.OK, store_config_get())
+            return
+
         if path == "/api/v0/apps/installed":
             apps = []
-            for app_id in list_installed_app_ids():
+            app_ids = list_installed_app_ids()
+            containers_by_app: dict[str, list[dict]] = {}
+            running_names: list[str] = []
+
+            for app_id in app_ids:
+                project = docker_compose_project(app_id)
+                containers = docker_containers_for_project(project)
+                containers_by_app[app_id] = containers
+                for c in containers:
+                    name = str(c.get("Names") or "").strip()
+                    if not name:
+                        continue
+                    state = str(c.get("State") or "").strip()
+                    status = str(c.get("Status") or "").strip()
+                    if state == "running" or status.startswith("Up "):
+                        running_names.append(name)
+
+            stats_by_name = docker_stats_for(sorted(set(running_names)))
+
+            for app_id in app_ids:
                 install_meta = read_app_install_meta(app_id)
                 meta_ch = str(install_meta.get("channel") or "").strip().lower()
                 preferred_channels: list[str] = []
                 sys_ch = str(read_default_channel() or "").strip().lower()
-                if sys_ch in {"main", "dev", "global"}:
+                allowed = allowed_store_channels()
+                if sys_ch in allowed:
                     preferred_channels.append(sys_ch)
-                if meta_ch in {"main", "dev", "global"} and meta_ch not in preferred_channels:
+                if meta_ch in allowed and meta_ch not in preferred_channels:
                     preferred_channels.append(meta_ch)
-                for ch in ("main", "dev", "global"):
+                for ch in allowed:
                     if ch not in preferred_channels:
                         preferred_channels.append(ch)
 
@@ -2902,9 +3733,9 @@ class Handler(BaseHTTPRequestHandler):
                     if m:
                         store_meta = m
                         break
-                project = docker_compose_project(app_id)
-                st = summarize_project_status(project)
-                resources = summarize_resources(st.get("containers") or [])
+                containers = containers_by_app.get(app_id, [])
+                st = summarize_project_status_from_containers(containers)
+                resources = summarize_resources_from_stats(containers, stats_by_name)
                 port = default_ui_ports(app_id)
                 if port is None:
                     try:
@@ -2969,6 +3800,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, list_available_app_ids(channel))
             return
 
+        if path == "/api/v0/store/config":
+            json_response(self, HTTPStatus.OK, store_config_get())
+            return
+
         if path == "/api/v0/store/apps":
             channel = None
             if "channel" in qs and qs["channel"]:
@@ -3031,12 +3866,35 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, int(status), payload, headers=headers)
             return
 
+        if path == "/api/v0/auth/credentials":
+            if not current_user(self):
+                json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
+                return
+            status, payload, headers = handle_update_credentials(self, body if isinstance(body, dict) else {})
+            json_response(self, int(status), payload, headers=headers)
+            return
+
         if path.startswith("/api/v0/") and not current_user(self):
             json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
             return
 
         if path == "/api/v0/system/update/config":
             res = system_update_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/channel":
+            res = system_channel_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/osupdate/apply":
+            res = os_update_apply()
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/store/config":
+            res = store_config_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
@@ -3060,6 +3918,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/session":
             res = system_session_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/mqtt/config":
+            res = mqtt_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/discord/config":
+            res = discord_config_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
@@ -3100,6 +3968,18 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
             return
 
+        if path == "/api/v0/apps/repair":
+            app_id = str(body.get("id") or body.get("app_id") or "").strip().lower() if isinstance(body, dict) else ""
+            if not app_id:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "missing app id"})
+                return
+            res = stratumos_cmd(["app", "repair", app_id], timeout_s=1800)
+            if res.get("ok"):
+                proxy_res = system_proxy_repair()
+                res["proxy"] = proxy_res
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         m = re.fullmatch(r"/api/v0/apps/([a-z0-9][a-z0-9_-]*)/(install|uninstall|update|rollback|up|down|pull|redeploy)", path)
         if m:
             app_id, action = m.group(1), m.group(2)
@@ -3126,7 +4006,7 @@ class Handler(BaseHTTPRequestHandler):
                 channel = str(body.get("channel") or "") if isinstance(body, dict) else ""
                 channel = channel.strip().lower()
                 args = ["app", "update", app_id]
-                if channel in {"main", "dev", "global"}:
+                if channel and (channel in allowed_store_channels() or channel.startswith("custom")):
                     args += ["--channel", channel]
                 res = stratumos_cmd(args, timeout_s=1800)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
@@ -3196,6 +4076,7 @@ def main() -> int:
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
+    threading.Thread(target=_notify_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
