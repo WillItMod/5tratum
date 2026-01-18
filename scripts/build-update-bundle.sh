@@ -18,9 +18,9 @@ cd "${ROOT_DIR}"
 # Stage only what the daemon update applier knows how to deploy.
 mkdir -p "${tmp}/overlay" "${tmp}/daemon" "${tmp}/systemd" "${tmp}/bin" "${tmp}/console"
 
-cp -a "${ROOT_DIR}/overlay" "${tmp}/overlay/"
-cp -a "${ROOT_DIR}/daemon" "${tmp}/daemon/"
-cp -a "${ROOT_DIR}/systemd" "${tmp}/systemd/"
+cp -a "${ROOT_DIR}/overlay/." "${tmp}/overlay/"
+cp -a "${ROOT_DIR}/daemon/." "${tmp}/daemon/"
+cp -a "${ROOT_DIR}/systemd/." "${tmp}/systemd/"
 cp -a "${ROOT_DIR}/bin/5tratumos" "${tmp}/bin/5tratumos"
 if [ -d "${ROOT_DIR}/console" ]; then
   cp -a "${ROOT_DIR}/console/." "${tmp}/console/"

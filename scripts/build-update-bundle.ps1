@@ -36,9 +36,9 @@ try {
 
   New-Item -ItemType Directory -Force -Path $stageOverlay, $stageDaemon, $stageSystemd, $stageBin, $stageConsole | Out-Null
 
-  Copy-Item -Recurse -Force -Path (Join-Path $root "overlay") -Destination $stageOverlay
-  Copy-Item -Recurse -Force -Path (Join-Path $root "daemon") -Destination $stageDaemon
-  Copy-Item -Recurse -Force -Path (Join-Path $root "systemd") -Destination $stageSystemd
+  Copy-Item -Recurse -Force -Path (Join-Path $root "overlay\\*") -Destination $stageOverlay
+  Copy-Item -Recurse -Force -Path (Join-Path $root "daemon\\*") -Destination $stageDaemon
+  Copy-Item -Recurse -Force -Path (Join-Path $root "systemd\\*") -Destination $stageSystemd
   Copy-Item -Force -Path (Join-Path $root "bin\\5tratumos") -Destination (Join-Path $stageBin "5tratumos")
   if (Test-Path (Join-Path $root "console")) {
     Copy-Item -Recurse -Force -Path (Join-Path $root "console\\*") -Destination $stageConsole
