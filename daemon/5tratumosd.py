@@ -59,6 +59,7 @@ UPDATE_REPO = str(_env("UPDATE_REPO", "WillItMod/5tratum") or "WillItMod/5tratum
 UPDATE_CONFIG_FILE = str(_env("UPDATE_CONFIG_FILE", "/etc/5tratumos/update.json") or "/etc/5tratumos/update.json")
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
+DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
@@ -166,7 +167,17 @@ def update_token() -> str:
     return str(UPDATE_TOKEN_ENV or "").strip()
 
 
-_STORE_CUSTOM_SLOTS = ("custom1", "custom2")
+_CUSTOM_STORE_PREFIX = "custom"
+_CUSTOM_STORE_SLOT_RE = re.compile(r"^custom[-_a-z0-9]{0,48}$")
+
+
+def _is_custom_store_slot(slot: str) -> bool:
+    key = str(slot or "").strip().lower()
+    if not key:
+        return False
+    if not key.startswith(_CUSTOM_STORE_PREFIX):
+        return False
+    return bool(_CUSTOM_STORE_SLOT_RE.match(key))
 
 
 def store_config_get() -> dict:
@@ -175,8 +186,10 @@ def store_config_get() -> dict:
     if not isinstance(custom, dict):
         custom = {}
     out: dict[str, dict] = {}
-    for slot in _STORE_CUSTOM_SLOTS:
-        entry = custom.get(slot)
+    for slot, entry in custom.items():
+        slot = str(slot or "").strip().lower()
+        if not _is_custom_store_slot(slot):
+            continue
         if not isinstance(entry, dict):
             continue
         url = str(entry.get("url") or "").strip()
@@ -208,7 +221,7 @@ def store_config_set(body: dict) -> dict:
         custom = {}
 
     slot = str(body.get("slot") or "").strip().lower()
-    if slot and slot not in _STORE_CUSTOM_SLOTS:
+    if slot and not _is_custom_store_slot(slot):
         return {"ok": False, "error": f"invalid slot: {slot}"}
 
     url = _normalize_store_url(body.get("url") or "")
@@ -224,7 +237,7 @@ def store_config_set(body: dict) -> dict:
     elif "custom" in body and isinstance(body.get("custom"), dict):
         for key, entry in body.get("custom", {}).items():
             key = str(key or "").strip().lower()
-            if key not in _STORE_CUSTOM_SLOTS:
+            if not _is_custom_store_slot(key):
                 continue
             if not isinstance(entry, dict):
                 continue
@@ -248,9 +261,11 @@ def store_custom_channels() -> list[str]:
     if not isinstance(custom, dict):
         return []
     out = []
-    for slot in _STORE_CUSTOM_SLOTS:
-        if slot in custom:
-            out.append(slot)
+    for slot in custom.keys():
+        key = str(slot or "").strip().lower()
+        if _is_custom_store_slot(key):
+            out.append(key)
+    out.sort()
     return out
 
 
@@ -300,6 +315,36 @@ def system_session_config_set(body: dict) -> dict:
 
     _write_session_config(cfg)
     return {**system_session_config_get(), "saved": True}
+
+
+def _read_desktop_state() -> dict:
+    cfg = _read_json(DESKTOP_STATE_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_desktop_state(state: dict) -> None:
+    _write_json_atomic(DESKTOP_STATE_FILE, state if isinstance(state, dict) else {})
+    try:
+        os.chmod(DESKTOP_STATE_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def desktop_state_get() -> dict:
+    return {"ok": True, "state": _read_desktop_state()}
+
+
+def desktop_state_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    state = body.get("state") if "state" in body else body
+    if not isinstance(state, dict):
+        return {"ok": False, "error": "state must be an object"}
+    items = state.get("items")
+    if items is not None and not isinstance(items, dict):
+        return {"ok": False, "error": "state.items must be an object"}
+    _write_desktop_state(state)
+    return {"ok": True, "saved": True, "state": _read_desktop_state()}
 
 
 AXE_SUITE_APP_IDS = {
@@ -3696,6 +3741,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_session_config_get())
             return
 
+        if path == "/api/v0/desktop/state":
+            json_response(self, HTTPStatus.OK, desktop_state_get())
+            return
+
         if path == "/api/v0/system/mqtt/config":
             json_response(self, HTTPStatus.OK, mqtt_config_get())
             return
@@ -3961,6 +4010,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/session":
             res = system_session_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/desktop/state":
+            res = desktop_state_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 

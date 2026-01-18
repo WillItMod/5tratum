@@ -204,6 +204,8 @@
   let storeCustomStores = [];
 	  let lastMetrics = null;
 	  let lastWidgets = null;
+  let mqttAppsCache = [];
+  let discordAppsCache = [];
     let hasLoadedInstalled = false;
     let hasLoadedStore = false;
     let hasLoadedWidgets = false;
@@ -263,6 +265,8 @@
   let modalOnClose = null;
   let desktopState = { items: {} };
   let desktopDragId = '';
+  let desktopRemoteLoaded = false;
+  let desktopRemoteSaveTimer = 0;
   let drawerPinned = new Set();
 
   function showGlobalSplash(opts) {
@@ -471,8 +475,9 @@
       saveNotifyCache('mqtt', cfg);
       if (mqttEnabledInput) mqttEnabledInput.checked = !!cfg.enabled;
       setMqttInputsEnabled(!!cfg.enabled);
-      if (mqttPrefixInput) mqttPrefixInput.value = String(cfg.prefix || '5tratumos');
+      if (mqttPrefixInput) mqttPrefixInput.value = String(cfg.prefix || '5tratumOS');
       const apps = Array.isArray(res.apps) ? res.apps : [];
+      mqttAppsCache = apps;
       const selected = new Set(
         Array.isArray(cfg.apps) && cfg.apps.length ? cfg.apps.map((id) => String(id)) : apps.map((a) => String(a.id)),
       );
@@ -488,11 +493,19 @@
       if (cached) {
         if (mqttEnabledInput) mqttEnabledInput.checked = !!cached.enabled;
         setMqttInputsEnabled(!!cached.enabled);
-        if (mqttPrefixInput) mqttPrefixInput.value = String(cached.prefix || '5tratumos');
+        if (mqttPrefixInput) mqttPrefixInput.value = String(cached.prefix || '5tratumOS');
         if (mqttEventStatusInput) mqttEventStatusInput.checked = !!cached.events?.status_change;
         if (mqttEventHashrateInput) mqttEventHashrateInput.checked = !!cached.events?.hashrate_drop;
         if (mqttEventWorkersInput) mqttEventWorkersInput.checked = !!cached.events?.worker_offline;
         if (mqttEventBlockInput) mqttEventBlockInput.checked = !!cached.events?.block_found;
+        if (Array.isArray(mqttAppsCache) && mqttAppsCache.length) {
+          const selected = new Set(
+            Array.isArray(cached.apps) && cached.apps.length
+              ? cached.apps.map((id) => String(id))
+              : mqttAppsCache.map((a) => String(a.id)),
+          );
+          renderNotifyAppList(mqttAppsEl, mqttAppsCache, selected, 'No AxeSuite apps installed.');
+        }
         if (mqttStatusEl) mqttStatusEl.textContent = 'Cached.';
         return;
       }
@@ -543,6 +556,7 @@
       if (discordWebhookInput) discordWebhookInput.value = String(cfg.webhook || '');
       if (discordHashrateInput) discordHashrateInput.value = String(cfg.hashrate_drop_pct || 50);
       const apps = Array.isArray(res.apps) ? res.apps : [];
+      discordAppsCache = apps;
       const selected = new Set(
         Array.isArray(cfg.apps) && cfg.apps.length ? cfg.apps.map((id) => String(id)) : apps.map((a) => String(a.id)),
       );
@@ -570,6 +584,14 @@
         if (discordEventUpdateSuccessInput) discordEventUpdateSuccessInput.checked = !!events.update_success;
         if (discordEventUpdateFailureInput) discordEventUpdateFailureInput.checked = !!events.update_failure;
         if (discordEventRestartInput) discordEventRestartInput.checked = !!events.restart;
+        if (Array.isArray(discordAppsCache) && discordAppsCache.length) {
+          const selected = new Set(
+            Array.isArray(cached.apps) && cached.apps.length
+              ? cached.apps.map((id) => String(id))
+              : discordAppsCache.map((a) => String(a.id)),
+          );
+          renderNotifyAppList(discordAppsEl, discordAppsCache, selected, 'No AxeSuite apps installed.');
+        }
         if (discordStatusEl) discordStatusEl.textContent = 'Cached.';
         return;
       }
@@ -1104,7 +1126,30 @@
     if (fromCache && !healthCache.ok) setStatus('Cached');
   }
 
-  const CUSTOM_STORE_SLOTS = ['custom1', 'custom2'];
+  function slugifyCustomStoreKey(raw) {
+    return String(raw || '')
+      .trim()
+      .toLowerCase()
+      .replace(/https?:\/\//g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+  }
+
+  function deriveCustomStoreSlot(url, label, existingSlots) {
+    const existing = new Set((Array.isArray(existingSlots) ? existingSlots : []).map((v) => String(v || '').trim().toLowerCase()));
+    const baseLabel = String(label || '').trim() || storeLabelFromUrl(url) || '';
+    const derived = slugifyCustomStoreKey(baseLabel) || slugifyCustomStoreKey(url) || 'store';
+    let base = `custom-${derived}`.replace(/^custom-+/, 'custom-');
+    if (base.length > 54) base = base.slice(0, 54);
+    let slot = base;
+    let n = 2;
+    while (existing.has(slot)) {
+      const suffix = `-${n++}`;
+      slot = `${base.slice(0, Math.max(0, 54 - suffix.length))}${suffix}`;
+    }
+    return slot;
+  }
 
   function allowedStoreChannels() {
     const custom = Array.isArray(storeCustomStores)
@@ -1143,10 +1188,7 @@
       const derived = storeLabelFromUrl(custom.url);
       if (derived) return derived;
     }
-    if (key.startsWith('custom')) {
-      const num = key.replace('custom', '') || '1';
-      return `Custom ${num}`;
-    }
+    if (key.startsWith('custom')) return 'Custom store';
     return 'App Store';
   }
 
@@ -1258,6 +1300,50 @@
       btn.type = 'button';
       btn.dataset.storeChannel = slot;
       btn.textContent = label;
+      btn.addEventListener('contextmenu', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openContextMenu(
+          [
+            { label: 'Edit store', onClick: async () => openCustomStoreModal(slot) },
+            {
+              label: 'Remove store',
+              danger: true,
+              onClick: async () => {
+                const ok = await openConfirmModal({
+                  title: 'Remove custom store?',
+                  message: `Remove ${storeChannelLabel(slot)}?`,
+                  confirmText: 'Remove',
+                  cancelText: 'Cancel',
+                  danger: true,
+                });
+                if (!ok) return;
+                try {
+                  const res = await apiJsonTimeout(
+                    '/api/v0/store/config',
+                    { method: 'POST', body: JSON.stringify({ slot, url: '', label: '' }) },
+                    8000,
+                  );
+                  if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'remove failed');
+                  await refreshStoreCustomConfig();
+                  if (String(activeStoreChannel || '').toLowerCase() === slot) setStoreChannel('main');
+                  showToast('Store removed', null);
+                } catch (err) {
+                  showToast('Remove failed', 'error');
+                  await openNoticeModal({
+                    kind: 'Error',
+                    title: 'Remove failed',
+                    message: err && err.message ? String(err.message) : String(err),
+                    danger: true,
+                  });
+                }
+              },
+            },
+          ],
+          e.clientX,
+          e.clientY,
+        );
+      });
       storeChannelCustomsEl.appendChild(btn);
     }
     storeChannelButtons = Array.from(document.querySelectorAll('[data-store-channel]'));
@@ -1691,6 +1777,8 @@
       refreshSystemUpdateStatus().catch(() => {});
       refreshSystemUpdateConfig().catch(() => {});
       refreshSystemUpdateCheck().catch(() => {});
+      refreshMqttConfig().catch(() => {});
+      refreshDiscordConfig().catch(() => {});
       renderWidgetSettings();
     }
 
@@ -3304,6 +3392,50 @@
     try {
       window.localStorage.setItem(DESKTOP_STATE_KEY_V2, JSON.stringify(ensureDesktopStateShape(desktopState)));
     } catch {}
+    scheduleDesktopRemoteSave();
+  }
+
+  function scheduleDesktopRemoteSave() {
+    if (desktopRemoteSaveTimer) window.clearTimeout(desktopRemoteSaveTimer);
+    desktopRemoteSaveTimer = window.setTimeout(() => {
+      desktopRemoteSaveTimer = 0;
+      pushDesktopStateRemote().catch(() => {});
+    }, 700);
+  }
+
+  async function pushDesktopStateRemote() {
+    const ok = await ensureHealthy();
+    if (!ok) return;
+    await apiJsonTimeout('/api/v0/desktop/state', { method: 'POST', body: JSON.stringify({ state: ensureDesktopStateShape(desktopState) }) }, 4000);
+  }
+
+  async function refreshDesktopStateRemote() {
+    if (desktopRemoteLoaded) return;
+    const ok = await ensureHealthy();
+    if (!ok) return;
+    const res = await apiJsonTimeout('/api/v0/desktop/state', {}, 2500).catch(() => null);
+    if (!res || res.ok !== true) return;
+    if (!res.state || typeof res.state !== 'object') return;
+    const remoteState = ensureDesktopStateShape(res.state);
+    const remoteItems = remoteState.items && typeof remoteState.items === 'object' ? remoteState.items : {};
+    const localState = ensureDesktopStateShape(desktopState);
+    const localItems = localState.items && typeof localState.items === 'object' ? localState.items : {};
+    const remoteCount = Object.keys(remoteItems).length;
+    const localCount = Object.keys(localItems).length;
+
+    // If the OS has no desktop state yet but this browser does, seed the OS.
+    if (remoteCount === 0 && localCount > 0) {
+      desktopRemoteLoaded = true;
+      await pushDesktopStateRemote();
+      return;
+    }
+
+    desktopRemoteLoaded = true;
+    desktopState = remoteState;
+    try {
+      window.localStorage.setItem(DESKTOP_STATE_KEY_V2, JSON.stringify(desktopState));
+    } catch {}
+    renderDesktop();
   }
 
   function desktopItemEntries() {
@@ -5115,14 +5247,20 @@
       if (!res || res.ok !== true) return;
       const raw = res.custom && typeof res.custom === 'object' ? res.custom : {};
       const out = [];
-      for (const slot of CUSTOM_STORE_SLOTS) {
-        const entry = raw && typeof raw === 'object' ? raw[slot] : null;
+      for (const [slotRaw, entry] of Object.entries(raw || {})) {
+        const slot = String(slotRaw || '').trim().toLowerCase();
+        if (!slot || !slot.startsWith('custom')) continue;
         if (!entry || typeof entry !== 'object') continue;
         const url = String(entry.url || '').trim();
         if (!url) continue;
         const label = String(entry.label || '').trim();
         out.push({ slot, url, label });
       }
+      out.sort((a, b) => {
+        const al = (a.label || storeLabelFromUrl(a.url) || a.slot).toLowerCase();
+        const bl = (b.label || storeLabelFromUrl(b.url) || b.slot).toLowerCase();
+        return al.localeCompare(bl, undefined, { sensitivity: 'base' });
+      });
       storeCustomStores = out;
       renderStoreCustomButtons();
       if (!allowedStoreChannels().includes(String(activeStoreChannel || '').toLowerCase())) {
@@ -5133,15 +5271,15 @@
     } catch {}
   }
 
-  async function openCustomStoreModal() {
+  async function openCustomStoreModal(existingSlot) {
     if (!modalEl || !modalBodyEl || !modalTitleEl) return;
-    const slots = CUSTOM_STORE_SLOTS.slice();
     const existing = new Map(
       (Array.isArray(storeCustomStores) ? storeCustomStores : []).map((entry) => [String(entry.slot), entry]),
     );
-    const firstEmpty = slots.find((s) => !existing.has(s)) || slots[0];
+    const slotEditing = String(existingSlot || '').trim().toLowerCase();
+    const editing = !!(slotEditing && existing.has(slotEditing));
 
-    modalTitleEl.textContent = 'Add custom store';
+    modalTitleEl.textContent = editing ? 'Edit custom store' : 'Add custom store';
     if (modalKindEl) modalKindEl.textContent = 'App Store';
     modalBodyEl.innerHTML = '';
 
@@ -5152,22 +5290,6 @@
     hint.className = 'text-sm text-slate-300';
     hint.textContent = 'Paste a GitHub repo URL or a direct .tar.gz archive URL for an Umbrel community store.';
     wrap.appendChild(hint);
-
-    const slotLabel = document.createElement('label');
-    slotLabel.className = 'forgeos-label';
-    slotLabel.textContent = 'Store slot';
-    wrap.appendChild(slotLabel);
-
-    const slotSelect = document.createElement('select');
-    slotSelect.className = 'forgeos-input';
-    for (const slot of slots) {
-      const opt = document.createElement('option');
-      opt.value = slot;
-      opt.textContent = storeChannelLabel(slot);
-      slotSelect.appendChild(opt);
-    }
-    slotSelect.value = firstEmpty;
-    wrap.appendChild(slotSelect);
 
     const urlLabel = document.createElement('label');
     urlLabel.className = 'forgeos-label';
@@ -5192,7 +5314,7 @@
     wrap.appendChild(nameInput);
 
     const updateFields = () => {
-      const current = existing.get(String(slotSelect.value || ''));
+      const current = existing.get(slotEditing);
       urlInput.value = current && current.url ? String(current.url) : '';
       nameInput.value = current && current.label ? String(current.label) : '';
       const derived = storeLabelFromUrl(urlInput.value);
@@ -5200,7 +5322,6 @@
     };
     updateFields();
 
-    slotSelect.addEventListener('change', updateFields);
     urlInput.addEventListener('input', () => {
       const derived = storeLabelFromUrl(urlInput.value);
       nameInput.placeholder = derived || 'Custom store name';
@@ -5218,13 +5339,11 @@
     const btnSave = document.createElement('button');
     btnSave.type = 'button';
     btnSave.className = 'axe-btn';
-    btnSave.textContent = 'Save';
+    btnSave.textContent = editing ? 'Save' : 'Add store';
     btnSave.addEventListener('click', async () => {
-      const slot = String(slotSelect.value || '').trim().toLowerCase();
       const url = String(urlInput.value || '').trim();
       const label = String(nameInput.value || '').trim();
-      if (!slot) return;
-      const hasExisting = existing.has(slot);
+      const hasExisting = editing;
       if (!url) {
         if (!hasExisting) {
           showToast('Enter a store URL', 'warn');
@@ -5232,7 +5351,7 @@
         }
         const ok = await openConfirmModal({
           title: 'Remove custom store?',
-          message: `Remove ${storeChannelLabel(slot)}?`,
+          message: `Remove ${storeChannelLabel(slotEditing)}?`,
           confirmText: 'Remove',
           cancelText: 'Cancel',
           danger: true,
@@ -5247,6 +5366,13 @@
       const prev = btnSave.textContent;
       btnSave.textContent = 'Saving...';
       try {
+        const slot = editing
+          ? slotEditing
+          : deriveCustomStoreSlot(
+              url,
+              label,
+              (Array.isArray(storeCustomStores) ? storeCustomStores : []).map((e) => e.slot),
+            );
         const res = await apiJsonTimeout(
           '/api/v0/store/config',
           { method: 'POST', body: JSON.stringify({ slot, url, label }) },
@@ -5474,7 +5600,14 @@
     const ok = await ensureHealthy();
     if (!ok) return;
 
-    await Promise.allSettled([refreshInstalled(), refreshStore(), refreshMetrics(), refreshWidgets(), refreshFleet()]);
+    await Promise.allSettled([
+      refreshDesktopStateRemote(),
+      refreshInstalled(),
+      refreshStore(),
+      refreshMetrics(),
+      refreshWidgets(),
+      refreshFleet(),
+    ]);
   }
 
   function openInstalledAppMenu(app, x, y) {
