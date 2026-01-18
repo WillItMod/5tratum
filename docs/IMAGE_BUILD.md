@@ -19,7 +19,9 @@ On first boot, the image will auto-expand the root filesystem (ext4) to fill the
   - `/opt/5tratumos/apps/*`
 - Remove machine-specific secrets you don’t want to ship (SSH host keys, etc.).
 - Ensure `/etc/5tratumos/*.json` contains only defaults (no tokens).
-- Set the default web UI password (currently: `password123`) and/or plan to force a change on first boot.
+- Reset web UI login so first boot prompts for setup:
+  - Remove `/etc/5tratumos/auth.json`
+  - `systemctl restart 5tratumosd`
 - Bake in the update signing public key at `/etc/5tratumos/update_signing.pub` (optional but recommended).
 
 ## Performance tuning (recommended, safe defaults)

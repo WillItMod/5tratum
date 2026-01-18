@@ -1266,6 +1266,26 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y));
 }
 
+.forgeos-desktop-topbar__tagline {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: rgba(226, 232, 240, 0.92);
+  opacity: 0.9;
+  padding: 0 8px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 900px) {
   :root {
     --forgeos-topbar-logo-width: 230px;
@@ -1393,6 +1413,10 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   .forgeos-desktop-topbar__metrics {
     flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  .forgeos-desktop-topbar__tagline {
+    display: none;
   }
 }
 
