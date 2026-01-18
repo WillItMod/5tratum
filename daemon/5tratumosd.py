@@ -2262,7 +2262,10 @@ def system_update_apply(channel: str | None = None) -> dict:
                 cur_daemon = Path(ROOT_DIR) / "daemon"
                 cur_systemd = Path("/etc/systemd/system")
 
-                daemon_changed = stage_daemon.is_dir() and _tree_digest(str(stage_daemon)) != _tree_digest(str(cur_daemon))
+                # Always restart the daemon after applying a bundle that contains daemon files.
+                # This guarantees new Python code is actually loaded (even if the file contents
+                # were already present on disk) and keeps update UX consistent.
+                daemon_changed = stage_daemon.is_dir()
                 overlay_cfg_changed = False
                 if stage_overlay.is_dir():
                     stage_cfg = hashlib.sha256()
