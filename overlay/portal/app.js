@@ -350,6 +350,34 @@
     } catch {}
   }
 
+  function loadNotifyCache(kind) {
+    try {
+      const raw = String(window.localStorage.getItem(`notify.${kind}.config`) || '').trim();
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function setMqttInputsEnabled(enabled) {
+    const on = !!enabled;
+    if (mqttPrefixInput) mqttPrefixInput.disabled = !on;
+    if (mqttAppsEl) mqttAppsEl.querySelectorAll('input[type="checkbox"]').forEach((el) => (el.disabled = !on));
+    if (mqttEventStatusInput) mqttEventStatusInput.disabled = !on;
+    if (mqttEventHashrateInput) mqttEventHashrateInput.disabled = !on;
+    if (mqttEventWorkersInput) mqttEventWorkersInput.disabled = !on;
+    if (mqttEventBlockInput) mqttEventBlockInput.disabled = !on;
+  }
+
+  function saveNotifyCache(kind, cfg) {
+    if (!cfg || typeof cfg !== 'object') return;
+    try {
+      window.localStorage.setItem(`notify.${kind}.config`, JSON.stringify(cfg));
+    } catch {}
+  }
+
   function setAutoLockUi(minutes, statusText) {
     if (autoLockMinutesInput) autoLockMinutesInput.value = String(Math.max(0, Math.round(Number(minutes) || 0)));
     if (autoLockStatusEl) autoLockStatusEl.textContent = statusText || '-';
@@ -440,7 +468,9 @@
       if (mqttUnavailableEl) mqttUnavailableEl.classList.toggle('hidden', available);
       if (mqttConfigEl) mqttConfigEl.classList.remove('hidden');
       const cfg = res.config || {};
+      saveNotifyCache('mqtt', cfg);
       if (mqttEnabledInput) mqttEnabledInput.checked = !!cfg.enabled;
+      setMqttInputsEnabled(!!cfg.enabled);
       if (mqttPrefixInput) mqttPrefixInput.value = String(cfg.prefix || '5tratumos');
       const apps = Array.isArray(res.apps) ? res.apps : [];
       const selected = new Set(
@@ -454,6 +484,18 @@
       if (mqttEventBlockInput) mqttEventBlockInput.checked = !!events.block_found;
       if (mqttStatusEl) mqttStatusEl.textContent = available ? 'Loaded.' : 'Mosquitto will be installed on save.';
     } catch (e) {
+      const cached = loadNotifyCache('mqtt');
+      if (cached) {
+        if (mqttEnabledInput) mqttEnabledInput.checked = !!cached.enabled;
+        setMqttInputsEnabled(!!cached.enabled);
+        if (mqttPrefixInput) mqttPrefixInput.value = String(cached.prefix || '5tratumos');
+        if (mqttEventStatusInput) mqttEventStatusInput.checked = !!cached.events?.status_change;
+        if (mqttEventHashrateInput) mqttEventHashrateInput.checked = !!cached.events?.hashrate_drop;
+        if (mqttEventWorkersInput) mqttEventWorkersInput.checked = !!cached.events?.worker_offline;
+        if (mqttEventBlockInput) mqttEventBlockInput.checked = !!cached.events?.block_found;
+        if (mqttStatusEl) mqttStatusEl.textContent = 'Cached.';
+        return;
+      }
       if (mqttStatusEl) mqttStatusEl.textContent = 'Load failed.';
     }
   }
@@ -476,6 +518,7 @@
       };
       const res = await apiJsonTimeout('/api/v0/system/mqtt/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      saveNotifyCache('mqtt', body);
       showToast('MQTT settings saved', null);
       await refreshMqttConfig();
       if (mqttStatusEl) mqttStatusEl.textContent = 'Saved.';
@@ -495,6 +538,7 @@
       const res = await apiJsonTimeout('/api/v0/system/discord/config', {}, 5000).catch(() => null);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
       const cfg = res.config || {};
+      saveNotifyCache('discord', cfg);
       if (discordEnabledInput) discordEnabledInput.checked = !!cfg.enabled;
       if (discordWebhookInput) discordWebhookInput.value = String(cfg.webhook || '');
       if (discordHashrateInput) discordHashrateInput.value = String(cfg.hashrate_drop_pct || 50);
@@ -513,6 +557,22 @@
       if (discordEventRestartInput) discordEventRestartInput.checked = !!events.restart;
       if (discordStatusEl) discordStatusEl.textContent = 'Loaded.';
     } catch (e) {
+      const cached = loadNotifyCache('discord');
+      if (cached) {
+        if (discordEnabledInput) discordEnabledInput.checked = !!cached.enabled;
+        if (discordWebhookInput) discordWebhookInput.value = String(cached.webhook || '');
+        if (discordHashrateInput) discordHashrateInput.value = String(cached.hashrate_drop_pct || 50);
+        const events = cached.events || {};
+        if (discordEventStatusInput) discordEventStatusInput.checked = !!events.status_change;
+        if (discordEventHashrateInput) discordEventHashrateInput.checked = !!events.hashrate_drop;
+        if (discordEventWorkersInput) discordEventWorkersInput.checked = !!events.worker_offline;
+        if (discordEventBlockInput) discordEventBlockInput.checked = !!events.block_found;
+        if (discordEventUpdateSuccessInput) discordEventUpdateSuccessInput.checked = !!events.update_success;
+        if (discordEventUpdateFailureInput) discordEventUpdateFailureInput.checked = !!events.update_failure;
+        if (discordEventRestartInput) discordEventRestartInput.checked = !!events.restart;
+        if (discordStatusEl) discordStatusEl.textContent = 'Cached.';
+        return;
+      }
       if (discordStatusEl) discordStatusEl.textContent = 'Load failed.';
     }
   }
@@ -539,6 +599,7 @@
       };
       const res = await apiJsonTimeout('/api/v0/system/discord/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      saveNotifyCache('discord', body);
       showToast('Discord settings saved', null);
       await refreshDiscordConfig();
       if (discordStatusEl) discordStatusEl.textContent = 'Saved.';
@@ -7628,6 +7689,10 @@
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
+  mqttEnabledInput?.addEventListener('change', () => {
+    setMqttInputsEnabled(!!(mqttEnabledInput && mqttEnabledInput.checked));
+    saveMqttConfig().catch(() => {});
+  });
   btnAuthUpdate?.addEventListener('click', async () => {
     if (!authUsernameInput || !authPasswordInput) return;
     const username = String(authUsernameInput.value || '').trim();
