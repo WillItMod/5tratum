@@ -1414,14 +1414,13 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
     flex-wrap: wrap;
     justify-content: flex-start;
   }
-
-  .forgeos-desktop-topbar__tagline {
-    display: none;
-  }
 }
 
 @media (max-width: 980px) {
   .forgeos-desktop-topbar__brand {
+    display: none;
+  }
+  .forgeos-desktop-topbar__tagline {
     display: none;
   }
   .forgeos-desktop-topbar__metrics {
