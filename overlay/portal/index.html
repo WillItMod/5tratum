@@ -655,6 +655,26 @@
                   <div id="update-auth-status" class="forgeos-muted mt-2">-</div>
                 </div>
 
+                <div class="mt-4 forgeos-form">
+                  <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:items-end">
+                    <div>
+                      <label class="forgeos-label" for="update-check-interval">Check frequency</label>
+                      <select id="update-check-interval" class="forgeos-input">
+                        <option value="3600">Hourly</option>
+                        <option value="21600">Every 6 hours</option>
+                        <option value="86400">Daily</option>
+                        <option value="2592000">Monthly</option>
+                      </select>
+                    </div>
+                    <div class="sm:col-span-2">
+                      <label class="forgeos-toggle mt-6" title="Automatically apply updates when found (will restart services)">
+                        <input id="update-auto-apply" type="checkbox" />
+                        <span>Auto update + restart</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="mt-4">
                   <div id="update-status" class="forgeos-muted">-</div>
                   <div id="update-progress" class="forgeos-progress hidden mt-2" aria-hidden="true">

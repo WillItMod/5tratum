@@ -121,6 +121,8 @@
   const updateRepoInput = document.getElementById('update-repo');
   const updateTokenInput = document.getElementById('update-token');
   const updateAuthStatusEl = document.getElementById('update-auth-status');
+  const updateCheckIntervalSelect = document.getElementById('update-check-interval');
+  const updateAutoApplyInput = document.getElementById('update-auto-apply');
   const authUsernameInput = document.getElementById('setting-username');
   const authPasswordInput = document.getElementById('setting-password');
   const btnAuthUpdate = document.getElementById('btn-auth-update');
@@ -228,6 +230,7 @@
     let systemUpdateCheckAt = 0;
     let systemUpdatePollTimer = null;
     let systemUpdatePollInFlight = false;
+    let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
     let splashTokenSeq = 0;
     const splashTokens = new Map();
@@ -2026,6 +2029,85 @@
       document.body.style.overflow = 'hidden';
       const first = actions.querySelector('button');
       if (first) window.setTimeout(() => first.focus(), 20);
+    });
+  }
+
+  function openUpdateAvailableModal(tag, notes) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve(null);
+    const version = String(tag || '').trim();
+    const bodyText = String(notes || '').trim();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      modalOnClose = () => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      };
+
+      if (modalKindEl) modalKindEl.textContent = 'Update';
+      modalTitleEl.textContent = version ? `Update available: ${version}` : 'Update available';
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const img = document.createElement('img');
+      img.src = APP_LAUNCH_SPLASH_SRC;
+      img.alt = 'Update available';
+      img.style.width = '220px';
+      img.style.height = 'auto';
+      img.style.margin = '0 auto';
+      img.style.display = 'block';
+      img.style.borderRadius = '16px';
+      img.style.border = '1px solid rgba(255,255,255,0.08)';
+      wrap.appendChild(img);
+
+      const p = document.createElement('div');
+      p.className = 'text-sm text-slate-200 whitespace-pre-wrap';
+      p.textContent = `An OS update is ready to install.\n\nChoose Install to apply now, or Dismiss to hide this prompt until the next release.`;
+      wrap.appendChild(p);
+
+      if (bodyText) {
+        const notesEl = document.createElement('div');
+        notesEl.className = 'text-xs text-slate-300 whitespace-pre-wrap';
+        notesEl.textContent = bodyText;
+        wrap.appendChild(notesEl);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2 flex-wrap';
+
+      const btnDismiss = document.createElement('button');
+      btnDismiss.type = 'button';
+      btnDismiss.className = 'axe-btn';
+      btnDismiss.textContent = 'Dismiss';
+      btnDismiss.addEventListener('click', () => {
+        settled = true;
+        resolve('dismiss');
+        closeModal();
+      });
+
+      const btnInstall = document.createElement('button');
+      btnInstall.type = 'button';
+      btnInstall.className = 'axe-btn forgeos-btn--danger';
+      btnInstall.textContent = 'Install update';
+      btnInstall.addEventListener('click', () => {
+        settled = true;
+        resolve('install');
+        closeModal();
+      });
+
+      actions.appendChild(btnDismiss);
+      actions.appendChild(btnInstall);
+      wrap.appendChild(actions);
+
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      window.setTimeout(() => btnInstall.focus(), 20);
     });
   }
 
@@ -4874,6 +4956,9 @@
       if (!res || res.ok !== true) return;
       systemUpdateConfigCache = res;
       if (updateRepoInput && res.repo) updateRepoInput.value = String(res.repo);
+      if (updateCheckIntervalSelect && res.check_interval_s) updateCheckIntervalSelect.value = String(res.check_interval_s);
+      if (updateAutoApplyInput) updateAutoApplyInput.checked = !!res.auto_apply;
+      startSystemUpdateAutoCheck(Number(res.check_interval_s) || 3600);
 
       if (updateAuthStatusEl) {
         const tokenConfigured = !!res.token_configured;
@@ -4890,6 +4975,18 @@
         updateTokenInput.setAttribute('aria-label', res.token_configured ? 'GitHub token saved' : 'GitHub token');
       }
     } catch {}
+  }
+
+  function stopSystemUpdateAutoCheck() {
+    if (!systemUpdateAutoCheckTimer) return;
+    window.clearInterval(systemUpdateAutoCheckTimer);
+    systemUpdateAutoCheckTimer = null;
+  }
+
+  function startSystemUpdateAutoCheck(intervalS) {
+    const seconds = Math.max(60, Number(intervalS) || 3600);
+    stopSystemUpdateAutoCheck();
+    systemUpdateAutoCheckTimer = window.setInterval(() => refreshSystemUpdateCheck().catch(() => {}), seconds * 1000);
   }
 
   async function refreshAuthSettings() {
@@ -5064,6 +5161,8 @@
       updateProgressEl.setAttribute('aria-hidden', show ? 'false' : 'true');
       updateProgressBarEl.style.width = `${systemUpdateProgressPct(state)}%`;
     }
+
+    maybePromptSystemUpdateAvailable(check, status).catch(() => {});
   }
 
   function stopSystemUpdatePoll() {
@@ -5150,6 +5249,38 @@
     }
   }
 
+  let updateAvailableModalShownFor = '';
+  async function maybePromptSystemUpdateAvailable(check, status) {
+    const st = status && typeof status === 'object' ? status : null;
+    const state = st && st.state ? String(st.state).trim().toLowerCase() : 'idle';
+    if (systemUpdateIsBusy(state)) return;
+
+    const c = check && typeof check === 'object' ? check : null;
+    if (!c || c.ok !== true) return;
+    if (c.notify_available !== true) return;
+
+    const tag = c.available && typeof c.available === 'object' && c.available.tag ? String(c.available.tag) : '';
+    if (!tag) return;
+    if (updateAvailableModalShownFor === tag) return;
+    updateAvailableModalShownFor = tag;
+
+    const notes = c.available && typeof c.available === 'object' && c.available.notes ? String(c.available.notes) : '';
+    const choice = await openUpdateAvailableModal(tag, notes);
+
+    if (choice === 'install') {
+      await applySystemUpdate();
+      return;
+    }
+
+    if (choice === 'dismiss') {
+      try {
+        await apiJsonTimeout('/api/v0/system/update/config', { method: 'POST', body: JSON.stringify({ dismissed_tag: tag }) }, 6000);
+        await refreshSystemUpdateConfig();
+        await refreshSystemUpdateCheck({ force: true });
+      } catch {}
+    }
+  }
+
   async function saveSystemUpdateConfig() {
     if (!btnUpdateSave) return;
     const token = updateTokenInput ? String(updateTokenInput.value || '').trim() : '';
@@ -5161,10 +5292,8 @@
 
     try {
       const body = {};
-      if (updateRepoInput) {
-        const repo = String(updateRepoInput.value || '').trim();
-        if (repo) body.repo = repo;
-      }
+      if (updateCheckIntervalSelect) body.check_interval_s = Number(updateCheckIntervalSelect.value) || 3600;
+      if (updateAutoApplyInput) body.auto_apply = !!updateAutoApplyInput.checked;
       if (token) body.token = token;
       const res = await apiJsonTimeout('/api/v0/system/update/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
       if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
@@ -8286,5 +8415,5 @@
   }, 10000);
   window.setInterval(() => refreshInstalled().catch(() => {}), 30000);
   window.setInterval(() => syncStoreBackground().catch(() => {}), STORE_AUTO_SYNC_INTERVAL_MS);
-  window.setInterval(() => refreshSystemUpdateCheck().catch(() => {}), 3600000);
+  startSystemUpdateAutoCheck(3600);
 })();

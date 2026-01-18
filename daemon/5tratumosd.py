@@ -321,6 +321,36 @@ def _read_update_config() -> dict:
     return cfg if isinstance(cfg, dict) else {}
 
 
+def _normalize_update_check_interval_s(v: object) -> int:
+    raw = str(v or "").strip()
+    if not raw:
+        return 3600
+    try:
+        n = int(float(raw))
+    except Exception:
+        return 3600
+    # Allowed presets: hourly / 6-hourly / daily / monthly
+    allowed = {3600, 6 * 3600, 24 * 3600, 30 * 24 * 3600}
+    if n in allowed:
+        return n
+    # nearest
+    return min(allowed, key=lambda x: abs(x - n))
+
+
+def _update_config_effective() -> dict:
+    cfg = _read_update_config()
+    if not isinstance(cfg, dict):
+        cfg = {}
+    out = dict(cfg)
+    out.setdefault("check_interval_s", 3600)
+    out.setdefault("auto_apply", False)
+    out.setdefault("dismissed_tag", "")
+    out["check_interval_s"] = _normalize_update_check_interval_s(out.get("check_interval_s"))
+    out["auto_apply"] = bool(out.get("auto_apply"))
+    out["dismissed_tag"] = str(out.get("dismissed_tag") or "").strip()
+    return out
+
+
 def _write_update_config(cfg: dict) -> None:
     _write_json_atomic(UPDATE_CONFIG_FILE, cfg)
     try:
@@ -1079,6 +1109,9 @@ def _notify_loop() -> None:
 
 
 _UPDATE_LOCK = threading.Lock()
+_UPDATE_CHECK_WAKE = threading.Event()
+_UPDATE_CHECK_CACHE_LOCK = threading.Lock()
+_UPDATE_CHECK_CACHE: dict[str, object] = {"checked_at": 0.0, "channel": "", "res": None}
 _UPDATE_STATUS_PATH = os.path.join(STATE_DIR, "update", "status.json")
 _UPDATE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
@@ -1310,7 +1343,7 @@ def _parse_sha256(text: str, bundle_name: str) -> str:
 
 
 def system_update_config_get() -> dict:
-    cfg = _read_update_config()
+    cfg = _update_config_effective()
     tok_cfg = str(cfg.get("token") or cfg.get("github_token") or "").strip()
     tok_env = str(UPDATE_TOKEN_ENV or "").strip()
     token_present = bool(tok_cfg or tok_env)
@@ -1321,6 +1354,9 @@ def system_update_config_get() -> dict:
         "repo_source": "fixed",
         "token_configured": token_present,
         "token_source": "config" if tok_cfg else ("env" if tok_env else "none"),
+        "check_interval_s": int(cfg.get("check_interval_s") or 3600),
+        "auto_apply": bool(cfg.get("auto_apply")),
+        "dismissed_tag": str(cfg.get("dismissed_tag") or ""),
         "allow_unverified": bool(UPDATE_ALLOW_UNVERIFIED),
         "sig_required": bool(UPDATE_REQUIRE_SIG),
         "sig_pubkey_present": pubkey_present,
@@ -1331,7 +1367,7 @@ def system_update_config_set(body: dict) -> dict:
     if not isinstance(body, dict):
         return {"ok": False, "error": "invalid body"}
 
-    cfg = _read_update_config()
+    cfg = _update_config_effective()
 
     cfg.pop("repo", None)
 
@@ -1343,8 +1379,83 @@ def system_update_config_set(body: dict) -> dict:
         else:
             cfg["token"] = token
 
+    if "check_interval_s" in body or "check_interval" in body:
+        cfg["check_interval_s"] = _normalize_update_check_interval_s(body.get("check_interval_s") or body.get("check_interval"))
+
+    if "auto_apply" in body or "auto_update" in body:
+        cfg["auto_apply"] = bool(body.get("auto_apply") if "auto_apply" in body else body.get("auto_update"))
+
+    if "dismissed_tag" in body:
+        cfg["dismissed_tag"] = str(body.get("dismissed_tag") or "").strip()
+
     _write_update_config(cfg)
+    try:
+        _UPDATE_CHECK_WAKE.set()
+    except Exception:
+        pass
     return {**system_update_config_get(), "saved": True}
+
+
+def system_update_check_cached(channel: str | None = None, *, force: bool = False) -> dict:
+    ch = (channel or read_default_channel() or "main").strip().lower() or "main"
+    now = time.time()
+
+    if not force:
+        try:
+            with _UPDATE_CHECK_CACHE_LOCK:
+                cached_at = float(_UPDATE_CHECK_CACHE.get("checked_at") or 0.0)
+                cached_ch = str(_UPDATE_CHECK_CACHE.get("channel") or "")
+                cached_res = _UPDATE_CHECK_CACHE.get("res")
+            if cached_res and cached_ch == ch and (now - cached_at) < 30:
+                return cached_res  # type: ignore[return-value]
+        except Exception:
+            pass
+
+    res = system_update_check(ch)
+    try:
+        with _UPDATE_CHECK_CACHE_LOCK:
+            _UPDATE_CHECK_CACHE["checked_at"] = now
+            _UPDATE_CHECK_CACHE["channel"] = ch
+            _UPDATE_CHECK_CACHE["res"] = res
+    except Exception:
+        pass
+    return res
+
+
+def _system_update_check_loop() -> None:
+    next_check_at = 0.0
+    while True:
+        try:
+            cfg = _update_config_effective()
+            interval_s = int(cfg.get("check_interval_s") or 3600)
+            interval_s = max(300, interval_s)  # avoid tight loops
+
+            if next_check_at <= 0:
+                next_check_at = time.time() + 10
+
+            wait_s = max(1.0, next_check_at - time.time())
+            woke = False
+            try:
+                woke = _UPDATE_CHECK_WAKE.wait(timeout=wait_s)
+            finally:
+                _UPDATE_CHECK_WAKE.clear()
+
+            if woke:
+                next_check_at = 0.0
+                continue
+
+            channel = read_default_channel() or "main"
+            check = system_update_check_cached(channel, force=True)
+
+            if bool(cfg.get("auto_apply")) and bool(check.get("update_available")) and bool(check.get("notify_available")):
+                try:
+                    system_update_apply(channel)
+                except Exception:
+                    pass
+
+            next_check_at = time.time() + interval_s
+        except Exception:
+            time.sleep(30)
 
 
 def system_update_check(channel: str | None = None) -> dict:
@@ -1352,6 +1463,8 @@ def system_update_check(channel: str | None = None) -> dict:
     sel = _select_release(ch)
     build = read_build_info()
     installed_tag = str(build.get("tag") or build.get("version") or "unknown").strip() or "unknown"
+    cfg = _update_config_effective()
+    dismissed_tag = str(cfg.get("dismissed_tag") or "").strip()
     if not sel.get("ok"):
         return {
             "ok": True,
@@ -1359,6 +1472,8 @@ def system_update_check(channel: str | None = None) -> dict:
             "installed": {"tag": installed_tag},
             "available": None,
             "update_available": False,
+            "notify_available": False,
+            "dismissed_tag": dismissed_tag,
             "error": sel.get("error") or "",
         }
 
@@ -1413,6 +1528,7 @@ def system_update_check(channel: str | None = None) -> dict:
     update_available = bool(tag and tag != installed_tag and verifiable)
     sig_required = bool(UPDATE_REQUIRE_SIG or _read_update_pubkey())
     sig_available = bool(sig_url)
+    notify_available = bool(update_available and tag and tag != dismissed_tag)
     return {
         "ok": True,
         "channel": ch,
@@ -1428,6 +1544,8 @@ def system_update_check(channel: str | None = None) -> dict:
             "signature_available": sig_available,
         },
         "update_available": bool(update_available),
+        "notify_available": bool(notify_available),
+        "dismissed_tag": dismissed_tag,
         "unverified_allowed": bool(UPDATE_ALLOW_UNVERIFIED),
     }
 
@@ -4029,7 +4147,10 @@ class Handler(BaseHTTPRequestHandler):
             channel = None
             if "channel" in qs and qs["channel"]:
                 channel = qs["channel"][0]
-            json_response(self, HTTPStatus.OK, system_update_check(channel))
+            force = False
+            if "force" in qs and qs["force"]:
+                force = str(qs["force"][0] or "").strip().lower() in {"1", "true", "yes", "y"}
+            json_response(self, HTTPStatus.OK, system_update_check_cached(channel, force=force))
             return
 
         if path == "/api/v0/system/update/config":
@@ -4494,6 +4615,7 @@ def main() -> int:
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
     threading.Thread(target=_notify_loop, daemon=True).start()
+    threading.Thread(target=_system_update_check_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

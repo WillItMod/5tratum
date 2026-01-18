@@ -23,7 +23,8 @@ function Deploy-Portal {
   if ($IdentityFile) {
     $id = "-i `"$IdentityFile`""
   }
-  $cmd = "tar -cf - -C `"$src`" . | ssh $id $RemoteUser@$RemoteHost `"sudo /bin/mkdir -p '/opt/5tratumos/overlay/portal' && sudo tar -xf - -C '/opt/5tratumos/overlay/portal' && sudo /bin/systemctl restart 5tratumos-overlay.service`""
+  $ssh = "ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new $id $RemoteUser@$RemoteHost"
+  $cmd = "tar -cf - -C `"$src`" . | $ssh `"sudo -n /bin/mkdir -p '/opt/5tratumos/overlay/portal' && sudo -n tar -xf - -C '/opt/5tratumos/overlay/portal' && sudo -n /bin/systemctl restart 5tratumos-overlay.service`""
   Invoke-CommandChecked $cmd
 }
 
@@ -33,7 +34,8 @@ function Deploy-Daemon {
   if ($IdentityFile) {
     $id = "-i `"$IdentityFile`""
   }
-  $cmd = "tar -cf - -C `"$src`" 5tratumosd.py | ssh $id $RemoteUser@$RemoteHost `"sudo /bin/mkdir -p '/opt/5tratumos/daemon' && sudo tar -xf - -C '/opt/5tratumos/daemon' && sudo /bin/systemctl restart 5tratumosd`""
+  $ssh = "ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new $id $RemoteUser@$RemoteHost"
+  $cmd = "tar -cf - -C `"$src`" 5tratumosd.py | $ssh `"sudo -n /bin/mkdir -p '/opt/5tratumos/daemon' && sudo -n tar -xf - -C '/opt/5tratumos/daemon' && sudo -n /bin/systemctl restart 5tratumosd`""
   Invoke-CommandChecked $cmd
 }
 
