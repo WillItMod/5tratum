@@ -8056,18 +8056,26 @@
               confirmText: 'Rollback',
               cancelText: 'Cancel',
               danger: true,
-            });
+          });
             if (!okConfirm) return;
             btnRollback.disabled = true;
-            const splashToken = showGlobalSplash({ title: `Rolling back ${label}`, sub: 'Restoring previous version...' });
+            startProgress(id, 'rollback');
+            const splashToken = showGlobalSplash({
+              title: `Rolling back ${label}`,
+              sub: 'Restoring previous version...',
+              showProgress: true,
+              progress: 1,
+            });
             try {
               await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/rollback`, {
                 method: 'POST',
                 body: JSON.stringify({ version: v }),
               });
               await refresh();
+              finishProgress(id);
               showToast('Rollback complete', null);
             } catch (err) {
+              cancelProgress(id);
               await openNoticeModal({
                 kind: 'Error',
                 title: 'Rollback failed',
@@ -8094,25 +8102,44 @@
       btnUninstall.textContent = 'Uninstall';
       btnUninstall.addEventListener('click', async () => {
         const label = meta.name || id;
-        const okConfirm = await openConfirmModal({
-          title: `Uninstall ${label}?`,
-          message: 'Containers will be removed. App data will be kept.',
-          confirmText: 'Uninstall',
-          cancelText: 'Cancel',
-          danger: true,
+        const pick = await openChoiceModal({
+          title: `Uninstall ${label}`,
+          message:
+            'Choose how to uninstall:\n\n' +
+            'Keep data: removes containers, keeps app data (recommended).\n' +
+            'Purge data: removes containers and deletes the app data folder (irreversible).',
+          kind: 'System',
+          choices: [
+            { label: 'Keep data', value: 'keep' },
+            { label: 'Purge data', value: 'purge', danger: true },
+            { label: 'Cancel', value: 'cancel' },
+          ],
         });
-        if (!okConfirm) return;
+        if (!pick || pick === 'cancel') return;
+
+        const purge = pick === 'purge';
         btnUninstall.disabled = true;
         const prev = btnUninstall.textContent;
       btnUninstall.textContent = 'Uninstalling...';
-        const splashToken = showGlobalSplash({ title: `Uninstalling ${label}`, sub: 'Removing containers...' });
+        startProgress(id, 'uninstall');
+        const splashToken = showGlobalSplash({
+          title: `Uninstalling ${label}`,
+          sub: purge ? 'Removing containers + deleting data...' : 'Removing containers...',
+          showProgress: true,
+          progress: 1,
+        });
         try {
           openAppIds = openAppIds.filter((x) => x !== id);
           saveOpenApps();
-          await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/uninstall`, { method: 'POST', body: '{}' });
+          await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/uninstall`, {
+            method: 'POST',
+            body: JSON.stringify({ purge }),
+          });
           await refresh();
+          finishProgress(id);
           closeModal();
         } catch (err) {
+          cancelProgress(id);
           await openNoticeModal({
             kind: 'Error',
             title: 'Uninstall failed',

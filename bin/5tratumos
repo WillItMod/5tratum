@@ -660,6 +660,17 @@ services = compose.get("services") or {}
 if not isinstance(services, dict):
     services = {}
 
+def normalize_restart_policy(service_name: str, svc: object) -> None:
+    if not isinstance(svc, dict):
+        return
+    name = str(service_name or "").strip().lower()
+    if name == "init":
+        return
+    raw = svc.get("restart")
+    rp = str(raw or "").strip().lower()
+    if not rp or rp.startswith("on-failure"):
+        svc["restart"] = "unless-stopped"
+
 def env_to_dict(env):
     if isinstance(env, dict):
         out = {}
@@ -742,6 +753,11 @@ for _name, _svc in list(services.items()):
             _svc["depends_on"] = deps
         else:
             _svc.pop("depends_on", None)
+    services[_name] = _svc
+
+# Ensure services are resilient across reboots.
+for _name, _svc in list(services.items()):
+    normalize_restart_policy(_name, _svc)
     services[_name] = _svc
 
 def find_ui_service(services, host):
@@ -1147,6 +1163,17 @@ services = compose.get("services") or {}
 if not isinstance(services, dict):
     services = {}
 
+def normalize_restart_policy(service_name: str, svc: object) -> None:
+    if not isinstance(svc, dict):
+        return
+    name = str(service_name or "").strip().lower()
+    if name == "init":
+        return
+    raw = svc.get("restart")
+    rp = str(raw or "").strip().lower()
+    if not rp or rp.startswith("on-failure"):
+        svc["restart"] = "unless-stopped"
+
 def env_to_dict(env):
     if isinstance(env, dict):
         out = {}
@@ -1229,6 +1256,11 @@ for _name, _svc in list(services.items()):
             _svc["depends_on"] = deps
         else:
             _svc.pop("depends_on", None)
+    services[_name] = _svc
+
+# Ensure services are resilient across reboots.
+for _name, _svc in list(services.items()):
+    normalize_restart_policy(_name, _svc)
     services[_name] = _svc
 
 def find_ui_service(services, host):
