@@ -1,94 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-die() {
-  echo "error: $*" >&2
-  exit 1
-}
-
-have() { command -v "$1" >/dev/null 2>&1; }
-
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DIST_DIR="${ROOT_DIR}/dist"
 
 BUNDLE_NAME="${BUNDLE_NAME:-5tratumos-update.tgz}"
-OUT_DIR="${OUT_DIR:-${ROOT}/dist}"
 SIGNING_KEY="${SIGNING_KEY:-}"
 
-usage() {
-  cat <<EOF
-build-update-bundle.sh: package a 5tratumOS update bundle for GitHub Releases
+mkdir -p "${DIST_DIR}"
 
-Usage:
-  ./scripts/build-update-bundle.sh [--out <dir>] [--name <bundle.tgz>]
+tmp="$(mktemp -d)"
+cleanup() { rm -rf "${tmp}"; }
+trap cleanup EXIT
 
-Env:
-  OUT_DIR=<dir>        Output directory (default: ./dist)
-  BUNDLE_NAME=<file>   Bundle filename (default: 5tratumos-update.tgz)
-EOF
-}
+cd "${ROOT_DIR}"
 
-while [ $# -gt 0 ]; do
-  case "${1}" in
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --out)
-      OUT_DIR="${2:-}"
-      [ -n "${OUT_DIR}" ] || die "--out requires a value"
-      shift 2
-      ;;
-    --name)
-      BUNDLE_NAME="${2:-}"
-      [ -n "${BUNDLE_NAME}" ] || die "--name requires a value"
-      shift 2
-      ;;
-    *)
-      die "unknown arg: ${1}"
-      ;;
-  esac
-done
+# Stage only what the daemon update applier knows how to deploy.
+mkdir -p "${tmp}/overlay" "${tmp}/daemon" "${tmp}/systemd" "${tmp}/bin" "${tmp}/console"
 
-have tar || die "tar not found"
-have sha256sum || die "sha256sum not found"
+cp -a "${ROOT_DIR}/overlay" "${tmp}/overlay/"
+cp -a "${ROOT_DIR}/daemon" "${tmp}/daemon/"
+cp -a "${ROOT_DIR}/systemd" "${tmp}/systemd/"
+cp -a "${ROOT_DIR}/bin/5tratumos" "${tmp}/bin/5tratumos"
+if [ -d "${ROOT_DIR}/console" ]; then
+  cp -a "${ROOT_DIR}/console/." "${tmp}/console/"
+fi
 
-mkdir -p "${OUT_DIR}"
-
-bundle_path="${OUT_DIR}/${BUNDLE_NAME}"
+bundle_path="${DIST_DIR}/${BUNDLE_NAME}"
 sha_path="${bundle_path}.sha256"
 sig_path="${bundle_path}.sig"
 
-echo "Packaging update bundle..."
-echo "  root: ${ROOT}"
-echo "  out:  ${bundle_path}"
+# Deterministic tar where possible.
+tar \
+  --sort=name \
+  --mtime='UTC 2020-01-01' \
+  --owner=0 --group=0 --numeric-owner \
+  -czf "${bundle_path}" \
+  -C "${tmp}" \
+  overlay daemon systemd bin console
 
-rm -f "${bundle_path}" "${sha_path}"
-rm -f "${sig_path}"
-
-(
-  cd "${ROOT}"
-  tar -czf "${bundle_path}" \
-    overlay \
-    daemon \
-    systemd \
-    bin/5tratumos \
-    apps-available \
-    console
-)
-
-(
-  cd "${OUT_DIR}"
-  sha256sum "${BUNDLE_NAME}" >"$(basename "${sha_path}")"
-)
+sha256sum "${bundle_path}" | sed "s|${bundle_path}|${BUNDLE_NAME}|" > "${sha_path}"
 
 if [ -n "${SIGNING_KEY}" ]; then
-  if [ ! -f "${SIGNING_KEY}" ]; then
-    die "SIGNING_KEY was set but file not found: ${SIGNING_KEY}"
-  fi
-  have openssl || die "openssl not found (required for signing)"
-  echo "Signing update bundle..."
-  # Ed25519 signature over the bundle file (binary).
   openssl pkeyutl -sign -inkey "${SIGNING_KEY}" -in "${bundle_path}" -out "${sig_path}"
 fi
 
@@ -98,7 +51,3 @@ echo "  ${sha_path}"
 if [ -f "${sig_path}" ]; then
   echo "  ${sig_path}"
 fi
-echo
-echo "Next:"
-echo "  - Create a GitHub Release in WillItMod/5tratum"
-echo "  - Upload both files as release assets"
