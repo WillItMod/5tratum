@@ -104,10 +104,10 @@ body.forgeos-login-body {
 }
 
 .forgeos-login__mark {
-  width: 220px;
-  height: 72px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  width: min(var(--forgeos-topbar-logo-width), 100%);
+  height: var(--forgeos-topbar-logo-height);
+  border-radius: 0;
+  border: 0;
   background: transparent;
   padding: 0;
   object-fit: contain;
