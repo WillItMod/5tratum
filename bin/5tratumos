@@ -60,6 +60,50 @@ compose_up() {
   (cd "${workdir}" && docker compose --project-name "${project}" "$@")
 }
 
+compose_up_app() {
+  local project="$1"
+  local workdir="$2"
+  shift 2
+
+  local out rc
+  set +e
+  out="$(cd "${workdir}" && docker compose --project-name "${project}" "$@" 2>&1)"
+  rc=$?
+  set -e
+  printf '%s\n' "${out}"
+
+  if [ "${rc}" -eq 0 ]; then
+    return 0
+  fi
+
+  # Some apps use an "init" one-shot container that may race with already-running nodes during updates.
+  # If init fails but all other services are running, keep the app in a "running" state instead of
+  # surfacing a false failure (portal shows "Action failed" even though the app is up).
+  if [ "${1:-}" = "up" ]; then
+    if printf '%s\n' "${out}" | grep -qE "service ['\\\"]init['\\\"] didn'?t complete successfully|Error service ['\\\"]init['\\\"] didn'?t complete successfully"; then
+      local services ok svc
+      services="$(cd "${workdir}" && docker compose --project-name "${project}" config --services 2>/dev/null | grep -v '^init$' || true)"
+      ok="true"
+      for svc in ${services}; do
+        if ! docker ps \
+          --filter "label=com.docker.compose.project=${project}" \
+          --filter "label=com.docker.compose.service=${svc}" \
+          --filter "status=running" \
+          --format '{{.ID}}' | grep -q .; then
+          ok="false"
+          break
+        fi
+      done
+      if [ "${ok}" = "true" ]; then
+        echo "warn: init failed but app services are running; ignoring init failure" >&2
+        return 0
+      fi
+    fi
+  fi
+
+  return "${rc}"
+}
+
 ensure_app_env() {
   local app_id="$1"
   local app_dir="$2"
@@ -1334,9 +1378,9 @@ EOF
         mv -f "${app_dir}/${next_compose}" "${app_dir}/docker-compose.yml"
 
         # Bring up the updated containers. If this fails, restore the previous compose and try to return to a running state.
-        if ! compose_up "${project}" "${app_dir}" up -d --remove-orphans; then
+        if ! compose_up_app "${project}" "${app_dir}" up -d --remove-orphans; then
           restore_previous_compose
-          compose_up "${project}" "${app_dir}" up -d --remove-orphans || true
+          compose_up_app "${project}" "${app_dir}" up -d --remove-orphans || true
           die "app update failed during startup (restored previous compose)"
         fi
 
@@ -1651,7 +1695,7 @@ PY
         project="$(app_project_name "${app_id}")"
         case "${action}" in
           up)
-            compose_up "${project}" "${app_dir}" up -d
+            compose_up_app "${project}" "${app_dir}" up -d
             ;;
           down)
             compose_up "${project}" "${app_dir}" down
