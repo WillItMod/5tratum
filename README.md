@@ -7,6 +7,9 @@ This folder is a first-pass "appliance OS" foundation for running AxeSuite apps:
 - Overlay: a small landing page on port `80`
 - Apps: templated Docker Compose stacks (currently `axelive`, `axebench`)
 
+License: see `LICENSE` (AGPL-3.0).
+Branding: see `TRADEMARK.md`.
+
 ## Proxmox approach (recommended)
 
 1) Create a fresh VM (Ubuntu Server 24.04 LTS or Debian 12), enable SSH, and make sure you can `ssh` in.
@@ -70,10 +73,12 @@ sudo 5tratumos app install axelive --channel dev
 
 ## OS updates (self-update)
 
-5tratumOS can self-update from a **public release feed** (default: `WillItMod/5tratum` GitHub Releases).
+5tratumOS can self-update from a release feed (default: `WillItMod/5tratum` GitHub Releases).
 
-- MAIN channel: latest non-prerelease (`/releases/latest`)
-- DEV channel: latest prerelease
+- MAIN: latest non-prerelease (`/releases/latest`)
+- DEV: latest prerelease
+
+Signed update support: `docs/UPDATE_SIGNING.md`.
 
 ### Publish an update bundle
 
@@ -87,9 +92,16 @@ Then create a GitHub Release in `WillItMod/5tratum` and upload:
 
 - `dist/5tratumos-update.tgz`
 - `dist/5tratumos-update.tgz.sha256`
+- `dist/5tratumos-update.tgz.sig` (if signing enabled)
 
 ### Apply on a device
 
-In the UI: `Settings → Updates → Check updates → Update`.
+In the UI: `Settings -> Updates -> Check updates -> Update`.
 
-If the update repo is private, set a GitHub token in `Settings → Updates` (fine‑grained PAT with read access).
+If the update repo is private, set a GitHub token in `Settings -> Updates` (fine-grained PAT with read access).
+
+## Building a flashable image (Etcher)
+
+To produce a clean, app-free disk image suitable for Balena Etcher, see:
+
+- `docs/IMAGE_BUILD.md`

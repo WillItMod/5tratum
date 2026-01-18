@@ -58,6 +58,8 @@ FEATURES_FILE = str(_env("FEATURES_FILE", "/etc/5tratumos/features.json") or "/e
 BUILD_FILE = str(_env("BUILD_FILE", "/etc/5tratumos/build.json") or "/etc/5tratumos/build.json")
 UPDATE_REPO = str(_env("UPDATE_REPO", "WillItMod/5tratum") or "WillItMod/5tratum")
 UPDATE_CONFIG_FILE = str(_env("UPDATE_CONFIG_FILE", "/etc/5tratumos/update.json") or "/etc/5tratumos/update.json")
+UPDATE_PUBKEY_FILE = str(_env("UPDATE_PUBKEY_FILE", "/etc/5tratumos/update_signing.pub") or "/etc/5tratumos/update_signing.pub")
+UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
@@ -1004,6 +1006,51 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+def _read_update_pubkey() -> str:
+    path = str(UPDATE_PUBKEY_FILE or "").strip()
+    if not path:
+        return ""
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    return raw.strip()
+
+
+def _verify_ed25519_sig(*, file_path: str, sig_bytes: bytes, pubkey_pem: str) -> bool:
+    if not file_path or not sig_bytes or not pubkey_pem:
+        return False
+    tmp_sig = f"{file_path}.sig.tmp"
+    tmp_key = f"{file_path}.pub.tmp"
+    try:
+        Path(tmp_sig).write_bytes(sig_bytes)
+        Path(tmp_key).write_text(pubkey_pem, encoding="utf-8")
+        proc = run_cmd(
+            [
+                "openssl",
+                "pkeyutl",
+                "-verify",
+                "-pubin",
+                "-inkey",
+                tmp_key,
+                "-sigfile",
+                tmp_sig,
+                "-in",
+                file_path,
+            ],
+            timeout_s=20,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+    finally:
+        for p in (tmp_sig, tmp_key):
+            try:
+                Path(p).unlink()
+            except Exception:
+                pass
+
+
 def _tree_digest(path: str) -> str:
     root = Path(path)
     if not root.exists():
@@ -1153,6 +1200,7 @@ def system_update_config_get() -> dict:
     tok_cfg = str(cfg.get("token") or cfg.get("github_token") or "").strip()
     tok_env = str(UPDATE_TOKEN_ENV or "").strip()
     token_present = bool(tok_cfg or tok_env)
+    pubkey_present = bool(_read_update_pubkey())
     return {
         "ok": True,
         "repo": str(update_repo()),
@@ -1160,6 +1208,8 @@ def system_update_config_get() -> dict:
         "token_configured": token_present,
         "token_source": "config" if tok_cfg else ("env" if tok_env else "none"),
         "allow_unverified": bool(UPDATE_ALLOW_UNVERIFIED),
+        "sig_required": bool(UPDATE_REQUIRE_SIG),
+        "sig_pubkey_present": pubkey_present,
     }
 
 
@@ -1236,8 +1286,19 @@ def system_update_check(channel: str | None = None) -> dict:
         except Exception:
             sha256 = ""
 
+    sig_asset = _pick_asset(
+        assets,
+        names=[f"{bundle_name}.sig", "update.sig", "SIGNATURE"],
+        ends=(".sig",),
+    )
+    sig_url = ""
+    if sig_asset:
+        sig_url = str(sig_asset.get("url") or sig_asset.get("browser_download_url") or "").strip()
+
     verifiable = bool(sha256) or UPDATE_ALLOW_UNVERIFIED
     update_available = bool(tag and tag != installed_tag and verifiable)
+    sig_required = bool(UPDATE_REQUIRE_SIG or _read_update_pubkey())
+    sig_available = bool(sig_url)
     return {
         "ok": True,
         "channel": ch,
@@ -1247,8 +1308,10 @@ def system_update_check(channel: str | None = None) -> dict:
             "tag": tag,
             "published_at": published_at,
             "notes": body,
-            "bundle": {"name": bundle_name, "url": bundle_url, "sha256": sha256 or ""},
+            "bundle": {"name": bundle_name, "url": bundle_url, "sha256": sha256 or "", "sig_url": sig_url or ""},
             "verifiable": bool(sha256),
+            "signature_required": sig_required,
+            "signature_available": sig_available,
         },
         "update_available": bool(update_available),
         "unverified_allowed": bool(UPDATE_ALLOW_UNVERIFIED),
@@ -1321,10 +1384,17 @@ def system_update_apply(channel: str | None = None) -> dict:
         target_tag = str(target.get("tag") or "").strip()
         bundle_url = str(bundle.get("url") or "").strip()
         bundle_sha = str(bundle.get("sha256") or "").strip().lower()
+        sig_url = str(bundle.get("sig_url") or "").strip()
         if not target_tag or not bundle_url:
             return {"ok": False, "error": "invalid release metadata"}
         if not bundle_sha and not UPDATE_ALLOW_UNVERIFIED:
             return {"ok": False, "error": "no checksum for update bundle (refusing unverified update)"}
+        pubkey = _read_update_pubkey()
+        sig_required = bool(UPDATE_REQUIRE_SIG or pubkey)
+        if sig_required and not sig_url:
+            return {"ok": False, "error": "update signature required but missing (.sig asset)"}
+        if sig_required and not pubkey:
+            return {"ok": False, "error": "update signature required but public key not configured"}
 
         def worker() -> None:
             try:
@@ -1340,6 +1410,15 @@ def system_update_apply(channel: str | None = None) -> dict:
                     got = _sha256_file(bundle_path)
                     if got.lower() != bundle_sha.lower():
                         update_status_write("error", target_tag=target_tag, error="checksum mismatch")
+                        return
+
+                if sig_required:
+                    try:
+                        sig_bytes = _github_bytes(sig_url, timeout_s=60) if sig_url else b""
+                    except Exception:
+                        sig_bytes = b""
+                    if not sig_bytes or not _verify_ed25519_sig(file_path=bundle_path, sig_bytes=sig_bytes, pubkey_pem=pubkey):
+                        update_status_write("error", target_tag=target_tag, error="signature verification failed")
                         return
 
                 update_status_write("extracting", target_tag=target_tag)

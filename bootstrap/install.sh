@@ -67,6 +67,7 @@ cp -a "${SRC_ROOT}/overlay" /opt/5tratumos/overlay
 cp -a "${SRC_ROOT}/apps-available" /opt/5tratumos/apps-available
 cp -a "${SRC_ROOT}/daemon" /opt/5tratumos/daemon
 cp -a "${SRC_ROOT}/console" /opt/5tratumos/console
+cp -a "${SRC_ROOT}/bootstrap" /opt/5tratumos/bootstrap
 install -d -m 0755 /opt/5tratumos/apps
 install -d -m 0755 /var/lib/5tratumos/apps
 
@@ -80,6 +81,7 @@ fi
 
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
+install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
 systemctl daemon-reload
 systemctl enable --now 5tratumosd.service
 systemctl enable --now 5tratumos-overlay.service

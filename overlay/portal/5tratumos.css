@@ -27,10 +27,10 @@
   --forgeos-watermark-y: 84%;
   --forgeos-watermark-size: 86vmin;
   --forgeos-footer-tile: 60px;
-  --forgeos-topbar-logo-width: 300px;
-  --forgeos-topbar-logo-height: 90px;
-  --forgeos-topbar-logo-offset-x: 12px;
-  --forgeos-topbar-logo-offset-y: 2px;
+  --forgeos-topbar-logo-width: 260px;
+  --forgeos-topbar-logo-height: 78px;
+  --forgeos-topbar-logo-offset-x: 0px;
+  --forgeos-topbar-logo-offset-y: 0px;
 }
 
 html,
@@ -1238,8 +1238,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-left: 4px;
-  padding-right: 14px;
+  padding: 0 8px;
   overflow: hidden;
 }
 

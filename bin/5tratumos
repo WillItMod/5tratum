@@ -16,6 +16,7 @@ STATE_DIR="${FIVETRATUMOS_STATE_DIR:-$(legacy_env STATE_DIR)}"
 STATE_DIR="${STATE_DIR:-/var/lib/5tratumos}"
 CHANNEL_FILE="${FIVETRATUMOS_CHANNEL_FILE:-$(legacy_env CHANNEL_FILE)}"
 CHANNEL_FILE="${CHANNEL_FILE:-/etc/5tratumos/channel}"
+STORE_CONFIG_FILE="${FIVETRATUMOS_STORE_CONFIG_FILE:-/etc/5tratumos/store.json}"
 
 die() {
   echo "error: $*" >&2
@@ -57,6 +58,37 @@ compose_up() {
   local workdir="$2"
   shift 2
   (cd "${workdir}" && docker compose --project-name "${project}" "$@")
+}
+
+ensure_app_env() {
+  local app_id="$1"
+  local app_dir="$2"
+  local app_state_dir="${STATE_DIR}/apps/${app_id}"
+  local project
+  local env_file
+  local tmp_file
+
+  project="$(app_project_name "${app_id}")"
+  env_file="${app_dir}/.env"
+  tmp_file="$(mktemp)"
+
+  if [ -f "${env_file}" ]; then
+    awk -v app_data="${app_state_dir}" -v proj="${project}" '
+      BEGIN { ad=0; pj=0 }
+      /^APP_DATA_DIR=/ { print "APP_DATA_DIR=" app_data; ad=1; next }
+      /^COMPOSE_PROJECT_NAME=/ { print "COMPOSE_PROJECT_NAME=" proj; pj=1; next }
+      { print }
+      END {
+        if (ad == 0) print "APP_DATA_DIR=" app_data
+        if (pj == 0) print "COMPOSE_PROJECT_NAME=" proj
+      }
+    ' "${env_file}" > "${tmp_file}"
+  else
+    printf "APP_DATA_DIR=%s\nCOMPOSE_PROJECT_NAME=%s\n" "${app_state_dir}" "${project}" > "${tmp_file}"
+  fi
+
+  mv -f "${tmp_file}" "${env_file}"
+  chmod 600 "${env_file}" 2>/dev/null || true
 }
 
 app_meta_file() {
@@ -102,7 +134,7 @@ Usage:
   5tratumos channel get
   5tratumos channel set <main|dev>
 
-  5tratumos store sync [main|dev|global|all]
+  5tratumos store sync [main|dev|global|custom1|custom2|all]
 
   5tratumos overlay up
   5tratumos overlay down
@@ -111,14 +143,16 @@ Usage:
 
   5tratumos app available
   5tratumos app installed
-  5tratumos app install <app-id> [--channel <main|dev>]
-  5tratumos app update <app-id> [--channel <main|dev|global>]
+  5tratumos app install <app-id> [--channel <main|dev|global|custom1|custom2>]
+  5tratumos app update <app-id> [--channel <main|dev|global|custom1|custom2>]
+  5tratumos app repair <app-id> [--channel <main|dev|global|custom1|custom2>]
   5tratumos app rollback <app-id> --to <version>
   5tratumos app uninstall <app-id> [--purge]
   5tratumos app up <app-id>
   5tratumos app down <app-id>
   5tratumos app pull <app-id>
   5tratumos app logs <app-id>
+  5tratumos app fix-projects
 EOF
 }
 
@@ -167,10 +201,77 @@ case "${cmd}" in
         have curl || die "curl not found (install curl)"
         have tar || die "tar not found"
 
+        custom_store_url() {
+          local slot="$1"
+          python3 - "$slot" "${STORE_CONFIG_FILE}" <<'PY'
+import json
+import sys
+
+slot = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
+path = sys.argv[2] if len(sys.argv) > 2 else ""
+if not slot or not path:
+    sys.exit(0)
+try:
+    data = json.load(open(path, "r", encoding="utf-8"))
+except Exception:
+    data = {}
+custom = data.get("custom") if isinstance(data, dict) else {}
+entry = custom.get(slot) if isinstance(custom, dict) else None
+if isinstance(entry, dict):
+    url = str(entry.get("url") or "").strip()
+    if url:
+        print(url)
+PY
+        }
+
+        resolve_store_url() {
+          local raw="$1"
+          python3 - "$raw" <<'PY'
+import re
+import sys
+
+raw = (sys.argv[1] if len(sys.argv) > 1 else "").strip()
+if not raw:
+    sys.exit(0)
+
+url = raw
+fallback = ""
+
+if not re.match(r"^https?://", url, re.I):
+    if url.startswith("github.com/"):
+        url = "https://" + url
+    elif re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", url):
+        url = "https://github.com/" + url
+
+if url.endswith(".git"):
+    url = url[:-4]
+
+m = re.match(r"^https?://github.com/([^/]+)/([^/]+?)(?:/|$)", url, re.I)
+if m:
+    owner, repo = m.group(1), m.group(2)
+    branch = ""
+    m2 = re.search(r"/tree/([^/]+)", url)
+    if m2:
+        branch = m2.group(1)
+    if not branch:
+        branch = "main"
+        fallback = "master"
+    elif branch == "main":
+        fallback = "master"
+    elif branch == "master":
+        fallback = "main"
+    url = f"https://github.com/{owner}/{repo}/archive/refs/heads/{branch}.tar.gz"
+    if fallback:
+        fallback = f"https://github.com/{owner}/{repo}/archive/refs/heads/{fallback}.tar.gz"
+
+print(f"{url}|{fallback}")
+PY
+        }
+
         target="${1:-all}"
         case "${target}" in
-          ""|all|main|dev|global) ;;
-          *) die "invalid store sync target: ${target} (expected main|dev|global|all)" ;;
+          ""|all|main|dev|global|custom1|custom2) ;;
+          *) die "invalid store sync target: ${target} (expected main|dev|global|custom1|custom2|all)" ;;
         esac
 
         store_base="${ROOT_DIR}/store"
@@ -273,18 +374,38 @@ case "${cmd}" in
           fi
         fi
 
+        sync_custom() {
+          local slot="$1"
+          local raw
+          raw="$(custom_store_url "${slot}")"
+          [ -n "${raw}" ] || die "custom store not configured: ${slot}"
+          local resolved
+          resolved="$(resolve_store_url "${raw}")"
+          IFS='|' read -r url url_fallback <<<"${resolved}"
+          [ -n "${url}" ] || die "invalid custom store url for ${slot}"
+          sync_one "${slot}" "${url}" "${url_fallback}"
+        }
+
         if [ "${target}" = "all" ] || [ -z "${target}" ]; then
           sync_one "main" "${main_url}" "${main_url_fallback}"
           sync_one "dev" "${dev_url}" "${dev_url_fallback}"
           sync_one "global" "${global_url}" "${global_url_fallback}"
+          for slot in custom1 custom2; do
+            raw="$(custom_store_url "${slot}")"
+            if [ -n "${raw}" ]; then
+              sync_custom "${slot}"
+            fi
+          done
           sync_global_assets
         elif [ "${target}" = "main" ]; then
           sync_one "main" "${main_url}" "${main_url_fallback}"
         elif [ "${target}" = "global" ]; then
           sync_one "global" "${global_url}" "${global_url_fallback}"
           sync_global_assets
-        else
+        elif [ "${target}" = "dev" ]; then
           sync_one "dev" "${dev_url}" "${dev_url_fallback}"
+        else
+          sync_custom "${target}"
         fi
 
         echo "store synced: ${store_base}"
@@ -330,6 +451,36 @@ case "${cmd}" in
       installed)
         (cd "${ROOT_DIR}/apps" && ls -1) || true
         ;;
+      fix-projects)
+        apps_dir="${ROOT_DIR}/apps"
+        [ -d "${apps_dir}" ] || die "apps directory not found: ${apps_dir}"
+        for app_dir in "${apps_dir}"/*; do
+          [ -d "${app_dir}" ] || continue
+          app_id="$(basename "${app_dir}")"
+          [ -n "${app_id}" ] || continue
+          app_state_dir="${STATE_DIR}/apps/${app_id}"
+          project="$(app_project_name "${app_id}")"
+          env_file="${app_dir}/.env"
+          tmp_file="$(mktemp)"
+          if [ -f "${env_file}" ]; then
+            awk -v app_data="${app_state_dir}" -v proj="${project}" '
+              BEGIN { ad=0; pj=0 }
+              /^APP_DATA_DIR=/ { print "APP_DATA_DIR=" app_data; ad=1; next }
+              /^COMPOSE_PROJECT_NAME=/ { print "COMPOSE_PROJECT_NAME=" proj; pj=1; next }
+              { print }
+              END {
+                if (ad == 0) print "APP_DATA_DIR=" app_data
+                if (pj == 0) print "COMPOSE_PROJECT_NAME=" proj
+              }
+            ' "${env_file}" > "${tmp_file}"
+          else
+            printf "APP_DATA_DIR=%s\nCOMPOSE_PROJECT_NAME=%s\n" "${app_state_dir}" "${project}" > "${tmp_file}"
+          fi
+          mv -f "${tmp_file}" "${env_file}"
+          chmod 600 "${env_file}" 2>/dev/null || true
+          printf "%s\t%s\n" "${app_id}" "${project}"
+        done
+        ;;
       install)
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
@@ -373,8 +524,8 @@ if not target or not root.is_dir():
 
 def map_store_id_to_app_id(store_id: str) -> str:
     raw = (store_id or "").strip().lower()
-    # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
-    if root.name.strip().lower() == "global":
+    # Global/custom stores use canonical IDs like "bitcoin", "nextcloud", etc.
+    if root.name.strip().lower().startswith("custom") or root.name.strip().lower() == "global":
         raw = raw.replace(" ", "-")
         raw = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
         return raw or "app"
@@ -674,9 +825,12 @@ EOF
           chmod 600 "${persist_env}" 2>/dev/null || true
         fi
 
+        project="$(app_project_name "${app_id}")"
+
         # Compose interpolation reads .env in the project directory; include persistent secrets.
         cat >"${dst}/.env" <<EOF
 APP_DATA_DIR=${app_state_dir}
+COMPOSE_PROJECT_NAME=${project}
 EOF
         cat "${persist_env}" >>"${dst}/.env"
         chmod 600 "${dst}/.env" 2>/dev/null || true
@@ -788,6 +942,7 @@ PY
         [ -n "${app_id}" ] || die "missing app id"
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        ensure_app_env "${app_id}" "${app_dir}"
 
         meta_file="$(app_meta_file "${app_dir}")"
         meta_channel=""
@@ -802,13 +957,13 @@ PY
           shift || true
         fi
         case "${ch}" in
-          main|dev|global) ;;
+          main|dev|global|custom1|custom2) ;;
           *) die "invalid channel: ${ch}" ;;
         esac
 
         meta_ch=""
         case "${meta_channel}" in
-          main|dev|global) meta_ch="${meta_channel}" ;;
+          main|dev|global|custom1|custom2) meta_ch="${meta_channel}" ;;
         esac
 
         resolved=""
@@ -836,8 +991,8 @@ if not target or not root.is_dir():
 
 def map_store_id_to_app_id(store_id: str) -> str:
     raw = (store_id or "").strip().lower()
-    # Global store uses canonical IDs like "bitcoin", "nextcloud", etc.
-    if root.name.strip().lower() == "global":
+    # Global/custom stores use canonical IDs like "bitcoin", "nextcloud", etc.
+    if root.name.strip().lower().startswith("custom") or root.name.strip().lower() == "global":
         raw = raw.replace(" ", "-")
         raw = "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-"})
         return raw or "app"
@@ -1148,13 +1303,14 @@ EOF
           chmod 600 "${persist_env}" 2>/dev/null || true
         fi
 
+        project="$(app_project_name "${app_id}")"
+
         cat >"${app_dir}/.env" <<EOF
 APP_DATA_DIR=${app_state_dir}
+COMPOSE_PROJECT_NAME=${project}
 EOF
         cat "${persist_env}" >>"${app_dir}/.env"
         chmod 600 "${app_dir}/.env" 2>/dev/null || true
-
-        project="$(app_project_name "${app_id}")"
 
         cleanup_next() {
           rm -f "${app_dir}/${next_compose}" 2>/dev/null || true
@@ -1339,12 +1495,29 @@ PY
         chown -R 1000:1000 "${app_state_dir}" 2>/dev/null || true
         echo "updated ${app_id} (channel=${ch})"
         ;;
+      repair)
+        [ "${EUID:-$(id -u)}" -eq 0 ] || die "app repair requires root (writes ${ROOT_DIR}/apps)"
+        app_id="${1:-}"; shift || true
+        [ -n "${app_id}" ] || die "missing app id"
+        ch=""
+        if [ "${1:-}" = "--channel" ]; then
+          shift
+          ch="${1:-}"
+          shift || true
+        fi
+        if [ -n "${ch}" ]; then
+          "${0}" app update "${app_id}" --channel "${ch}"
+        else
+          "${0}" app update "${app_id}"
+        fi
+        ;;
       rollback)
         [ "${EUID:-$(id -u)}" -eq 0 ] || die "app rollback requires root (writes ${ROOT_DIR}/apps)"
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        ensure_app_env "${app_id}" "${app_dir}"
 
         to=""
         if [ "${1:-}" = "--to" ]; then
@@ -1455,6 +1628,7 @@ PY
         fi
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        ensure_app_env "${app_id}" "${app_dir}"
 
         project="$(app_project_name "${app_id}")"
         (cd "${app_dir}" && docker compose --project-name "${project}" down --remove-orphans) || true
@@ -1473,6 +1647,7 @@ PY
         [ -n "${app_id}" ] || die "missing app id"
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        ensure_app_env "${app_id}" "${app_dir}"
         project="$(app_project_name "${app_id}")"
         case "${action}" in
           up)

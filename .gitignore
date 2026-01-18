@@ -6,6 +6,9 @@
 *.img.xz
 *.iso
 *.vmdk
+dist/
+*.sig
+*.sha256
 
 # Runtime / generated
 __pycache__/
@@ -17,6 +20,9 @@ __pycache__/
 .env
 .env.*
 inventory.ini
+id_ed25519*
+id_5tratumos*
+*.key
 
 # OS/editor cruft
 .DS_Store
