@@ -1382,6 +1382,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   height: 100%;
   width: 0%;
   background: linear-gradient(90deg, rgba(0, 229, 255, 0.88), rgba(255, 43, 214, 0.72), rgba(255, 154, 0, 0.78));
+  background-repeat: no-repeat;
 }
 
 .forgeos-corebars {
@@ -1811,6 +1812,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(0, 229, 255, 0.9), rgba(255, 43, 214, 0.85));
+  background-repeat: no-repeat;
   width: 0%;
 }
 
@@ -1950,6 +1952,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   height: 100%;
   width: 0;
   background: linear-gradient(90deg, rgba(0, 229, 255, 0.75), rgba(255, 43, 214, 0.7));
+  background-repeat: no-repeat;
 }
 
 .forgeos-widget__stats {
@@ -2318,6 +2321,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   width: 0%;
   border-radius: inherit;
   background: linear-gradient(90deg, #00e5ff 0%, #ff2bd6 52%, #ff9a00 100%);
+  background-repeat: no-repeat;
   transition: width 220ms ease;
 }
 
@@ -3157,6 +3161,7 @@ body.forgeos-workspace #btn-open-store {
   width: 0%;
   border-radius: 999px;
   background: linear-gradient(90deg, rgba(0, 229, 255, 0.95), rgba(255, 43, 214, 0.9), rgba(255, 154, 0, 0.92));
+  background-repeat: no-repeat;
   box-shadow: 0 0 18px rgba(0, 229, 255, 0.18);
   transition: width 220ms ease;
 }

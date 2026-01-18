@@ -297,7 +297,7 @@
     }
     if (showProgress && progress !== null) {
       const pct = Math.max(0, Math.min(100, Math.round(progress)));
-      if (globalSplashProgressFillEl) globalSplashProgressFillEl.style.width = `${pct}%`;
+      if (globalSplashProgressFillEl) setMaskedGradientBar(globalSplashProgressFillEl, pct);
       if (globalSplashProgressLabelEl) globalSplashProgressLabelEl.textContent = `${pct}%`;
     }
     globalSplashEl.classList.remove('hidden');
@@ -336,7 +336,7 @@
       globalSplashProgressEl.classList.remove('hidden');
       globalSplashProgressEl.setAttribute('aria-hidden', 'false');
     }
-    if (globalSplashProgressFillEl) globalSplashProgressFillEl.style.width = `${clamped}%`;
+    if (globalSplashProgressFillEl) setMaskedGradientBar(globalSplashProgressFillEl, clamped);
     if (globalSplashProgressLabelEl) globalSplashProgressLabelEl.textContent = `${clamped}%`;
   }
 
@@ -2757,6 +2757,20 @@
     return `${formatBytes(bytes)}/s`;
   }
 
+  function setMaskedGradientBar(el, pctRaw) {
+    if (!el) return;
+    const pct = Math.max(0, Math.min(100, Number(pctRaw) || 0));
+    el.style.width = `${pct}%`;
+    if (pct <= 0) {
+      el.style.backgroundSize = '100% 100%';
+      el.style.backgroundPosition = 'left center';
+      return;
+    }
+    const scale = 10000 / Math.max(0.5, pct);
+    el.style.backgroundSize = `${scale.toFixed(1)}% 100%`;
+    el.style.backgroundPosition = 'left center';
+  }
+
   const _VERSION_RE = /^\s*v?(\d+(?:\.\d+)*)(?:[-+](.*))?\s*$/i;
 
   function versionKey(value) {
@@ -2828,7 +2842,7 @@
     if (metricCpuSub) {
       metricCpuSub.textContent = `${cores} cores \u2022 load1 ${load1.toFixed(2)}`;
     }
-    if (metricCpuBar) metricCpuBar.style.width = `${Math.max(0, Math.min(100, cpuPct))}%`;
+    if (metricCpuBar) setMaskedGradientBar(metricCpuBar, cpuPct);
 
     if (metricCpuCores) {
       const perCore = Array.isArray(cpu.per_core_perc) ? cpu.per_core_perc : [];
@@ -2863,7 +2877,7 @@
       metricMem.textContent = `${memPct}%`;
       metricMem.title = `${formatBytes(used)} / ${formatBytes(total)}`;
     }
-    if (metricMemBar) metricMemBar.style.width = `${Math.max(0, Math.min(100, memPct))}%`;
+    if (metricMemBar) setMaskedGradientBar(metricMemBar, memPct);
     if (metricMemSub) metricMemSub.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
 
     const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
@@ -2875,7 +2889,7 @@
       const diskPct = dTotal > 0 ? Math.max(0, Math.round((dUsed / dTotal) * 100)) : 0;
       metricDisk.textContent = `${diskPct}%`;
       metricDisk.title = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
-      if (metricDiskBar) metricDiskBar.style.width = `${Math.max(0, Math.min(100, diskPct))}%`;
+      if (metricDiskBar) setMaskedGradientBar(metricDiskBar, diskPct);
       if (metricDiskSub) metricDiskSub.textContent = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
     }
 
@@ -2895,7 +2909,7 @@
       const totalRate = rateRx + rateTx;
       const maxRate = 50 * 1024 * 1024;
       const pct = maxRate > 0 ? Math.max(0, Math.min(100, (totalRate / maxRate) * 100)) : 0;
-      if (metricNetBar) metricNetBar.style.width = `${pct}%`;
+      if (metricNetBar) setMaskedGradientBar(metricNetBar, pct);
       if (metricNetSub) metricNetSub.textContent = `Up ${formatBytesPerSec(rateTx)} \u2022 Down ${formatBytesPerSec(rateRx)}`;
     }
   }
@@ -2979,7 +2993,7 @@
     const pct = Math.max(0, Math.min(100, Math.round(Number(st.pct) || 0)));
     for (const bar of Array.from(document.querySelectorAll(`.forgeos-progress__bar[data-progress-id=\"${id}\"]`))) {
       if (!(bar instanceof HTMLElement)) continue;
-      bar.style.width = `${pct}%`;
+      setMaskedGradientBar(bar, pct);
     }
 
     for (const btn of Array.from(document.querySelectorAll(`button[data-progress-id=\"${id}\"]`))) {
@@ -4090,6 +4104,7 @@
           img.alt = '';
           img.loading = 'lazy';
           img.decoding = 'async';
+          img.draggable = false;
           img.addEventListener('error', () => {
             if (img.dataset.fallbackApplied === '1') return;
             const fallbackLogo = fallbackLogoFor(appId, metaFor(appId).name || appId);
@@ -4136,8 +4151,10 @@
         }
 
         let dragStart = null;
+        node.addEventListener('dragstart', (e) => e.preventDefault());
         node.addEventListener('pointerdown', (e) => {
           if (e.button !== 0) return;
+          e.preventDefault();
           noteUserActivity();
           const p = desktopSurfacePoint(e);
           const ox = parseFloat(node.style.left) || 0;
@@ -4700,7 +4717,7 @@
       const fill = document.createElement('div');
       fill.className = 'forgeos-fleet-item__fill';
       const pct = item.ok && Number.isFinite(item.hashrate) && total > 0 ? Math.max(0, Math.min(100, (item.hashrate / total) * 100)) : 0;
-      fill.style.width = `${pct.toFixed(1)}%`;
+      setMaskedGradientBar(fill, pct);
       bar.appendChild(fill);
 
       const value = document.createElement('div');
@@ -5159,7 +5176,7 @@
       const show = busy;
       updateProgressEl.classList.toggle('hidden', !show);
       updateProgressEl.setAttribute('aria-hidden', show ? 'false' : 'true');
-      updateProgressBarEl.style.width = `${systemUpdateProgressPct(state)}%`;
+      setMaskedGradientBar(updateProgressBarEl, systemUpdateProgressPct(state));
     }
 
     maybePromptSystemUpdateAvailable(check, status).catch(() => {});
@@ -6419,7 +6436,7 @@
               const fill = document.createElement('div');
               fill.className = 'forgeos-widget__bar-fill';
               const pctInt = isSyncWidget ? (pct >= 0.999 ? 100 : Math.floor(pct * 100)) : Math.round(pct * 100);
-              fill.style.width = `${pctInt}%`;
+              setMaskedGradientBar(fill, pctInt);
               bar.appendChild(fill);
               card.appendChild(bar);
             }
