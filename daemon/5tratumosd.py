@@ -996,8 +996,8 @@ def _notify_loop() -> None:
 
             installed = _axesuite_installed_ids()
             if not installed:
-            time.sleep(_NOTIFY_POLL_S)
-            continue
+                time.sleep(_NOTIFY_POLL_S)
+                continue
 
             mqtt_apps = _selected_notify_apps(mqtt_cfg, installed)
             discord_apps = _selected_notify_apps(discord_cfg, installed)

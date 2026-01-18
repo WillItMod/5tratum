@@ -2065,7 +2065,7 @@
 
       const p = document.createElement('div');
       p.className = 'text-sm text-slate-200 whitespace-pre-wrap';
-      p.textContent = `An OS update is ready to install.\n\nChoose Install to apply now, or Dismiss to hide this prompt until the next release.`;
+      p.textContent = `An OS update is ready to install.\n\nChoose Install to apply now.`;
       wrap.appendChild(p);
 
       if (bodyText) {
@@ -2078,16 +2078,6 @@
       const actions = document.createElement('div');
       actions.className = 'flex items-center justify-end gap-2 flex-wrap';
 
-      const btnDismiss = document.createElement('button');
-      btnDismiss.type = 'button';
-      btnDismiss.className = 'axe-btn';
-      btnDismiss.textContent = 'Dismiss';
-      btnDismiss.addEventListener('click', () => {
-        settled = true;
-        resolve('dismiss');
-        closeModal();
-      });
-
       const btnInstall = document.createElement('button');
       btnInstall.type = 'button';
       btnInstall.className = 'axe-btn forgeos-btn--danger';
@@ -2098,7 +2088,6 @@
         closeModal();
       });
 
-      actions.appendChild(btnDismiss);
       actions.appendChild(btnInstall);
       wrap.appendChild(actions);
 
@@ -5289,13 +5278,7 @@
       return;
     }
 
-    if (choice === 'dismiss') {
-      try {
-        await apiJsonTimeout('/api/v0/system/update/config', { method: 'POST', body: JSON.stringify({ dismissed_tag: tag }) }, 6000);
-        await refreshSystemUpdateConfig();
-        await refreshSystemUpdateCheck({ force: true });
-      } catch {}
-    }
+    // No dismiss: keep reminding until installed.
   }
 
   async function saveSystemUpdateConfig() {
@@ -5390,9 +5373,6 @@
     });
     if (!okConfirm) return;
 
-    const preflightOk = await maybeRunOsUpdates();
-    if (!preflightOk) return;
-
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
     if (!systemUpdateSplashToken) {
@@ -5426,71 +5406,6 @@
       });
     } finally {
       renderSystemUpdatePanel();
-    }
-  }
-
-  async function maybeRunOsUpdates() {
-    const splashToken = showGlobalSplash({ title: 'Checking OS updates', sub: 'Running apt update...' });
-    try {
-      const res = await apiJsonTimeout('/api/v0/system/osupdate/check', {}, 120000);
-      hideGlobalSplash(splashToken);
-      if (!res || res.ok !== true) {
-        const proceed = await openConfirmModal({
-          title: 'OS update check failed',
-          message: 'Unable to check base OS updates. Continue with 5tratumOS update anyway?',
-          confirmText: 'Continue',
-          cancelText: 'Cancel',
-          danger: false,
-        });
-        return proceed;
-      }
-      const count = Number(res.upgradable) || 0;
-      if (count <= 0) return true;
-      const choice = await openChoiceModal({
-        title: 'OS updates available',
-        message: `${count} base OS updates are available. Apply them before the 5tratumOS update?`,
-        kind: 'Update',
-        choices: [
-          { label: 'Apply OS updates', value: 'apply' },
-          { label: 'Skip', value: 'skip' },
-          { label: 'Cancel', value: 'cancel', danger: true },
-        ],
-      });
-      if (choice === 'skip') return true;
-      if (choice !== 'apply') return false;
-
-      const applyToken = showGlobalSplash({ title: 'Updating Debian', sub: 'Applying OS updates...' });
-      const applyRes = await apiJsonTimeout('/api/v0/system/osupdate/apply', { method: 'POST', body: '{}' }, 3600000);
-      hideGlobalSplash(applyToken);
-      if (!applyRes || applyRes.ok !== true) {
-        await openNoticeModal({
-          kind: 'Error',
-          title: 'OS update failed',
-          message: applyRes && (applyRes.error || applyRes.stderr) ? String(applyRes.error || applyRes.stderr) : 'OS update failed.',
-          danger: true,
-        });
-        return false;
-      }
-      if (applyRes.reboot_required) {
-        await openNoticeModal({
-          kind: 'System',
-          title: 'Reboot required',
-          message: 'Debian updates require a reboot. Reboot the host, then retry the 5tratumOS update.',
-          danger: false,
-        });
-        return false;
-      }
-      return true;
-    } catch (err) {
-      hideGlobalSplash(splashToken);
-      const proceed = await openConfirmModal({
-        title: 'OS update check failed',
-        message: 'Unable to check base OS updates. Continue with 5tratumOS update anyway?',
-        confirmText: 'Continue',
-        cancelText: 'Cancel',
-        danger: false,
-      });
-      return proceed;
     }
   }
 
