@@ -1488,6 +1488,7 @@ def update_status_read() -> dict:
             _write_json_atomic(_UPDATE_STATUS_PATH, st)
         except Exception:
             pass
+    return st
 
 
 def _support_checkin_once() -> None:
