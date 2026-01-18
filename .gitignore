@@ -28,3 +28,10 @@ id_5tratumos*
 .DS_Store
 Thumbs.db
 *.swp
+# Never commit private keys or SSH material
+id_ed25519
+id_ed25519.pub
+id_*_5tratumos
+id_*_5tratumos.pub
+*.key
+*.pem
