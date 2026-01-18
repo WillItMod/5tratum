@@ -329,7 +329,7 @@ def _notify_defaults() -> dict:
     return {
         "mqtt": {
             "enabled": False,
-            "prefix": "5tratumos",
+            "prefix": "5tratumOS",
             "apps": [],
             "events": {
                 "status_change": True,
@@ -375,6 +375,8 @@ def _normalize_notify_config(cfg: dict) -> dict:
     if isinstance(raw_mqtt, dict):
         mqtt["enabled"] = bool(raw_mqtt.get("enabled"))
         prefix = str(raw_mqtt.get("prefix") or "").strip()
+        if prefix.lower() == "5tratumos5tratumos":
+            prefix = "5tratumOS"
         if prefix:
             mqtt["prefix"] = prefix
         raw_apps = raw_mqtt.get("apps")
@@ -412,8 +414,12 @@ def _axesuite_installed_apps() -> list[dict]:
     return apps
 
 
+def _mosquitto_compose_present() -> bool:
+    return os.path.isfile(os.path.join(APPS_DIR, "mosquitto", "docker-compose.yml"))
+
+
 def _mosquitto_installed() -> bool:
-    return "mosquitto" in list_installed_app_ids()
+    return _mosquitto_compose_present()
 
 
 def _mosquitto_running() -> bool:
@@ -458,13 +464,20 @@ def mqtt_config_set(body: dict) -> dict:
         if isinstance(raw_apps, list):
             mqtt["apps"] = [str(a).strip().lower() for a in raw_apps if str(a).strip()]
 
-    if mqtt["enabled"] and not _mosquitto_installed():
-        install_res = stratumos_cmd(["app", "install", "mosquitto"], timeout_s=600)
-        if not install_res.get("ok"):
+    if mqtt["enabled"] and not _mosquitto_compose_present():
+        mosq_dir = os.path.join(APPS_DIR, "mosquitto")
+        if os.path.isdir(mosq_dir):
+            run_cmd(["rm", "-rf", mosq_dir], timeout_s=30)
+        install_res = stratumos_cmd(["app", "install", "mosquitto", "--channel", "global"], timeout_s=600)
+        if not install_res.get("ok") and not _mosquitto_compose_present():
+            sync_res = stratumos_cmd(["store", "sync", "global"], timeout_s=600)
+            if sync_res.get("ok"):
+                install_res = stratumos_cmd(["app", "install", "mosquitto", "--channel", "global"], timeout_s=600)
+        if not install_res.get("ok") and not _mosquitto_compose_present():
             return {"ok": False, "error": "mosquitto install failed", "detail": install_res}
     if mqtt["enabled"] and not _mosquitto_running():
         start_res = stratumos_cmd(["app", "up", "mosquitto"], timeout_s=300)
-        if not start_res.get("ok"):
+        if not start_res.get("ok") and not _mosquitto_running():
             return {"ok": False, "error": "mosquitto start failed", "detail": start_res}
     if mqtt["enabled"] and not _mosquitto_running():
         return {"ok": False, "error": "mosquitto not running"}
@@ -596,7 +609,14 @@ def _discord_send(webhook: str, payload: dict) -> None:
         raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     except Exception:
         return
-    req = urllib.request.Request(webhook, data=raw, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        webhook,
+        data=raw,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (5tratumOS; webhook)",
+        },
+    )
     try:
         with urllib.request.urlopen(req, timeout=6) as resp:  # noqa: S310
             resp.read()
