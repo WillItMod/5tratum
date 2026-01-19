@@ -3866,6 +3866,43 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 raw_details = workers_data.get("workers")
             elif isinstance(workers_data.get("details"), list):
                 raw_details = workers_data.get("details")
+            elif isinstance(workers_data.get("miners"), list):
+                normalized: list[dict] = []
+                for miner in workers_data.get("miners") or []:
+                    if not isinstance(miner, dict):
+                        continue
+                    w = dict(miner)
+                    if "workername" not in w:
+                        wn = w.get("worker") or w.get("workerName") or w.get("name") or ""
+                        if wn:
+                            w["workername"] = str(wn)
+                        else:
+                            w["workername"] = str(w.get("miner") or "")
+                    if "hashrate_ths" not in w:
+                        try:
+                            hs = w.get("hashrate_hs")
+                            if isinstance(hs, (int, float)):
+                                w["hashrate_ths"] = float(hs) / 1e12
+                            elif isinstance(hs, str) and hs.strip():
+                                w["hashrate_ths"] = float(hs.strip()) / 1e12
+                        except Exception:
+                            pass
+                    try:
+                        ls = w.get("lastShare")
+                        if isinstance(ls, str) and ls.strip():
+                            dt = None
+                            try:
+                                dt = datetime.datetime.fromisoformat(ls.strip().replace("Z", "+00:00"))
+                            except Exception:
+                                dt = None
+                            if dt is not None:
+                                ts = dt.timestamp()
+                                w["lastshare"] = int(ts)
+                                w["lastshare_ago_s"] = max(0, int(time.time() - ts))
+                    except Exception:
+                        pass
+                    normalized.append(w)
+                raw_details = normalized
 
         if isinstance(raw_details, list):
             for w in raw_details:
