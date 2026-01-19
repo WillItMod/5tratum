@@ -1303,6 +1303,100 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   flex-wrap: nowrap;
 }
 
+.forgeos-topbar-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: rgba(226, 232, 240, 0.92);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+}
+
+.forgeos-topbar-toggle svg {
+  transition: transform 160ms ease;
+}
+
+.forgeos-topbar-toggle:hover {
+  border-color: rgba(0, 229, 255, 0.18);
+  background: rgba(0, 229, 255, 0.03);
+}
+
+.forgeos-topbar-toggle--open svg {
+  transform: rotate(180deg);
+}
+
+body.forgeos-topbar-compact .forgeos-topbar-toggle {
+  display: inline-flex;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar {
+  padding: 6px 10px;
+  gap: 10px;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__brand,
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__tagline {
+  display: none;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__metrics {
+  width: 100%;
+  justify-content: flex-start;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__metrics::-webkit-scrollbar {
+  display: none;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric {
+  min-width: 132px;
+  min-height: 44px;
+  padding: 6px 10px;
+  gap: 10px;
+  flex-direction: row;
+  align-items: center;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric__head {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric__k {
+  font-size: 10px;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric__v {
+  font-size: 14px;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric--mono .forgeos-desktop-metric__v {
+  font-size: 12px;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric__sub {
+  display: none;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-meter {
+  flex: 1 1 auto;
+  min-width: 68px;
+  height: 7px;
+}
+
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric--cpu {
+  min-width: 170px;
+}
+
 .forgeos-desktop-metric {
   appearance: none;
   border: 1px solid rgba(255, 255, 255, 0.1);

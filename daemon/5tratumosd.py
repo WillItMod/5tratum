@@ -70,6 +70,7 @@ NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json"
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
 WATCHDOG_CONFIG_FILE = str(_env("WATCHDOG_CONFIG_FILE", "/etc/5tratumos/watchdog.json") or "/etc/5tratumos/watchdog.json")
+UI_CONFIG_FILE = str(_env("UI_CONFIG_FILE", "/etc/5tratumos/ui.json") or "/etc/5tratumos/ui.json")
 API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
@@ -597,6 +598,43 @@ def system_session_config_set(body: dict) -> dict:
 
     _write_session_config(cfg)
     return {**system_session_config_get(), "saved": True}
+
+
+def _read_ui_config() -> dict:
+    cfg = _read_json(UI_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_ui_config(cfg: dict) -> None:
+    _write_json_atomic(UI_CONFIG_FILE, cfg)
+    try:
+        os.chmod(UI_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def system_ui_config_get() -> dict:
+    cfg = _read_ui_config()
+    mode = str(cfg.get("workbench_topbar_mode") or "").strip().lower() or "compact"
+    if mode not in {"expanded", "compact", "auto"}:
+        mode = "compact"
+    return {"ok": True, "workbench_topbar_mode": mode}
+
+
+def system_ui_config_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    cfg = _read_ui_config()
+    if "workbench_topbar_mode" in body or "topbar_workbench" in body:
+        raw = body.get("workbench_topbar_mode") if "workbench_topbar_mode" in body else body.get("topbar_workbench")
+        mode = str(raw or "").strip().lower()
+        if mode not in {"expanded", "compact", "auto"}:
+            return {"ok": False, "error": "workbench_topbar_mode must be expanded, compact, or auto"}
+        cfg["workbench_topbar_mode"] = mode
+
+    _write_ui_config(cfg)
+    return {**system_ui_config_get(), "saved": True}
 
 
 def _read_desktop_state() -> dict:
@@ -5037,6 +5075,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_session_config_get())
             return
 
+        if path == "/api/v0/system/ui":
+            json_response(self, HTTPStatus.OK, system_ui_config_get())
+            return
+
         if path == "/api/v0/system/storage":
             json_response(self, HTTPStatus.OK, system_storage_status())
             return
@@ -5395,6 +5437,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/session":
             res = system_session_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/ui":
+            res = system_ui_config_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 

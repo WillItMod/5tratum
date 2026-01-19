@@ -14,6 +14,8 @@
   const metricNetIp = document.getElementById('metric-net-ip');
   const metricNetBar = document.getElementById('metric-net-bar');
   const metricNetSub = document.getElementById('metric-net-sub');
+  const desktopTopbarEl = document.querySelector('.forgeos-desktop-topbar');
+  const btnTopbarToggle = document.getElementById('btn-topbar-toggle');
     const metricCardCpu = document.getElementById('metric-card-cpu');
     const metricCardMem = document.getElementById('metric-card-mem');
     const metricCardDisk = document.getElementById('metric-card-disk');
@@ -95,6 +97,7 @@
   const workspaceEmptyEl = document.getElementById('workspace-empty');
   const btnResumeWorkspace = document.getElementById('btn-resume-workspace');
   const settingSidebarSelect = document.getElementById('setting-sidebar');
+  const settingTopbarWorkbenchSelect = document.getElementById('setting-topbar-workbench');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
@@ -260,6 +263,9 @@
     let systemUpdatePollInFlight = false;
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
+    let uiConfigCache = null;
+    let topbarPinnedOpen = false;
+    let topbarHoverOpen = false;
     let splashTokenSeq = 0;
     const splashTokens = new Map();
     let splashClickBound = false;
@@ -868,6 +874,60 @@
     } catch {
       return (window.innerWidth || 0) <= 900;
     }
+  }
+
+  function normalizeWorkbenchTopbarMode(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'expanded' || v === 'compact' || v === 'auto') return v;
+    return 'compact';
+  }
+
+  function isWorkbenchWorkspaceActive() {
+    return activeViewKey === 'dashboard' && String(dashboardMode || 'fleet') === 'apps' && openAppIds.length > 0;
+  }
+
+  function getWorkbenchTopbarMode() {
+    const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
+    return normalizeWorkbenchTopbarMode(cfg.workbench_topbar_mode);
+  }
+
+  function applyWorkbenchTopbarMode() {
+    const isWorkbench = isWorkbenchWorkspaceActive();
+    const mode = getWorkbenchTopbarMode();
+    const compactLike = isWorkbench && (mode === 'compact' || mode === 'auto');
+    const auto = isWorkbench && mode === 'auto';
+    const open = isWorkbench && (mode === 'expanded' || topbarPinnedOpen || (auto && topbarHoverOpen));
+
+    document.body.classList.toggle('forgeos-topbar-compact', compactLike);
+    document.body.classList.toggle('forgeos-topbar-auto', auto);
+    document.body.classList.toggle('forgeos-topbar-open', open);
+
+    if (!isWorkbench) {
+      topbarPinnedOpen = false;
+      topbarHoverOpen = false;
+    } else if (mode === 'expanded') {
+      topbarPinnedOpen = false;
+      topbarHoverOpen = false;
+    } else if (!auto) {
+      topbarHoverOpen = false;
+    }
+
+    if (btnTopbarToggle) {
+      btnTopbarToggle.classList.toggle('forgeos-topbar-toggle--open', open);
+      btnTopbarToggle.disabled = !compactLike;
+      btnTopbarToggle.setAttribute('aria-pressed', open ? 'true' : 'false');
+      btnTopbarToggle.title = open ? 'Collapse top bar' : 'Expand top bar';
+    }
+  }
+
+  function toggleWorkbenchTopbarPinned() {
+    const isWorkbench = isWorkbenchWorkspaceActive();
+    if (!isWorkbench) return;
+    const mode = getWorkbenchTopbarMode();
+    if (mode === 'expanded') return;
+    topbarPinnedOpen = !topbarPinnedOpen;
+    if (topbarPinnedOpen) topbarHoverOpen = false;
+    applyWorkbenchTopbarMode();
   }
 
   let mobileSidebarPrevMode = '';
@@ -2059,6 +2119,7 @@
       refreshSystemUpdateStatus().catch(() => {});
       refreshSystemUpdateConfig().catch(() => {});
       refreshSystemUpdateCheck().catch(() => {});
+      refreshUiConfig().catch(() => {});
       refreshMqttConfig().catch(() => {});
       refreshDiscordConfig().catch(() => {});
       refreshWatchdogConfig().catch(() => {});
@@ -3625,6 +3686,7 @@
     if (!workspaceEl) return;
 
     normalizeOpenApps();
+    applyWorkbenchTopbarMode();
 
     const apps = openAppIds.map((id) => installedById.get(id) || { id });
 
@@ -5271,6 +5333,30 @@
       if (settingHostnameInput && res.hostname) settingHostnameInput.value = String(res.hostname);
       if (settingChannelSelect) settingChannelSelect.value = String(res.channel || 'main');
     } catch {}
+  }
+
+  async function refreshUiConfig() {
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/ui', {}, 3000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      uiConfigCache = res;
+      const mode = getWorkbenchTopbarMode();
+      if (settingTopbarWorkbenchSelect) settingTopbarWorkbenchSelect.value = mode;
+      applyWorkbenchTopbarMode();
+    } catch {
+      if (settingTopbarWorkbenchSelect) settingTopbarWorkbenchSelect.value = getWorkbenchTopbarMode();
+      applyWorkbenchTopbarMode();
+    }
+  }
+
+  async function saveUiConfig(patch) {
+    const body = patch && typeof patch === 'object' ? patch : {};
+    const res = await apiJsonTimeout('/api/v0/system/ui', { method: 'POST', body: JSON.stringify(body) }, 8000).catch(() => null);
+    if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+    uiConfigCache = res;
+    return res;
   }
 
   function renderStorageSettings() {
@@ -9500,11 +9586,52 @@
       }
     });
   }
+  if (settingTopbarWorkbenchSelect) {
+    settingTopbarWorkbenchSelect.addEventListener('change', async () => {
+      const mode = normalizeWorkbenchTopbarMode(settingTopbarWorkbenchSelect.value);
+      uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), workbench_topbar_mode: mode };
+      applyWorkbenchTopbarMode();
+      try {
+        await saveUiConfig({ workbench_topbar_mode: mode });
+        showToast('Top bar setting saved', null);
+      } catch (err) {
+        showToast('Top bar save failed', 'error');
+        await refreshUiConfig();
+      }
+    });
+  }
+  if (btnTopbarToggle) {
+    btnTopbarToggle.addEventListener('click', (e) => {
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+      } catch {}
+      toggleWorkbenchTopbarPinned();
+    });
+  }
+  if (desktopTopbarEl) {
+    desktopTopbarEl.addEventListener('mouseenter', () => {
+      if (isMobileLayout()) return;
+      if (!isWorkbenchWorkspaceActive()) return;
+      if (getWorkbenchTopbarMode() !== 'auto') return;
+      if (topbarPinnedOpen) return;
+      topbarHoverOpen = true;
+      applyWorkbenchTopbarMode();
+    });
+    desktopTopbarEl.addEventListener('mouseleave', () => {
+      if (!isWorkbenchWorkspaceActive()) return;
+      if (getWorkbenchTopbarMode() !== 'auto') return;
+      if (topbarPinnedOpen) return;
+      topbarHoverOpen = false;
+      applyWorkbenchTopbarMode();
+    });
+  }
   refreshStoreCustomConfig().catch(() => {});
   refreshSystemUpdateStatus().catch(() => {});
   refreshSystemUpdateConfig().catch(() => {});
   refreshAuthSettings().catch(() => {});
   refreshSystemSettings().catch(() => {});
+  refreshUiConfig().catch(() => {});
   refreshSessionConfig().catch(() => {});
   refreshMqttConfig().catch(() => {});
   refreshDiscordConfig().catch(() => {});
