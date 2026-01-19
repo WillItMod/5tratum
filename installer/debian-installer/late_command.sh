@@ -21,12 +21,12 @@ if [ ! -f "${CDROM_BUNDLE}" ]; then
 fi
 
 log "Ensuring DNS is configured for apt..."
-if [ ! -s /etc/resolv.conf ]; then
-  cat >/etc/resolv.conf <<'EOF'
+# In Debian Installer chroot, /etc/resolv.conf may be a stub symlink which won't work.
+rm -f /etc/resolv.conf || true
+cat >/etc/resolv.conf <<'EOF'
 nameserver 1.1.1.1
 nameserver 8.8.8.8
 EOF
-fi
 
 log "Installing base packages..."
 export DEBIAN_FRONTEND=noninteractive
