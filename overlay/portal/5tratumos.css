@@ -645,8 +645,42 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item:hover {
 }
 
 .forgeos-app-item--open {
-  border-color: rgba(0, 229, 255, 0.16);
-  background: rgba(0, 229, 255, 0.05);
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.forgeos-app-item--open::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--forgeos-rainbow-strong);
+  pointer-events: none;
+  z-index: 1;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.forgeos-app-item--open::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--forgeos-rainbow-strong);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.12;
+  filter: blur(10px);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
 .forgeos-app-item--active {

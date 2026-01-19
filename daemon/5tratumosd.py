@@ -3678,7 +3678,8 @@ def list_app_widgets() -> dict:
                     app_entry["widgets"].append(w)
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
-                fut = pool.submit(_fetch_json, url, timeout_s=2, headers=_internal_auth_headers())
+                # Keep widget aggregation snappy; use short timeouts and return partial results.
+                fut = pool.submit(_fetch_json, url, timeout_s=1, headers=_internal_auth_headers())
                 widget_tasks.append((fut, w))
                 app_entry["widgets"].append(w)
 
@@ -3687,7 +3688,7 @@ def list_app_widgets() -> dict:
         if widget_tasks:
             done, pending = concurrent.futures.wait(
                 [t[0] for t in widget_tasks],
-                timeout=2.5,
+                timeout=1.5,
                 return_when=concurrent.futures.ALL_COMPLETED,
             )
             for fut, widget in widget_tasks:
@@ -3762,7 +3763,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         workers_data: dict | None = None
 
         try:
-            pool_raw = _fetch_json(pool_url, timeout_s=2, headers=_internal_auth_headers())
+            pool_raw = _fetch_json(pool_url, timeout_s=1, headers=_internal_auth_headers())
             if isinstance(pool_raw, dict):
                 pool_data = pool_raw
             else:
@@ -3771,7 +3772,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             entry["pool_error"] = str(e)
 
         try:
-            workers_raw = _fetch_json(workers_url, timeout_s=2, headers=_internal_auth_headers())
+            workers_raw = _fetch_json(workers_url, timeout_s=1, headers=_internal_auth_headers())
             if isinstance(workers_raw, dict):
                 workers_data = workers_raw
             else:
@@ -3797,7 +3798,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         futures = [pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
         done, pending = concurrent.futures.wait(
             futures,
-            timeout=3.0,
+            timeout=1.8,
             return_when=concurrent.futures.ALL_COMPLETED,
         )
         for fut in done:

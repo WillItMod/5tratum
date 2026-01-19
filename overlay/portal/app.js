@@ -282,6 +282,7 @@
   let draggingDashboardCardId = null;
   let lastFleet = null;
   const FLEET_CACHE_KEY = '5tratumos.fleetCache.v1';
+  const WIDGETS_CACHE_KEY = '5tratumos.widgetsCache.v1';
   let refreshFleetInFlight = false;
   let fleetSeries = [];
   const OPEN_APPS_KEY = 'forgeos.openApps';
@@ -5358,6 +5359,19 @@
     }
   }
 
+  function loadWidgetsCache() {
+    try {
+      const raw = String(window.localStorage.getItem(WIDGETS_CACHE_KEY) || '').trim();
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (parsed.ok !== true) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
   async function refreshFleet(opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     if (!options.force && !dashboardCardsVisible()) return;
@@ -5367,7 +5381,7 @@
     try {
       const ok = await ensureHealthy();
       if (!ok) return;
-      const res = await apiJsonTimeout('/api/v0/fleet/summary?limit=200', {}, 7000).catch(() => null);
+      const res = await apiJsonTimeout('/api/v0/fleet/summary?limit=200', {}, 2500).catch(() => null);
       if (!res || res.ok !== true) {
         const cached = loadFleetCache();
         if (cached) renderFleet(cached);
@@ -6676,10 +6690,22 @@
     try {
       const ok = await ensureHealthy();
       if (!ok) return;
-      const widgetsRes = await apiJsonTimeout('/api/v0/apps/widgets', {}, 5000).catch(() => null);
-      if (!widgetsRes || widgetsRes.ok !== true) return;
+      const widgetsRes = await apiJsonTimeout('/api/v0/apps/widgets', {}, 2500).catch(() => null);
+      if (!widgetsRes || widgetsRes.ok !== true) {
+        const cached = loadWidgetsCache();
+        if (cached) {
+          hasLoadedWidgets = true;
+          lastWidgets = cached;
+          renderDashboardWidgets(lastWidgets);
+          setWidgetsUpdated(cached.time);
+        }
+        return;
+      }
       hasLoadedWidgets = true;
       lastWidgets = widgetsRes;
+      try {
+        window.localStorage.setItem(WIDGETS_CACHE_KEY, JSON.stringify(widgetsRes));
+      } catch {}
       renderDashboardWidgets(lastWidgets);
       setWidgetsUpdated(widgetsRes.time);
     } finally {
@@ -6769,8 +6795,8 @@
         }
       }
 
-      const currentDetail = currentMount ? `${currentLocation} (${currentMount})` : currentLocation;
-      const currentPathHint = currentTarget || (installed && installed.storage ? String(installed.storage.data_dir || '').trim() : '');
+      const currentDetail = currentLocation;
+      const currentPathHint = '';
 
       const choices = [{ label: 'OS disk (system)', value: '' }];
       const seen = new Set(['']);
@@ -6785,7 +6811,7 @@
 
       const pick = await openChoiceModal({
         title: `Move ${label} data`,
-        message: `Current location: ${currentDetail}\n${currentPathHint ? `Path: ${currentPathHint}\n` : ''}\nChoose a destination drive:`,
+        message: `Current location: ${currentDetail}\n\nChoose a destination drive:`,
         kind: 'System',
         choices: choices.concat([{ label: 'Cancel', value: 'cancel', danger: true }]),
       });
@@ -10000,6 +10026,21 @@
     applyInstalled(cachedInstalled.apps, { fromCache: true });
   }
   refresh().catch(() => setStatus('UI only'));
+
+  // Render cached Fleet/Widgets immediately for a snappy first paint.
+  try {
+    const cachedFleet = loadFleetCache();
+    if (cachedFleet) renderFleet(cachedFleet);
+  } catch {}
+  try {
+    const cachedWidgets = loadWidgetsCache();
+    if (cachedWidgets) {
+      hasLoadedWidgets = true;
+      lastWidgets = cachedWidgets;
+      renderDashboardWidgets(lastWidgets);
+      setWidgetsUpdated(cachedWidgets.time);
+    }
+  } catch {}
 
   if (kioskEnabledInput) {
     kioskEnabledInput.addEventListener('change', async () => {
