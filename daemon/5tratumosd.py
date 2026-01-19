@@ -618,7 +618,27 @@ def system_ui_config_get() -> dict:
     mode = str(cfg.get("workbench_topbar_mode") or "").strip().lower() or "compact"
     if mode not in {"expanded", "compact", "auto"}:
         mode = "compact"
-    return {"ok": True, "workbench_topbar_mode": mode}
+
+    pinned_raw = cfg.get("topbar_pinned")
+    pinned: bool | None = None
+    if pinned_raw is not None:
+        if isinstance(pinned_raw, bool):
+            pinned = pinned_raw
+        else:
+            sval = str(pinned_raw).strip().lower()
+            if sval in {"1", "true", "yes", "y", "on", "pinned"}:
+                pinned = True
+            elif sval in {"0", "false", "no", "n", "off", "autohide", "auto", "unpinned"}:
+                pinned = False
+
+    # Migration path:
+    # - If topbar_pinned is not set but workbench_topbar_mode is explicitly set, infer pinned from it
+    #   to preserve existing behavior.
+    # - Otherwise default to pinned (expanded) globally.
+    if pinned is None:
+        pinned = mode == "expanded" if "workbench_topbar_mode" in cfg else True
+
+    return {"ok": True, "workbench_topbar_mode": mode, "topbar_pinned": pinned}
 
 
 def system_ui_config_set(body: dict) -> dict:
@@ -632,6 +652,21 @@ def system_ui_config_set(body: dict) -> dict:
         if mode not in {"expanded", "compact", "auto"}:
             return {"ok": False, "error": "workbench_topbar_mode must be expanded, compact, or auto"}
         cfg["workbench_topbar_mode"] = mode
+
+    if "topbar_pinned" in body or "topbarPinned" in body:
+        raw = body.get("topbar_pinned") if "topbar_pinned" in body else body.get("topbarPinned")
+        pinned: bool | None = None
+        if isinstance(raw, bool):
+            pinned = raw
+        else:
+            sval = str(raw).strip().lower()
+            if sval in {"1", "true", "yes", "y", "on", "pinned"}:
+                pinned = True
+            elif sval in {"0", "false", "no", "n", "off", "autohide", "auto", "unpinned"}:
+                pinned = False
+        if pinned is None:
+            return {"ok": False, "error": "topbar_pinned must be true/false"}
+        cfg["topbar_pinned"] = pinned
 
     _write_ui_config(cfg)
     return {**system_ui_config_get(), "saved": True}

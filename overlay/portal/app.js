@@ -101,7 +101,7 @@
   const workspaceEmptyEl = document.getElementById('workspace-empty');
   const btnResumeWorkspace = document.getElementById('btn-resume-workspace');
   const settingSidebarSelect = document.getElementById('setting-sidebar');
-  const settingTopbarWorkbenchSelect = document.getElementById('setting-topbar-workbench');
+  const settingTopbarPinnedInput = document.getElementById('setting-topbar-pinned');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
@@ -269,7 +269,7 @@
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
     let uiConfigCache = null;
-    let topbarPinnedOpen = false;
+    let topbarTempOpen = false;
     let topbarHoverOpen = false;
     let splashTokenSeq = 0;
     const splashTokens = new Map();
@@ -909,52 +909,47 @@
     return 'compact';
   }
 
-  function isWorkbenchWorkspaceActive() {
-    return activeViewKey === 'dashboard' && String(dashboardMode || 'fleet') === 'apps' && openAppIds.length > 0;
+  function normalizeBool(value, defaultValue) {
+    if (value === null || value === undefined) return !!defaultValue;
+    if (typeof value === 'boolean') return value;
+    const s = String(value).trim().toLowerCase();
+    if (!s) return !!defaultValue;
+    if (s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on' || s === 'pinned') return true;
+    if (s === '0' || s === 'false' || s === 'no' || s === 'n' || s === 'off' || s === 'auto' || s === 'autohide' || s === 'unpinned')
+      return false;
+    return !!defaultValue;
   }
 
-  function getWorkbenchTopbarMode() {
+  function getTopbarPinned() {
     const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
-    return normalizeWorkbenchTopbarMode(cfg.workbench_topbar_mode);
+    if (Object.prototype.hasOwnProperty.call(cfg, 'topbar_pinned')) return normalizeBool(cfg.topbar_pinned, true);
+    // Migration: preserve the legacy behavior if the old key exists.
+    if (Object.prototype.hasOwnProperty.call(cfg, 'workbench_topbar_mode')) {
+      return normalizeWorkbenchTopbarMode(cfg.workbench_topbar_mode) === 'expanded';
+    }
+    return true;
   }
 
-  function applyWorkbenchTopbarMode() {
-    const isWorkbench = isWorkbenchWorkspaceActive();
-    const mode = getWorkbenchTopbarMode();
-    const compactLike = isWorkbench && (mode === 'compact' || mode === 'auto');
-    const auto = isWorkbench && mode === 'auto';
-    const open = isWorkbench && (mode === 'expanded' || topbarPinnedOpen || (auto && topbarHoverOpen));
+  function applyTopbarPinnedState() {
+    const pinned = getTopbarPinned();
+    const collapsed = !pinned;
+    const open = pinned || topbarTempOpen || (!isMobileLayout() && collapsed && topbarHoverOpen);
 
-    document.body.classList.toggle('forgeos-topbar-compact', compactLike);
-    document.body.classList.toggle('forgeos-topbar-auto', auto);
+    document.body.classList.toggle('forgeos-topbar-pinned', pinned);
+    document.body.classList.toggle('forgeos-topbar-compact', collapsed);
+    document.body.classList.toggle('forgeos-topbar-auto', collapsed);
     document.body.classList.toggle('forgeos-topbar-open', open);
 
-    if (!isWorkbench) {
-      topbarPinnedOpen = false;
-      topbarHoverOpen = false;
-    } else if (mode === 'expanded') {
-      topbarPinnedOpen = false;
-      topbarHoverOpen = false;
-    } else if (!auto) {
+    if (pinned) {
+      topbarTempOpen = false;
       topbarHoverOpen = false;
     }
 
     if (btnTopbarToggle) {
-      btnTopbarToggle.classList.toggle('forgeos-topbar-toggle--open', open);
-      btnTopbarToggle.disabled = !compactLike;
-      btnTopbarToggle.setAttribute('aria-pressed', open ? 'true' : 'false');
-      btnTopbarToggle.title = open ? 'Collapse top bar' : 'Expand top bar';
+      btnTopbarToggle.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+      btnTopbarToggle.setAttribute('aria-label', pinned ? 'Unpin top bar' : 'Pin top bar');
+      btnTopbarToggle.title = pinned ? 'Unpin top bar (auto-hide)' : 'Pin top bar';
     }
-  }
-
-  function toggleWorkbenchTopbarPinned() {
-    const isWorkbench = isWorkbenchWorkspaceActive();
-    if (!isWorkbench) return;
-    const mode = getWorkbenchTopbarMode();
-    if (mode === 'expanded') return;
-    topbarPinnedOpen = !topbarPinnedOpen;
-    if (topbarPinnedOpen) topbarHoverOpen = false;
-    applyWorkbenchTopbarMode();
   }
 
   let mobileSidebarPrevMode = '';
@@ -2187,6 +2182,7 @@
     }
 
     if (activeViewKey === 'dashboard') renderWorkspace();
+    applyTopbarPinnedState();
   }
 
   function syncDashboardModeUi() {
@@ -3858,7 +3854,7 @@
     if (!workspaceEl) return;
 
     normalizeOpenApps();
-    applyWorkbenchTopbarMode();
+    applyTopbarPinnedState();
 
     const apps = openAppIds.map((id) => installedById.get(id) || { id });
 
@@ -5516,12 +5512,11 @@
       const res = await apiJsonTimeout('/api/v0/system/ui', {}, 3000).catch(() => null);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
       uiConfigCache = res;
-      const mode = getWorkbenchTopbarMode();
-      if (settingTopbarWorkbenchSelect) settingTopbarWorkbenchSelect.value = mode;
-      applyWorkbenchTopbarMode();
+      if (settingTopbarPinnedInput) settingTopbarPinnedInput.checked = getTopbarPinned();
+      applyTopbarPinnedState();
     } catch {
-      if (settingTopbarWorkbenchSelect) settingTopbarWorkbenchSelect.value = getWorkbenchTopbarMode();
-      applyWorkbenchTopbarMode();
+      if (settingTopbarPinnedInput) settingTopbarPinnedInput.checked = getTopbarPinned();
+      applyTopbarPinnedState();
     }
   }
 
@@ -10019,45 +10014,69 @@
       }
     });
   }
-  if (settingTopbarWorkbenchSelect) {
-    settingTopbarWorkbenchSelect.addEventListener('change', async () => {
-      const mode = normalizeWorkbenchTopbarMode(settingTopbarWorkbenchSelect.value);
-      uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), workbench_topbar_mode: mode };
-      applyWorkbenchTopbarMode();
-      try {
-        await saveUiConfig({ workbench_topbar_mode: mode });
-        showToast('Top bar setting saved', null);
-      } catch (err) {
-        showToast('Top bar save failed', 'error');
-        await refreshUiConfig();
-      }
+  async function setTopbarPinned(nextPinned) {
+    const pinned = !!nextPinned;
+    uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), topbar_pinned: pinned };
+    if (settingTopbarPinnedInput) settingTopbarPinnedInput.checked = pinned;
+    applyTopbarPinnedState();
+    try {
+      await saveUiConfig({ topbar_pinned: pinned });
+      showToast('Top bar setting saved', null);
+    } catch (err) {
+      showToast('Top bar save failed', err && err.message ? err.message : 'error');
+      await refreshUiConfig();
+    }
+  }
+
+  if (settingTopbarPinnedInput) {
+    settingTopbarPinnedInput.addEventListener('change', async () => {
+      await setTopbarPinned(!!settingTopbarPinnedInput.checked);
     });
   }
+
   if (btnTopbarToggle) {
-    btnTopbarToggle.addEventListener('click', (e) => {
+    btnTopbarToggle.addEventListener('click', async (e) => {
       try {
         e.preventDefault();
         e.stopPropagation();
       } catch {}
-      toggleWorkbenchTopbarPinned();
+      await setTopbarPinned(!getTopbarPinned());
     });
   }
+
   if (desktopTopbarEl) {
     desktopTopbarEl.addEventListener('mouseenter', () => {
       if (isMobileLayout()) return;
-      if (!isWorkbenchWorkspaceActive()) return;
-      if (getWorkbenchTopbarMode() !== 'auto') return;
-      if (topbarPinnedOpen) return;
+      if (getTopbarPinned()) return;
       topbarHoverOpen = true;
-      applyWorkbenchTopbarMode();
+      applyTopbarPinnedState();
     });
     desktopTopbarEl.addEventListener('mouseleave', () => {
-      if (!isWorkbenchWorkspaceActive()) return;
-      if (getWorkbenchTopbarMode() !== 'auto') return;
-      if (topbarPinnedOpen) return;
+      if (isMobileLayout()) return;
+      if (getTopbarPinned()) return;
       topbarHoverOpen = false;
-      applyWorkbenchTopbarMode();
+      applyTopbarPinnedState();
     });
+    desktopTopbarEl.addEventListener('click', (e) => {
+      if (!isMobileLayout()) return;
+      if (getTopbarPinned()) return;
+      const target = e && e.target ? e.target : null;
+      if (target && target.closest && target.closest('button')) return;
+      topbarTempOpen = !topbarTempOpen;
+      applyTopbarPinnedState();
+    });
+    document.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (getTopbarPinned()) return;
+        if (!topbarTempOpen) return;
+        const target = e && e.target ? e.target : null;
+        if (target && target.closest && target.closest('.forgeos-desktop-topbar')) return;
+        topbarTempOpen = false;
+        applyTopbarPinnedState();
+      },
+      { capture: true },
+    );
   }
   refreshStoreCustomConfig().catch(() => {});
   refreshSystemUpdateStatus().catch(() => {});

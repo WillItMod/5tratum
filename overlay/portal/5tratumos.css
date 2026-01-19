@@ -1369,11 +1369,11 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 }
 
 .forgeos-topbar-toggle {
-  display: none;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(0, 0, 0, 0.2);
@@ -1391,27 +1391,34 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   background: rgba(0, 229, 255, 0.03);
 }
 
-.forgeos-topbar-toggle--open svg {
-  transform: rotate(180deg);
-}
-
-body.forgeos-topbar-compact .forgeos-topbar-toggle {
-  display: inline-flex;
+body.forgeos-topbar-pinned .forgeos-topbar-toggle {
+  border-color: rgba(0, 229, 255, 0.22);
+  background: rgba(0, 229, 255, 0.04);
 }
 
 body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar {
+  flex-wrap: nowrap;
   padding: 6px 10px;
   gap: 10px;
 }
 
-body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__brand,
+body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__brand {
+  display: flex;
+  flex: 0 0 auto;
+  width: 160px;
+  height: 44px;
+  padding: 0 6px;
+  justify-content: flex-start;
+}
+
 body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__tagline {
   display: none;
 }
 
 body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-topbar__metrics {
-  width: 100%;
-  justify-content: flex-start;
+  flex: 1 1 auto;
+  width: auto;
+  justify-content: flex-end;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;

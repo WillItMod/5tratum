@@ -116,73 +116,80 @@
 
       <div class="forgeos-main">
         <main class="forgeos-content">
-          <section id="view-dashboard" class="forgeos-view forgeos-view--desktop">
-            <div class="forgeos-desktop-topbar">
-              <div class="forgeos-desktop-topbar__brand" aria-hidden="true">
-                <img class="forgeos-desktop-topbar__brand-mark" src="/assets/New%20Logos/WordOnlyLogo.png" alt="" />
-              </div>
-              <div class="forgeos-desktop-topbar__tagline" aria-hidden="true">The 5th layer of blockchain operation.</div>
-              <div class="forgeos-desktop-topbar__metrics" aria-label="System metrics">
-                <button id="metric-card-cpu" class="forgeos-desktop-metric forgeos-desktop-metric--cpu" type="button" aria-label="CPU details">
-                  <div class="forgeos-desktop-metric__head">
-                    <div class="forgeos-desktop-metric__k">CPU</div>
-                    <div class="forgeos-desktop-metric__v"><span id="metric-cpu">-</span></div>
-                  </div>
-                  <div class="forgeos-meter" aria-hidden="true">
-                    <div id="metric-cpu-bar" class="forgeos-meter__fill"></div>
-                  </div>
-                  <div id="metric-cpu-sub" class="forgeos-desktop-metric__sub">-</div>
-                </button>
-                <button id="metric-card-mem" class="forgeos-desktop-metric" type="button" aria-label="Memory details">
-                  <div class="forgeos-desktop-metric__head">
-                    <div class="forgeos-desktop-metric__k">MEM</div>
-                    <div class="forgeos-desktop-metric__v"><span id="metric-mem">-</span></div>
-                  </div>
-                  <div class="forgeos-meter" aria-hidden="true">
-                    <div id="metric-mem-bar" class="forgeos-meter__fill"></div>
-                  </div>
-                  <div id="metric-mem-sub" class="forgeos-desktop-metric__sub">-</div>
-                </button>
-                <button id="metric-card-disk" class="forgeos-desktop-metric" type="button" aria-label="Disk details">
-                  <div class="forgeos-desktop-metric__head">
-                    <div class="forgeos-desktop-metric__k">DISK</div>
-                    <div class="forgeos-desktop-metric__v"><span id="metric-disk">-</span></div>
-                  </div>
-                  <div class="forgeos-meter" aria-hidden="true">
-                    <div id="metric-disk-bar" class="forgeos-meter__fill"></div>
-                  </div>
-                  <div id="metric-disk-sub" class="forgeos-desktop-metric__sub">-</div>
-                </button>
-                <button id="metric-card-ip" class="forgeos-desktop-metric forgeos-desktop-metric--mono" type="button" aria-label="Network details">
-                  <div class="forgeos-desktop-metric__head">
-                    <div class="forgeos-desktop-metric__k">NETWORK</div>
-                    <div class="forgeos-desktop-metric__v"><span id="metric-net-host" class="forgeos-mono">-</span></div>
-                  </div>
-                  <div class="forgeos-meter" aria-hidden="true">
-                    <div id="metric-net-bar" class="forgeos-meter__fill"></div>
-                  </div>
-                  <div id="metric-net-sub" class="forgeos-desktop-metric__sub">-</div>
-                </button>
-                <button id="btn-topbar-toggle" class="forgeos-topbar-toggle" type="button" aria-label="Toggle top bar" title="Toggle top bar">
-                  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-                    <path
-                      fill="currentColor"
-                      d="M12 15.5a1 1 0 0 1-.71-.29l-5-5a1 1 0 0 1 1.42-1.42L12 13.09l4.29-4.3a1 1 0 0 1 1.42 1.42l-5 5a1 1 0 0 1-.71.29Z"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <button id="topbar-activity" class="forgeos-topbar-activity hidden" type="button" aria-label="Activity" aria-live="polite">
-                <div class="forgeos-topbar-activity__row">
-                  <div id="topbar-activity-text" class="forgeos-topbar-activity__text">Working...</div>
-                  <div id="topbar-activity-pct" class="forgeos-topbar-activity__pct"></div>
+          <div class="forgeos-desktop-topbar" aria-label="System status">
+            <div class="forgeos-desktop-topbar__brand" aria-hidden="true">
+              <img class="forgeos-desktop-topbar__brand-mark" src="/assets/New%20Logos/WordOnlyLogo.png" alt="" />
+            </div>
+            <div class="forgeos-desktop-topbar__tagline" aria-hidden="true">The 5th layer of blockchain operation.</div>
+            <div class="forgeos-desktop-topbar__metrics" aria-label="System metrics">
+              <button id="metric-card-cpu" class="forgeos-desktop-metric forgeos-desktop-metric--cpu" type="button" aria-label="CPU details">
+                <div class="forgeos-desktop-metric__head">
+                  <div class="forgeos-desktop-metric__k">CPU</div>
+                  <div class="forgeos-desktop-metric__v"><span id="metric-cpu">-</span></div>
                 </div>
-                <div class="forgeos-meter forgeos-topbar-activity__meter" aria-hidden="true">
-                  <div id="topbar-activity-bar" class="forgeos-meter__fill"></div>
+                <div class="forgeos-meter" aria-hidden="true">
+                  <div id="metric-cpu-bar" class="forgeos-meter__fill"></div>
                 </div>
+                <div id="metric-cpu-sub" class="forgeos-desktop-metric__sub">-</div>
+              </button>
+              <button id="metric-card-mem" class="forgeos-desktop-metric" type="button" aria-label="Memory details">
+                <div class="forgeos-desktop-metric__head">
+                  <div class="forgeos-desktop-metric__k">MEM</div>
+                  <div class="forgeos-desktop-metric__v"><span id="metric-mem">-</span></div>
+                </div>
+                <div class="forgeos-meter" aria-hidden="true">
+                  <div id="metric-mem-bar" class="forgeos-meter__fill"></div>
+                </div>
+                <div id="metric-mem-sub" class="forgeos-desktop-metric__sub">-</div>
+              </button>
+              <button id="metric-card-disk" class="forgeos-desktop-metric" type="button" aria-label="Disk details">
+                <div class="forgeos-desktop-metric__head">
+                  <div class="forgeos-desktop-metric__k">DISK</div>
+                  <div class="forgeos-desktop-metric__v"><span id="metric-disk">-</span></div>
+                </div>
+                <div class="forgeos-meter" aria-hidden="true">
+                  <div id="metric-disk-bar" class="forgeos-meter__fill"></div>
+                </div>
+                <div id="metric-disk-sub" class="forgeos-desktop-metric__sub">-</div>
+              </button>
+              <button id="metric-card-ip" class="forgeos-desktop-metric forgeos-desktop-metric--mono" type="button" aria-label="Network details">
+                <div class="forgeos-desktop-metric__head">
+                  <div class="forgeos-desktop-metric__k">NETWORK</div>
+                  <div class="forgeos-desktop-metric__v"><span id="metric-net-host" class="forgeos-mono">-</span></div>
+                </div>
+                <div class="forgeos-meter" aria-hidden="true">
+                  <div id="metric-net-bar" class="forgeos-meter__fill"></div>
+                </div>
+                <div id="metric-net-sub" class="forgeos-desktop-metric__sub">-</div>
+              </button>
+              <button
+                id="btn-topbar-toggle"
+                class="forgeos-topbar-toggle"
+                type="button"
+                aria-label="Pin top bar"
+                title="Pin top bar"
+                aria-pressed="true"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+                  <path
+                    fill="currentColor"
+                    d="M14 2a2 2 0 0 1 2 2v4.17l2.12 2.12a1 1 0 0 1-.71 1.71H13v7a1 1 0 0 1-2 0v-7H4.59a1 1 0 0 1-.71-1.71L6 8.17V4a2 2 0 0 1 2-2h6Z"
+                  />
+                </svg>
               </button>
             </div>
+            <button id="topbar-activity" class="forgeos-topbar-activity hidden" type="button" aria-label="Activity" aria-live="polite">
+              <div class="forgeos-topbar-activity__row">
+                <div id="topbar-activity-text" class="forgeos-topbar-activity__text">Working...</div>
+                <div id="topbar-activity-pct" class="forgeos-topbar-activity__pct"></div>
+              </div>
+              <div class="forgeos-meter forgeos-topbar-activity__meter" aria-hidden="true">
+                <div id="topbar-activity-bar" class="forgeos-meter__fill"></div>
+              </div>
+            </button>
+          </div>
 
+          <section id="view-dashboard" class="forgeos-view forgeos-view--desktop">
             <div class="forgeos-workspace-wrap">
               <div id="pane-apps-launcher" class="forgeos-home hidden" aria-label="Apps">
                 <div class="forgeos-home__head">
@@ -327,13 +334,11 @@
                     </select>
                   </div>
                   <div class="mt-3">
-                    <label class="forgeos-label" for="setting-topbar-workbench">Workbench top bar</label>
-                    <select id="setting-topbar-workbench" class="forgeos-input">
-                      <option value="expanded">Expanded</option>
-                      <option value="compact">Compact</option>
-                      <option value="auto">Auto-hide</option>
-                    </select>
-                    <div class="mt-1 text-xs text-slate-300">Applies only when apps are open in Workbench.</div>
+                    <label class="forgeos-toggle" title="Pin top bar (expanded). Unpin to auto-hide.">
+                      <input id="setting-topbar-pinned" type="checkbox" />
+                      <span>Pin top bar</span>
+                    </label>
+                    <div class="mt-1 text-xs text-slate-300">Unpin collapses the top bar; hover/tap reveals it.</div>
                   </div>
                   <div class="mt-4 text-xs text-slate-300">Channel is fixed to MAIN for now.</div>
                 </div>
