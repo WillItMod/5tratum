@@ -1450,6 +1450,49 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   gap: 12px;
 }
 
+.forgeos-home__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.forgeos-home__tabs.forgeos-segment {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+}
+
+.forgeos-home__tabs .forgeos-segment__btn {
+  user-select: none;
+}
+
+.forgeos-home__tabs .forgeos-segment__btn[data-active="1"] {
+  border-color: rgba(0, 229, 255, 0.22) !important;
+  background: rgba(0, 229, 255, 0.08) !important;
+  color: rgba(226, 232, 240, 0.98) !important;
+}
+
+.forgeos-home__tabs .forgeos-segment__btn[data-drop="1"] {
+  outline: 2px solid rgba(255, 154, 0, 0.55);
+  outline-offset: 2px;
+}
+
+.forgeos-launcher-item.forgeos-launcher-item--dragging {
+  opacity: 0.2;
+}
+
+.forgeos-launcher-ghost {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  opacity: 0.92;
+  filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.6));
+}
+
 .forgeos-home__title {
   font-size: 22px;
   font-weight: 900;

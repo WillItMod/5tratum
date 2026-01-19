@@ -72,6 +72,10 @@
   const paneAppsLauncherEl = document.getElementById('pane-apps-launcher');
   const appsLauncherGridEl = document.getElementById('apps-launcher-grid');
   const appsLauncherEmptyEl = document.getElementById('apps-launcher-empty');
+  const appsPagesTabsEl = document.getElementById('apps-pages-tabs');
+  const btnAppsPagePrev = document.getElementById('btn-apps-page-prev');
+  const btnAppsPageNext = document.getElementById('btn-apps-page-next');
+  const btnAppsPageAdd = document.getElementById('btn-apps-page-add');
   const paneDesktopEl = document.getElementById('pane-desktop');
   const desktopSurfaceEl = document.getElementById('desktop-surface');
   const desktopEmptyEl = document.getElementById('desktop-empty');
@@ -222,6 +226,15 @@
   let storeAutoSyncInFlight = false;
   let storeCustomStores = [];
   let storageCache = null;
+
+  // Apps launcher pages (server-backed).
+  let appsPagesState = null;
+  let appsPagesLoaded = false;
+  let appsPagesSaveTimer = 0;
+  let activeAppsPageId = '';
+  let launcherDrag = null;
+  let launcherGhostEl = null;
+  let launcherHoverTabTimer = 0;
 	  let lastMetrics = null;
 	  let lastWidgets = null;
   let mqttAppsCache = [];
@@ -940,6 +953,104 @@
     try {
       window.localStorage.setItem(WIDGET_PREFS_KEY, JSON.stringify(widgetPrefs || {}));
     } catch {}
+  }
+
+  function newPageId() {
+    return `page-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  function normalizePagesState(state, installedApps) {
+    const installedIds = new Set(
+      (Array.isArray(installedApps) ? installedApps : [])
+        .map((a) => (a && typeof a === 'object' ? String(a.id || '').trim().toLowerCase() : ''))
+        .filter((v) => v),
+    );
+
+    const base = state && typeof state === 'object' ? state : {};
+    const pagesRaw = Array.isArray(base.pages) ? base.pages : [];
+    const pages = [];
+    const seen = new Set();
+    for (const p of pagesRaw) {
+      if (!p || typeof p !== 'object') continue;
+      const id = String(p.id || '').trim().toLowerCase();
+      if (!id) continue;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const name = String(p.name || '').trim().slice(0, 32) || 'Page';
+      const itemsRaw = Array.isArray(p.items) ? p.items : [];
+      const items = [];
+      const itemSeen = new Set();
+      for (const v of itemsRaw) {
+        const appId = String(v || '').trim().toLowerCase();
+        if (!appId) continue;
+        if (!installedIds.has(appId)) continue;
+        if (itemSeen.has(appId)) continue;
+        itemSeen.add(appId);
+        items.push(appId);
+      }
+      pages.push({ id, name, items });
+    }
+
+    if (!pages.length) {
+      const all = Array.from(installedIds);
+      all.sort((a, b) => {
+        const ma = metaFor(a);
+        const mb = metaFor(b);
+        return String(ma.name || a).localeCompare(String(mb.name || b), undefined, { sensitivity: 'base' });
+      });
+      const id = 'page-1';
+      pages.push({ id, name: 'Apps', items: all });
+    }
+
+    // Ensure newly installed apps show up somewhere by default (append to first page).
+    const allSeen = new Set();
+    for (const p of pages) {
+      for (const id of Array.isArray(p.items) ? p.items : []) allSeen.add(id);
+    }
+    const missing = [];
+    for (const id of installedIds) {
+      if (!allSeen.has(id)) missing.push(id);
+    }
+    if (missing.length) {
+      missing.sort((a, b) => {
+        const ma = metaFor(a);
+        const mb = metaFor(b);
+        return String(ma.name || a).localeCompare(String(mb.name || b), undefined, { sensitivity: 'base' });
+      });
+      pages[0].items = (Array.isArray(pages[0].items) ? pages[0].items : []).concat(missing);
+    }
+
+    const active = String(base.active || '').trim().toLowerCase();
+    const activeResolved = active && pages.some((p) => p.id === active) ? active : pages[0].id;
+    return { version: 1, active: activeResolved, pages };
+  }
+
+  async function refreshAppsPagesState(installedApps) {
+    if (!appsPagesLoaded) {
+      try {
+        const res = await apiJsonTimeout('/api/v0/apps/pages', {}, 2500).catch(() => null);
+        if (res && res.ok === true && res.state && typeof res.state === 'object') {
+          appsPagesState = res.state;
+        }
+      } catch {}
+      appsPagesLoaded = true;
+    }
+    appsPagesState = normalizePagesState(appsPagesState, installedApps);
+    activeAppsPageId = String(appsPagesState.active || '').trim().toLowerCase();
+  }
+
+  function scheduleAppsPagesSave() {
+    if (appsPagesSaveTimer) window.clearTimeout(appsPagesSaveTimer);
+    appsPagesSaveTimer = window.setTimeout(() => {
+      appsPagesSaveTimer = 0;
+      saveAppsPagesState().catch(() => {});
+    }, 700);
+  }
+
+  async function saveAppsPagesState() {
+    if (!appsPagesState || typeof appsPagesState !== 'object') return;
+    const res = await apiJsonTimeout('/api/v0/apps/pages', { method: 'POST', body: JSON.stringify({ state: appsPagesState }) }, 5000).catch(() => null);
+    if (!res || res.ok !== true) throw new Error(res && res.error ? String(res.error) : 'save failed');
   }
 
   function isWidgetEnabled(appId) {
@@ -6617,25 +6728,324 @@
     openContextMenu(items, x, y);
   }
 
+  let launcherSuppressClickUntil = 0;
+  let launcherSuppressClickId = '';
+
+  function appsPagesList() {
+    const state = appsPagesState && typeof appsPagesState === 'object' ? appsPagesState : null;
+    const pages = state && Array.isArray(state.pages) ? state.pages : [];
+    return pages.filter((p) => p && typeof p === 'object' && String(p.id || '').trim());
+  }
+
+  function setActiveAppsPage(nextId, opts) {
+    const id = String(nextId || '').trim().toLowerCase();
+    const pages = appsPagesList();
+    const allowAll = !!(opts && opts.allowAll);
+    const valid = id && pages.some((p) => String(p.id || '').trim().toLowerCase() === id);
+    if (!valid && !(allowAll && id === '__all')) return;
+    activeAppsPageId = id;
+    if (appsPagesState && typeof appsPagesState === 'object' && id && id !== '__all') {
+      appsPagesState.active = id;
+      scheduleAppsPagesSave();
+    }
+    renderAppsLauncher(installedAppsCache);
+  }
+
+  function stepAppsPage(dir) {
+    const d = Number(dir) || 0;
+    if (!d) return;
+    const pages = appsPagesList();
+    if (!pages.length) return;
+    const ids = pages.map((p) => String(p.id || '').trim().toLowerCase()).filter((v) => v);
+    const cur = String(activeAppsPageId || '').trim().toLowerCase();
+    const idx = Math.max(0, ids.indexOf(cur));
+    const next = ids[(idx + d + ids.length) % ids.length];
+    setActiveAppsPage(next);
+  }
+
+  function renderAppsPagesTabs() {
+    if (!appsPagesTabsEl) return;
+    appsPagesTabsEl.innerHTML = '';
+    const pages = appsPagesList();
+    const cur = String(activeAppsPageId || '').trim().toLowerCase();
+
+    const makeTab = (id, label, active, opts) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forgeos-segment__btn';
+      btn.dataset.appsPageId = id;
+      btn.dataset.active = active ? '1' : '0';
+      btn.textContent = label;
+      btn.addEventListener('click', () => setActiveAppsPage(id, { allowAll: true }));
+      if (opts && opts.title) btn.title = String(opts.title);
+      appsPagesTabsEl.appendChild(btn);
+    };
+
+    for (const p of pages) {
+      const id = String(p.id || '').trim().toLowerCase();
+      const name = String(p.name || '').trim() || 'Page';
+      makeTab(id, name, cur === id);
+    }
+    makeTab('__all', 'All', cur === '__all', { title: 'Alphabetical list of all installed apps' });
+
+    if (btnAppsPagePrev) btnAppsPagePrev.disabled = pages.length <= 1;
+    if (btnAppsPageNext) btnAppsPageNext.disabled = pages.length <= 1;
+  }
+
+  function launcherCreateGhost(btn, x, y) {
+    if (launcherGhostEl) {
+      try {
+        launcherGhostEl.remove();
+      } catch {}
+      launcherGhostEl = null;
+    }
+    const ghost = btn.cloneNode(true);
+    ghost.classList.add('forgeos-launcher-ghost');
+    ghost.style.left = `${x}px`;
+    ghost.style.top = `${y}px`;
+    document.body.appendChild(ghost);
+    launcherGhostEl = ghost;
+  }
+
+  function launcherClearDropHighlights() {
+    if (!appsPagesTabsEl) return;
+    for (const btn of Array.from(appsPagesTabsEl.querySelectorAll('[data-apps-page-id]'))) {
+      btn.dataset.drop = '0';
+    }
+  }
+
+  function launcherSetTabDrop(id) {
+    if (!appsPagesTabsEl) return;
+    launcherClearDropHighlights();
+    const bid = String(id || '').trim().toLowerCase();
+    const tabs = Array.from(appsPagesTabsEl.querySelectorAll('[data-apps-page-id]'));
+    const tab = tabs.find((el) => el && el instanceof HTMLElement && String(el.dataset.appsPageId || '').trim().toLowerCase() === bid) || null;
+    if (tab) tab.dataset.drop = '1';
+  }
+
+  function launcherCancelHoverSwitch() {
+    if (launcherHoverTabTimer) window.clearTimeout(launcherHoverTabTimer);
+    launcherHoverTabTimer = 0;
+  }
+
+  function launcherMaybeScheduleHoverSwitch(targetPageId) {
+    launcherCancelHoverSwitch();
+    const target = String(targetPageId || '').trim().toLowerCase();
+    if (!target || target === '__all') return;
+    if (target === String(activeAppsPageId || '').trim().toLowerCase()) return;
+    launcherHoverTabTimer = window.setTimeout(() => {
+      launcherHoverTabTimer = 0;
+      setActiveAppsPage(target);
+    }, 550);
+  }
+
+  function moveAppBetweenPages(appId, fromPageId, toPageId, toIndex) {
+    if (!appsPagesState || typeof appsPagesState !== 'object') return;
+    const pages = appsPagesList();
+    const aid = String(appId || '').trim().toLowerCase();
+    if (!aid) return;
+    const fromId = String(fromPageId || '').trim().toLowerCase();
+    const toId = String(toPageId || '').trim().toLowerCase();
+    const from = pages.find((p) => String(p.id || '').trim().toLowerCase() === fromId) || null;
+    const to = pages.find((p) => String(p.id || '').trim().toLowerCase() === toId) || null;
+    if (!to) return;
+
+    if (from && Array.isArray(from.items)) from.items = from.items.filter((v) => String(v || '').trim().toLowerCase() !== aid);
+    if (!Array.isArray(to.items)) to.items = [];
+    to.items = to.items.filter((v) => String(v || '').trim().toLowerCase() !== aid);
+    const idx = Number.isFinite(Number(toIndex)) ? Math.max(0, Math.min(to.items.length, Number(toIndex))) : to.items.length;
+    to.items.splice(idx, 0, aid);
+  }
+
+  function attachLauncherDnD(btn, appId, pageId, displayedIds) {
+    const id = String(appId || '').trim().toLowerCase();
+    const pid = String(pageId || '').trim().toLowerCase();
+    if (!id || !btn) return;
+
+    btn.addEventListener('pointerdown', (e) => {
+      if (!(e instanceof PointerEvent)) return;
+      if (e.button !== 0) return;
+      if (String(activeAppsPageId || '') === '__all') return;
+      if (pendingAppActions.has(id)) return;
+
+      launcherDrag = {
+        appId: id,
+        fromPageId: pid,
+        startX: e.clientX,
+        startY: e.clientY,
+        pointerId: e.pointerId,
+        didDrag: false,
+        targetTabId: '',
+        targetIndex: -1,
+        displayed: Array.isArray(displayedIds) ? displayedIds.slice() : [],
+      };
+
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch {}
+    });
+
+    btn.addEventListener('pointermove', (e) => {
+      if (!(e instanceof PointerEvent)) return;
+      if (!launcherDrag || launcherDrag.pointerId !== e.pointerId) return;
+      const dx = e.clientX - launcherDrag.startX;
+      const dy = e.clientY - launcherDrag.startY;
+      const dist = Math.hypot(dx, dy);
+      if (!launcherDrag.didDrag && dist < 8) return;
+
+      if (!launcherDrag.didDrag) {
+        launcherDrag.didDrag = true;
+        btn.classList.add('forgeos-launcher-item--dragging');
+        launcherCreateGhost(btn, e.clientX, e.clientY);
+      }
+
+      if (launcherGhostEl) {
+        launcherGhostEl.style.left = `${e.clientX}px`;
+        launcherGhostEl.style.top = `${e.clientY}px`;
+      }
+
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const tab = el && el instanceof Element ? el.closest('[data-apps-page-id]') : null;
+      if (tab && tab instanceof HTMLElement) {
+        const tid = String(tab.dataset.appsPageId || '').trim().toLowerCase();
+        launcherDrag.targetTabId = tid;
+        launcherSetTabDrop(tid);
+        launcherMaybeScheduleHoverSwitch(tid);
+        launcherDrag.targetIndex = -1;
+        return;
+      }
+
+      launcherDrag.targetTabId = '';
+      launcherCancelHoverSwitch();
+      launcherClearDropHighlights();
+
+      const tile = el && el instanceof Element ? el.closest('.forgeos-launcher-item') : null;
+      const overId = tile && tile instanceof HTMLElement ? String(tile.dataset.appId || '').trim().toLowerCase() : '';
+      if (!overId || !Array.isArray(launcherDrag.displayed)) {
+        launcherDrag.targetIndex = launcherDrag.displayed.length;
+        return;
+      }
+      const idx = launcherDrag.displayed.indexOf(overId);
+      launcherDrag.targetIndex = idx >= 0 ? idx : launcherDrag.displayed.length;
+    });
+
+    const endDrag = () => {
+      if (!launcherDrag || launcherDrag.appId !== id) return;
+      const didDrag = !!launcherDrag.didDrag;
+      const targetTab = String(launcherDrag.targetTabId || '').trim().toLowerCase();
+      const targetIndex = Number(launcherDrag.targetIndex);
+      launcherDrag = null;
+      launcherCancelHoverSwitch();
+      launcherClearDropHighlights();
+      if (launcherGhostEl) {
+        try {
+          launcherGhostEl.remove();
+        } catch {}
+        launcherGhostEl = null;
+      }
+      btn.classList.remove('forgeos-launcher-item--dragging');
+      if (!didDrag) return;
+
+      launcherSuppressClickUntil = Date.now() + 450;
+      launcherSuppressClickId = id;
+
+      const pages = appsPagesList();
+      const from = pages.find((p) => String(p.id || '').trim().toLowerCase() === pid) || null;
+      if (!from) return;
+
+      if (targetTab && targetTab !== '__all') {
+        const to = pages.find((p) => String(p.id || '').trim().toLowerCase() === targetTab) || null;
+        if (to) {
+          moveAppBetweenPages(id, pid, targetTab, Array.isArray(to.items) ? to.items.length : 0);
+          scheduleAppsPagesSave();
+          renderAppsLauncher(installedAppsCache);
+          return;
+        }
+      }
+
+      // Reorder within the current page.
+      const items = Array.isArray(from.items) ? from.items.slice() : [];
+      const fromIdx = items.findIndex((v) => String(v || '').trim().toLowerCase() === id);
+      if (fromIdx < 0) return;
+      items.splice(fromIdx, 1);
+      let idx = Number.isFinite(targetIndex) ? Math.max(0, Math.min(items.length, targetIndex)) : items.length;
+      if (Number.isFinite(targetIndex) && fromIdx < targetIndex) idx = Math.max(0, idx - 1);
+      items.splice(Math.max(0, Math.min(items.length, idx)), 0, id);
+      from.items = items;
+      scheduleAppsPagesSave();
+      renderAppsLauncher(installedAppsCache);
+    };
+
+    btn.addEventListener('pointerup', (e) => {
+      if (!(e instanceof PointerEvent)) return;
+      if (!launcherDrag || launcherDrag.pointerId !== e.pointerId) return;
+      endDrag();
+    });
+    btn.addEventListener('pointercancel', (e) => {
+      if (!(e instanceof PointerEvent)) return;
+      if (!launcherDrag || launcherDrag.pointerId !== e.pointerId) return;
+      endDrag();
+    });
+  }
+
   function renderAppsLauncher(apps) {
     if (!appsLauncherGridEl || !appsLauncherEmptyEl) return;
     appsLauncherGridEl.innerHTML = '';
     const list = Array.isArray(apps) ? apps : [];
     appsLauncherEmptyEl.classList.toggle('hidden', list.length > 0);
-    if (!list.length) return;
+    if (!list.length) {
+      if (appsPagesTabsEl) appsPagesTabsEl.innerHTML = '';
+      return;
+    }
 
-    const sorted = list.slice().sort((a, b) => {
-      const ida = a && typeof a === 'object' ? String(a.id || '').trim() : '';
-      const idb = b && typeof b === 'object' ? String(b.id || '').trim() : '';
-      const ma = metaFor(ida);
-      const mb = metaFor(idb);
-      return String(ma.name || ida).localeCompare(String(mb.name || idb), undefined, { sensitivity: 'base' });
-    });
+    if (!appsPagesLoaded) {
+      refreshAppsPagesState(list)
+        .catch(() => {})
+        .finally(() => {
+          // Persist a first-run default state so other devices see the same pages.
+          scheduleAppsPagesSave();
+          renderAppsLauncher(installedAppsCache);
+        });
+      return;
+    }
 
-    for (const app of sorted) {
-      if (!app || typeof app !== 'object') continue;
-      const id = String(app.id || '').trim();
-      if (!id) continue;
+    appsPagesState = normalizePagesState(appsPagesState, list);
+    activeAppsPageId = String(activeAppsPageId || appsPagesState.active || '').trim().toLowerCase();
+    if (!activeAppsPageId) activeAppsPageId = String(appsPagesState.active || '').trim().toLowerCase();
+
+    const pages = appsPagesList();
+    const activePage = pages.find((p) => String(p.id || '').trim().toLowerCase() === String(activeAppsPageId || '').trim().toLowerCase()) || null;
+    if (!activePage && pages.length) {
+      activeAppsPageId = String(pages[0].id || '').trim().toLowerCase();
+      appsPagesState.active = activeAppsPageId;
+      scheduleAppsPagesSave();
+    }
+
+    renderAppsPagesTabs();
+
+    const byId = new Map();
+    for (const a of list) {
+      if (!a || typeof a !== 'object') continue;
+      const id = String(a.id || '').trim().toLowerCase();
+      if (id) byId.set(id, a);
+    }
+
+    const displayAll = String(activeAppsPageId || '') === '__all';
+    let ids = [];
+    if (displayAll) {
+      ids = Array.from(byId.keys());
+      ids.sort((a, b) => {
+        const ma = metaFor(a);
+        const mb = metaFor(b);
+        return String(ma.name || a).localeCompare(String(mb.name || b), undefined, { sensitivity: 'base' });
+      });
+    } else {
+      const items = activePage && Array.isArray(activePage.items) ? activePage.items : [];
+      ids = items.map((v) => String(v || '').trim().toLowerCase()).filter((v) => byId.has(v));
+    }
+
+    for (const id of ids) {
+      const app = byId.get(id) || { id };
       const meta = metaFor(id);
       const isPinned = isPinnedToDrawer(id);
 
@@ -6664,7 +7074,13 @@
       btn.appendChild(icon);
       btn.appendChild(name);
 
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        const now = Date.now();
+        if (launcherSuppressClickId === id && now < launcherSuppressClickUntil) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         // Apps page is a launcher: start the app if needed, then open it.
         if (!isAppLaunchable(id) && !pendingAppActions.has(id)) {
           await runAppAction(id, 'up');
@@ -6684,6 +7100,8 @@
         renderAppsLauncher(installedAppsCache);
         showToast(isPinned ? 'Unpinned from drawer' : 'Pinned to drawer', null);
       });
+
+      if (!displayAll && activePage) attachLauncherDnD(btn, id, String(activePage.id || '').trim().toLowerCase(), ids);
 
       appsLauncherGridEl.appendChild(btn);
     }
@@ -8835,6 +9253,76 @@
   });
   btnWidgetsRefresh?.addEventListener('click', () => refreshWidgets({ force: true }).catch(() => {}));
   btnFleetRefresh?.addEventListener('click', () => refreshFleet({ force: true }).catch(() => {}));
+  btnAppsPagePrev?.addEventListener('click', () => stepAppsPage(-1));
+  btnAppsPageNext?.addEventListener('click', () => stepAppsPage(1));
+  btnAppsPageAdd?.addEventListener('click', async () => {
+    try {
+      if (!appsPagesLoaded) {
+        await refreshAppsPagesState(installedAppsCache);
+      }
+      appsPagesState = normalizePagesState(appsPagesState, installedAppsCache);
+      const pages = appsPagesList();
+      const n = pages.length + 1;
+      const id = newPageId();
+      const name = `Page ${n}`;
+      appsPagesState.pages = pages.concat([{ id, name, items: [] }]);
+      appsPagesState.active = id;
+      activeAppsPageId = id;
+      scheduleAppsPagesSave();
+      renderAppsLauncher(installedAppsCache);
+    } catch (e) {
+      showToast('Failed to add page', e && e.message ? String(e.message) : String(e));
+    }
+  });
+
+  if (appsLauncherGridEl) {
+    let swipe = null;
+    appsLauncherGridEl.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (!(e instanceof PointerEvent)) return;
+        if (e.pointerType !== 'touch') return;
+        if (launcherDrag) return;
+        const mode = String(dashboardMode || '').toLowerCase();
+        if (activeViewKey !== 'dashboard' || mode !== 'appslist') return;
+        const t = e.target;
+        if (t && t instanceof Element && t.closest('.forgeos-launcher-item')) return;
+        swipe = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, dy: 0, active: true };
+      },
+      { passive: true },
+    );
+    appsLauncherGridEl.addEventListener(
+      'pointermove',
+      (e) => {
+        if (!(e instanceof PointerEvent)) return;
+        if (!swipe || swipe.id !== e.pointerId) return;
+        if (!swipe.active) return;
+        swipe.dx = e.clientX - swipe.x;
+        swipe.dy = e.clientY - swipe.y;
+      },
+      { passive: true },
+    );
+    const finish = () => {
+      if (!swipe) return;
+      const dx = Number(swipe.dx) || 0;
+      const dy = Number(swipe.dy) || 0;
+      swipe = null;
+      if (Math.abs(dx) < 90) return;
+      if (Math.abs(dx) < Math.abs(dy) * 1.2) return;
+      if (dx > 0) stepAppsPage(-1);
+      else stepAppsPage(1);
+    };
+    appsLauncherGridEl.addEventListener('pointerup', (e) => {
+      if (!(e instanceof PointerEvent)) return;
+      if (!swipe || swipe.id !== e.pointerId) return;
+      finish();
+    });
+    appsLauncherGridEl.addEventListener('pointercancel', (e) => {
+      if (!(e instanceof PointerEvent)) return;
+      if (!swipe || swipe.id !== e.pointerId) return;
+      swipe = null;
+    });
+  }
   btnSelectedStart?.addEventListener('click', () => runSelectedAppAction('up'));
   btnSelectedStop?.addEventListener('click', () => runSelectedAppAction('down'));
   btnSelectedRestart?.addEventListener('click', () => runSelectedAppAction('restart'));

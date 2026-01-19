@@ -65,6 +65,7 @@ UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
+APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
@@ -626,6 +627,39 @@ def desktop_state_set(body: dict) -> dict:
         return {"ok": False, "error": "state.items must be an object"}
     _write_desktop_state(state)
     return {"ok": True, "saved": True, "state": _read_desktop_state()}
+
+
+def _read_apps_pages_state() -> dict:
+    cfg = _read_json(APPS_PAGES_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_apps_pages_state(state: dict) -> None:
+    _write_json_atomic(APPS_PAGES_FILE, state if isinstance(state, dict) else {})
+    try:
+        os.chmod(APPS_PAGES_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def apps_pages_get() -> dict:
+    return {"ok": True, "state": _read_apps_pages_state()}
+
+
+def apps_pages_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    state = body.get("state") if "state" in body else body
+    if not isinstance(state, dict):
+        return {"ok": False, "error": "state must be an object"}
+    pages = state.get("pages")
+    if pages is not None and not isinstance(pages, list):
+        return {"ok": False, "error": "state.pages must be a list"}
+    active = state.get("active")
+    if active is not None and not isinstance(active, str):
+        return {"ok": False, "error": "state.active must be a string"}
+    _write_apps_pages_state(state)
+    return {"ok": True, "saved": True, "state": _read_apps_pages_state()}
 
 
 def _storage_defaults() -> dict:
@@ -5011,6 +5045,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, desktop_state_get())
             return
 
+        if path == "/api/v0/apps/pages":
+            json_response(self, HTTPStatus.OK, apps_pages_get())
+            return
+
         if path == "/api/v0/system/mqtt/config":
             json_response(self, HTTPStatus.OK, mqtt_config_get())
             return
@@ -5367,6 +5405,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/desktop/state":
             res = desktop_state_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/apps/pages":
+            res = apps_pages_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
