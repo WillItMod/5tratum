@@ -28,6 +28,12 @@ nameserver 1.1.1.1
 nameserver 8.8.8.8
 EOF
 
+log "Removing cdrom APT sources (avoid missing Release errors)..."
+if [ -f /etc/apt/sources.list ]; then
+  sed -i '/^deb cdrom:/d' /etc/apt/sources.list || true
+fi
+rm -f /etc/apt/sources.list.d/cdrom.list || true
+
 log "Installing base packages..."
 export DEBIAN_FRONTEND=noninteractive
 tries=0
