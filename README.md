@@ -7,8 +7,10 @@ Release artifacts are published via GitHub Releases.
 
 ## v0.3.64 downloads
 
-Burn the ISO image to a usb drive, then use this to plug in to your target machine for installation. Boot from the USB drive.
-1GB minimum recommended.
+AMD64 only for now.
 
-- Installer ISO (recommended): `https://github.com/WillItMod/5tratum/releases/download/v0.3.64/5tratumos-installer.iso' 
+Burn the installer ISO to a USB drive, then boot your target machine from the USB drive to install 5tratumOS.
+1GB minimum is enough for the ISO, 2GB+ recommended.
+
+- Installer ISO (recommended): `https://github.com/WillItMod/5tratum/releases/download/v0.3.64/5tratumos-installer.iso`
 - Installer ISO checksum: `https://github.com/WillItMod/5tratum/releases/download/v0.3.64/5tratumos-installer.iso.sha256`

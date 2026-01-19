@@ -4,17 +4,12 @@
 
 ## Downloads (per release)
 
-You will see one or both of these artifacts:
+For now, releases include only the **AMD64 installer ISO**:
 
 1) **Installer ISO** (recommended)
    - Filename: `5tratumos-installer.iso`
    - Purpose: boot into an installer that will **wipe the selected target disk** and install 5tratumOS onto it.
    - Works for: Proxmox/VM CD-ROM boot, USB stick boot (Etcher/Rufus), and writing the installer ISO directly to a drive.
-
-2) **Direct-flash disk image** (advanced)
-   - Filename: `5tratumOS_v<version>_Balena.img.xz` (example: `5tratumOS_v0.3.64_Balena.img.xz`)
-   - Purpose: write a bootable OS disk image directly to a disk (USB/SSD) in one step.
-   - Note: not available for every release.
 
 If you're unsure: use the **Installer ISO**.
 
@@ -44,18 +39,6 @@ If you're unsure: use the **Installer ISO**.
 6. When finished:
    - Remove the USB stick
    - Reboot
-
-## Physical hardware (Balena Etcher direct-flash image)
-
-This option writes a complete OS disk image directly to your target disk.
-
-1. Download `5tratumOS_v<version>_Balena.img.xz` from the Release assets.
-2. (Optional) Verify the download: `docs/install/VERIFY.md`
-3. Open **Balena Etcher**:
-   - Flash from file: `5tratumOS_v<version>_Balena.img.xz`
-   - Select target: your OS disk (USB/SSD)
-   - Flash
-4. Boot the target machine from that disk.
 
 ## Physical hardware (direct-to-drive)
 
