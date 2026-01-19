@@ -101,11 +101,18 @@ EOF
 systemctl restart systemd-logind || true
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target || true
 
-echo "[6/7] Syncing Global App Store (optional)..."
-if /usr/local/bin/5tratumos store sync >/dev/null 2>&1; then
-  echo "Store synced."
+echo "[6/7] Global App Store (optional)..."
+if [ "${FIVETRATUMOS_SYNC_GLOBAL_STORE:-0}" = "1" ]; then
+  echo "Syncing Global App Store..."
+  if /usr/local/bin/5tratumos store sync >/dev/null 2>&1; then
+    echo "Store synced."
+  else
+    echo "warn: store sync failed (run: sudo 5tratumos store sync)" >&2
+  fi
 else
-  echo "warn: store sync failed (run: sudo 5tratumos store sync)" >&2
+  echo "Skipping global store sync."
+  echo "To sync later, run: sudo 5tratumos store sync"
+  echo "To auto-sync during install, re-run with: FIVETRATUMOS_SYNC_GLOBAL_STORE=1"
 fi
 
 echo "[7/7] Done."

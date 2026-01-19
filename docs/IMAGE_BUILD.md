@@ -24,6 +24,15 @@ On first boot, the image will auto-expand the root filesystem (ext4) to fill the
   - Remove `/etc/5tratumos/auth.json`
   - `systemctl restart 5tratumosd`
 - Bake in the update signing public key at `/etc/5tratumos/update_signing.pub` (optional but recommended).
+- Reset first-boot tasks so each install generates unique identity:
+  - Remove `/etc/5tratumos/firstboot.done`
+  - Truncate `/etc/machine-id` to 0 bytes
+  - Remove `/etc/ssh/ssh_host_*` (first boot will regenerate and SSH will be restarted cleanly)
+- Remove Global App Store sync payload (if present):
+  - `/opt/5tratumos/store/global`
+  - `/opt/5tratumos/store/global-assets`
+- Remove downloaded update bundles/staging:
+  - `/var/lib/5tratumos/update/*`
 
 ## Bring the golden image to the latest MAIN build
 Before capturing the disk image, update the system to the latest MAIN release (e.g. `v0.3.33`):
@@ -31,6 +40,10 @@ Before capturing the disk image, update the system to the latest MAIN release (e
 - In the UI: `Settings -> Updates -> Check updates -> Install update`
 
 This pulls from GitHub Releases in `WillItMod/5tratum`.
+
+## Notes
+- `bootstrap/install.sh` does **not** sync the Global App Store by default (to keep images small). To sync later:
+  - `sudo 5tratumos store sync`
 
 ## Performance tuning (recommended, safe defaults)
 

@@ -5,6 +5,19 @@ DONE_FILE="/etc/5tratumos/firstboot.done"
 
 mkdir -p /etc/5tratumos
 
+if [ ! -s /etc/machine-id ]; then
+  if command -v systemd-machine-id-setup >/dev/null 2>&1; then
+    systemd-machine-id-setup >/dev/null 2>&1 || true
+  fi
+fi
+
+if command -v ssh-keygen >/dev/null 2>&1; then
+  if ls /etc/ssh/ssh_host_* >/dev/null 2>&1; then
+    rm -f /etc/ssh/ssh_host_* || true
+  fi
+  ssh-keygen -A >/dev/null 2>&1 || true
+fi
+
 if [ ! -f /etc/5tratumos/console.json ]; then
   cat >/etc/5tratumos/console.json <<'EOF'
 {"enabled":true,"prompted":false,"user":"forge"}

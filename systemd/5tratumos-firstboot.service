@@ -1,7 +1,8 @@
 [Unit]
 Description=5tratumOS First Boot Tasks
-Wants=network-online.target
-After=network-online.target
+After=local-fs.target
+Before=ssh.service
+Before=5tratumosd.service
 ConditionPathExists=!/etc/5tratumos/firstboot.done
 
 [Service]
@@ -11,4 +12,3 @@ RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
-
