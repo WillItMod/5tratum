@@ -3874,6 +3874,89 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             except Exception:
                 return False
 
+        def _parse_share_ts(v: object) -> float | None:
+            if v is None:
+                return None
+            now_ts = time.time()
+            ts: float | None = None
+
+            if isinstance(v, (int, float)):
+                ts = float(v)
+            elif isinstance(v, str):
+                raw = v.strip()
+                if not raw:
+                    return None
+                if raw.isdigit():
+                    try:
+                        ts = float(raw)
+                    except Exception:
+                        ts = None
+                else:
+                    dt = None
+                    try:
+                        dt = datetime.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                    except Exception:
+                        dt = None
+                    if dt is None:
+                        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S"):
+                            try:
+                                dt = datetime.datetime.strptime(raw, fmt)
+                                break
+                            except Exception:
+                                dt = None
+                    if dt is not None:
+                        try:
+                            ts = float(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
+                        except Exception:
+                            ts = None
+
+            if ts is None:
+                return None
+            if ts > 10_000_000_000:
+                ts = ts / 1000.0
+            if ts > now_ts + 60:
+                return None
+            if ts < 0:
+                return None
+            return ts
+
+        def _normalize_worker_fields(w: dict) -> dict:
+            if not isinstance(w, dict):
+                return {}
+            out = dict(w)
+
+            if "workername" not in out:
+                wn = out.get("worker") or out.get("workerName") or out.get("name") or out.get("id") or ""
+                if wn:
+                    out["workername"] = str(wn)
+
+            if "bestshare" not in out:
+                bs = (
+                    out.get("bestShare")
+                    or out.get("best_share")
+                    or out.get("bestshare")
+                    or out.get("bestShareValue")
+                    or out.get("best_share_value")
+                )
+                if bs is not None:
+                    out["bestshare"] = bs
+
+            if "lastshare_ago_s" not in out and "last_share_ago_s" not in out:
+                ls = (
+                    out.get("lastshare")
+                    or out.get("lastShare")
+                    or out.get("last_share")
+                    or out.get("lastShareTime")
+                    or out.get("lastShareTimestamp")
+                    or out.get("lastShareTs")
+                )
+                ts = _parse_share_ts(ls)
+                if ts is not None:
+                    out["lastshare"] = int(ts)
+                    out["lastshare_ago_s"] = max(0, int(time.time() - ts))
+
+            return out
+
         raw_details = None
         if workers_data:
             if isinstance(workers_data.get("workers_details"), list):
@@ -3908,7 +3991,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 for miner in workers_data.get("miners") or []:
                     if not isinstance(miner, dict):
                         continue
-                    w = dict(miner)
+                    w = _normalize_worker_fields(miner)
                     if "workername" not in w:
                         wn = w.get("worker") or w.get("workerName") or w.get("name") or ""
                         if wn:
@@ -3954,7 +4037,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             for w in raw_details:
                 if not isinstance(w, dict):
                     continue
-                details.append({"app_id": app_id, "coin": coin, **w})
+                details.append({"app_id": app_id, "coin": coin, **_normalize_worker_fields(w)})
         return entry, details
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
@@ -3996,6 +4079,30 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 continue
         return 0.0
 
+    def worker_last_share_age_s(w: dict) -> float | None:
+        for k in (
+            "last_share_s",
+            "last_share_sec",
+            "last_share_seconds",
+            "last_share_age_s",
+            "last_share_age",
+            "last_share",
+            "lastshare_ago_s",
+            "lastShareSec",
+            "lastShareSeconds",
+            "lastShare",
+            "lastshare_ago",
+        ):
+            try:
+                v = w.get(k)
+                if isinstance(v, (int, float)):
+                    return float(v)
+                if isinstance(v, str) and v.strip():
+                    return float(v.strip())
+            except Exception:
+                continue
+        return None
+
     active_workers: list[dict] = []
     inactive_workers: list[dict] = []
     pruned_workers = 0
@@ -4003,7 +4110,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         if not isinstance(w, dict):
             continue
         hr = worker_hashrate_key(w)
-        age = _worker_last_share_age_s(w)
+        age = worker_last_share_age_s(w)
         if hr > 0:
             active_workers.append(w)
             continue
@@ -4023,7 +4130,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         active_workers.append(w)
 
     active_workers.sort(key=worker_hashrate_key, reverse=True)
-    inactive_workers.sort(key=lambda it: float(_worker_last_share_age_s(it) or 0.0), reverse=False)
+    inactive_workers.sort(key=lambda it: float(worker_last_share_age_s(it) or 0.0), reverse=False)
     if limit > 0:
         active_workers = active_workers[:limit]
 
