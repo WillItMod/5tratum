@@ -22,6 +22,8 @@
   const topbarActivityBarEl = document.getElementById('topbar-activity-bar');
   const topbarPerfEl = document.getElementById('topbar-perf');
   const topbarPerfCountEl = document.getElementById('topbar-perf-count');
+  const topbarOsVersionEl = document.getElementById('topbar-os-version');
+  const topbarOsStageEl = document.getElementById('topbar-os-stage');
     const metricCardCpu = document.getElementById('metric-card-cpu');
     const metricCardMem = document.getElementById('metric-card-mem');
     const metricCardDisk = document.getElementById('metric-card-disk');
@@ -6215,6 +6217,14 @@
     return 'Idle.';
   }
 
+  function setTopbarOsPills(check) {
+    const chk = check && typeof check === 'object' ? check : null;
+    const installedTag =
+      chk && chk.installed && typeof chk.installed === 'object' && chk.installed.tag ? String(chk.installed.tag) : '';
+    if (topbarOsVersionEl) topbarOsVersionEl.textContent = installedTag || 'v-';
+    if (topbarOsStageEl) topbarOsStageEl.textContent = 'ALPHA';
+  }
+
   function renderSystemUpdatePanel() {
     const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
     const status = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
@@ -6229,6 +6239,7 @@
     if (updateChannelEl) updateChannelEl.textContent = channel || '-';
     if (updateAvailableEl) updateAvailableEl.textContent = availableTag || '-';
     if (updateNotesEl) updateNotesEl.textContent = (check && check.available && check.available.notes ? String(check.available.notes) : '') || '';
+    setTopbarOsPills(check);
 
     const state = status && status.state ? String(status.state).trim().toLowerCase() : 'idle';
     const busy = systemUpdateIsBusy(state);
