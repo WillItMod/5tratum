@@ -70,20 +70,13 @@ main() {
   # If we try to pull before DNS is usable, the overlay service fails and won't retry automatically.
   log "Waiting for DNS..."
   if ! wait_for_dns 180; then
-    log "WARN: DNS not ready after timeout; attempting compose up anyway"
+    log "ERROR: DNS not ready after timeout"
+    exit 1
   fi
 
-  local attempt=0
-  while true; do
-    attempt=$((attempt + 1))
-    log "Starting portal (attempt ${attempt})..."
-    if /usr/bin/docker compose --project-name 5tratumos-overlay up -d; then
-      log "Portal started"
-      exit 0
-    fi
-    sleep 3
-  done
+  log "Starting portal..."
+  /usr/bin/docker compose --project-name 5tratumos-overlay up -d
+  log "Portal started"
 }
 
 main "$@"
-
