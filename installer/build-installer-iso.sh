@@ -70,7 +70,6 @@ echo "Note: this installer ISO performs a fresh install (Debian + 5tratumOS) and
 echo "[3/4] Building ISO..."
 (
   cd "${BUILD_DIR}"
-  lb clean
   lb build
 )
 
