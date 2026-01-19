@@ -4054,3 +4054,113 @@ select.forgeos-input optgroup {
     grid-column: 1 / -1;
   }
 }
+
+/* Settings split view (left nav + detail). */
+.forgeos-settings-shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.forgeos-settings-nav {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.22);
+  padding: 10px;
+  box-shadow: var(--forgeos-shadow);
+}
+
+.forgeos-settings-nav__title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(148, 163, 184, 0.9);
+  padding: 8px 10px;
+}
+
+.forgeos-settings-nav__btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(241, 245, 249, 0.92);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+  cursor: pointer;
+  text-align: left;
+}
+
+.forgeos-settings-nav__btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.24);
+}
+
+.forgeos-settings-nav__btn--active {
+  border-color: transparent;
+  background: rgba(0, 0, 0, 0.28);
+  position: relative;
+  isolation: isolate;
+}
+
+.forgeos-settings-nav__btn--active::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--forgeos-rainbow-strong);
+  pointer-events: none;
+  z-index: 1;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.forgeos-settings-nav__sub {
+  font-size: 11px;
+  font-weight: 650;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.forgeos-settings-body {
+  min-width: 0;
+}
+
+body.forgeos-settings-split .forgeos-settings-shell {
+  grid-template-columns: 260px minmax(0, 1fr);
+  align-items: start;
+}
+
+body.forgeos-settings-split .forgeos-settings-nav {
+  display: block !important;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+}
+
+body.forgeos-settings-split #settings-grid {
+  grid-template-columns: 1fr;
+}
+
+body.forgeos-settings-split .forgeos-settings-section--hidden {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  body.forgeos-settings-split .forgeos-settings-shell {
+    grid-template-columns: 1fr;
+  }
+  body.forgeos-settings-split .forgeos-settings-nav {
+    position: static;
+    max-height: none;
+  }
+}

@@ -9,8 +9,8 @@
     <title>5tratumOS</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/5tratumos.css?v=39" />
-    <script defer src="/app.js?v=77"></script>
+    <link rel="stylesheet" href="/5tratumos.css?v=40" />
+    <script defer src="/app.js?v=78"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <button id="mobile-backdrop" class="forgeos-mobile-backdrop" type="button" aria-label="Close menu"></button>
@@ -324,8 +324,11 @@
           </section>
 
           <section id="view-settings" class="forgeos-view hidden">
-            <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <section class="axe-card">
+            <div class="forgeos-settings-shell">
+              <aside id="settings-nav" class="forgeos-settings-nav hidden" aria-label="Settings sections"></aside>
+              <div class="forgeos-settings-body">
+                <div id="settings-grid" class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <section class="axe-card" data-settings-key="system">
                 <div class="text-sm text-slate-300">Global</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">System Settings</div>
                 <div class="mt-4 forgeos-form">
@@ -356,11 +359,19 @@
                     </select>
                     <div class="mt-1 text-xs text-slate-300">Manual mode uses the pin button to expand/collapse.</div>
                   </div>
+                  <div class="mt-3">
+                    <label class="forgeos-label" for="setting-settings-layout">Settings layout</label>
+                    <select id="setting-settings-layout" class="forgeos-input">
+                      <option value="single">Single</option>
+                      <option value="split">Split</option>
+                    </select>
+                    <div class="mt-1 text-xs text-slate-300">Split mode shows a menu on the left and one settings card at a time.</div>
+                  </div>
                   <div class="mt-4 text-xs text-slate-300">Channel is fixed to MAIN for now.</div>
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="store-sync">
                 <div class="text-sm text-slate-300">Store</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">App Store Sync</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -375,7 +386,7 @@
                 </div>
               </section>
 
-              <section class="axe-card" id="settings-storage-card">
+              <section class="axe-card" id="settings-storage-card" data-settings-key="storage">
                 <div class="text-sm text-slate-300">Storage</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Storage & Drives</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -393,7 +404,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="users">
                 <div class="text-sm text-slate-300">Users</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Admin & Access</div>
                 <div class="mt-4 forgeos-form">
@@ -409,7 +420,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="network">
                 <div class="text-sm text-slate-300">Network</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Network & Access</div>
                 <div class="mt-3 text-sm text-slate-300">LAN-first, VLAN-aware. Tailscale can be added for remote access.</div>
@@ -430,7 +441,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="terminal">
                 <div class="text-sm text-slate-300">Terminal</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Command Console</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -441,7 +452,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="kiosk">
                 <div class="text-sm text-slate-300">Display</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Local Console (Kiosk)</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -456,7 +467,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="widgets">
                 <div class="text-sm text-slate-300">Widgets</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Dashboard Widgets</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -481,10 +492,10 @@
                 </div>
                 <div class="mt-4 text-sm text-slate-300">Choose which installed apps contribute widgets to the Mining Overview.</div>
                 <div id="settings-widgets" class="mt-4 forgeos-form"></div>
-                <div id="settings-widgets-empty" class="mt-3 forgeos-muted">No widget-capable apps installed yet.</div>
+                  <div id="settings-widgets-empty" class="mt-3 forgeos-muted">No widget-capable apps installed yet.</div>
               </section>
 
-              <section class="axe-card" id="settings-mqtt-card">
+              <section class="axe-card" id="settings-mqtt-card" data-settings-key="mqtt">
                 <div class="text-sm text-slate-300">Integrations</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">MQTT Export</div>
                 <div id="mqtt-unavailable" class="mt-3 text-sm text-slate-300 hidden">
@@ -527,7 +538,7 @@
                 </div>
               </section>
 
-              <section class="axe-card" id="settings-discord-card">
+              <section class="axe-card" id="settings-discord-card" data-settings-key="discord">
                 <div class="text-sm text-slate-300">Integrations</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Discord Alerts</div>
                 <div class="mt-3 text-sm text-slate-300">Send alerts for AxeSuite events via a Discord webhook.</div>
@@ -584,7 +595,7 @@
                 </div>
               </section>
 
-              <section class="axe-card" id="settings-watchdog-card">
+              <section class="axe-card" id="settings-watchdog-card" data-settings-key="watchdog">
                 <div class="text-sm text-slate-300">Reliability</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">App Watchdog</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -604,7 +615,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="session-lock">
                 <div class="text-sm text-slate-300">Security</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Session Lock</div>
                 <div class="mt-3 text-sm text-slate-300">Automatically locks the UI after inactivity (requires sign-in again).</div>
@@ -619,7 +630,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="ssh">
                 <div class="text-sm text-slate-300">Services</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">SSH & Remote Access</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -680,7 +691,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="updates">
                 <div class="text-sm text-slate-300">Updates</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Updates & Channels</div>
                 <div class="mt-3 text-sm text-slate-300">Checks the public release feed and applies modular updates on demand.</div>
@@ -751,7 +762,7 @@
                 </div>
               </section>
 
-              <section class="axe-card">
+              <section class="axe-card" data-settings-key="fix-app">
                 <div class="text-sm text-slate-300">Advanced</div>
                 <div class="mt-1 text-2xl font-extrabold tracking-tight">Fix App</div>
                 <div class="mt-3 text-sm text-slate-300">
@@ -762,6 +773,8 @@
                 </div>
                 <div class="mt-2 text-xs text-slate-300">Choose an app and we will re-sync config + ports without touching data.</div>
               </section>
+                </div>
+              </div>
             </div>
           </section>
 

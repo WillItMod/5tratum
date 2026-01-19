@@ -89,6 +89,9 @@
   const desktopSurfaceEl = document.getElementById('desktop-surface');
   const desktopEmptyEl = document.getElementById('desktop-empty');
   const desktopBinEl = document.getElementById('desktop-bin');
+  const settingSettingsLayoutSelect = document.getElementById('setting-settings-layout');
+  const settingsNavEl = document.getElementById('settings-nav');
+  const settingsGridEl = document.getElementById('settings-grid');
   const storeSearchInput = document.getElementById('store-search');
   const storeCategorySelect = document.getElementById('store-category');
   const storeHideInstalledInput = document.getElementById('store-hide-installed');
@@ -304,6 +307,8 @@
   const DESKTOP_STATE_KEY_V2 = '5tratumos.desktopState.v2';
   const DESKTOP_STATE_KEY_V1 = '5tratumos.desktopState.v1';
   const DRAWER_PINNED_KEY = '5tratumos.drawerPinned.v1';
+  const SETTINGS_LAYOUT_KEY = '5tratumos.settingsLayout.v1';
+  const SETTINGS_SECTION_KEY = '5tratumos.settingsSection.v1';
   const STORE_RENDER_STEP = 72;
   let dragAppId = null;
   const openWindows = new Map();
@@ -326,6 +331,9 @@
   let globalSplashActionsEnabled = false;
   const perfOffenders = new Map();
   let perfAlertCache = [];
+  let settingsLayout = 'single';
+  let activeSettingsKey = '';
+  let settingsNavBuilt = false;
 
   function refreshGlobalSplashLock() {
     if (!globalSplashEl) return;
@@ -511,6 +519,135 @@
         danger: false,
       });
     });
+  }
+
+  function loadSettingsLayout() {
+    try {
+      const raw = String(window.localStorage.getItem(SETTINGS_LAYOUT_KEY) || '').trim().toLowerCase();
+      if (raw === 'split' || raw === 'single') return raw;
+    } catch {}
+    return isMobileLayout() ? 'single' : 'split';
+  }
+
+  function saveSettingsLayout(mode) {
+    try {
+      window.localStorage.setItem(SETTINGS_LAYOUT_KEY, String(mode || 'single'));
+    } catch {}
+  }
+
+  function loadActiveSettingsKey() {
+    try {
+      return String(window.localStorage.getItem(SETTINGS_SECTION_KEY) || '').trim().toLowerCase();
+    } catch {
+      return '';
+    }
+  }
+
+  function saveActiveSettingsKey(key) {
+    try {
+      window.localStorage.setItem(SETTINGS_SECTION_KEY, String(key || '').trim().toLowerCase());
+    } catch {}
+  }
+
+  function settingsSectionsList() {
+    if (!settingsGridEl) return [];
+    return Array.from(settingsGridEl.querySelectorAll('section[data-settings-key]'));
+  }
+
+  function sectionLabel(section) {
+    if (!section) return { title: 'Settings', sub: '' };
+    const titleEl =
+      section.querySelector('.text-2xl') ||
+      section.querySelector('.font-extrabold') ||
+      section.querySelector('h2, h3') ||
+      null;
+    const subEl = section.querySelector('.text-sm.text-slate-300') || null;
+    const title = String(titleEl && titleEl.textContent ? titleEl.textContent : '').trim() || 'Settings';
+    const sub = String(subEl && subEl.textContent ? subEl.textContent : '').trim();
+    return { title, sub };
+  }
+
+  function renderSettingsNav() {
+    if (!settingsNavEl) return;
+    settingsNavEl.innerHTML = '';
+    const heading = document.createElement('div');
+    heading.className = 'forgeos-settings-nav__title';
+    heading.textContent = 'Settings';
+    settingsNavEl.appendChild(heading);
+
+    for (const section of settingsSectionsList()) {
+      if (!(section instanceof HTMLElement)) continue;
+      const key = String(section.dataset.settingsKey || '').trim().toLowerCase();
+      if (!key) continue;
+      const meta = sectionLabel(section);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forgeos-settings-nav__btn';
+      btn.dataset.settingsKey = key;
+      btn.addEventListener('click', () => {
+        activeSettingsKey = key;
+        saveActiveSettingsKey(activeSettingsKey);
+        applySettingsLayout();
+      });
+
+      const title = document.createElement('div');
+      title.textContent = meta.title;
+      btn.appendChild(title);
+
+      if (meta.sub) {
+        const sub = document.createElement('div');
+        sub.className = 'forgeos-settings-nav__sub';
+        sub.textContent = meta.sub;
+        btn.appendChild(sub);
+      }
+
+      settingsNavEl.appendChild(btn);
+    }
+
+    settingsNavBuilt = true;
+  }
+
+  function applySettingsLayout() {
+    const mode = settingsLayout === 'split' ? 'split' : 'single';
+    const split = mode === 'split';
+    document.body.classList.toggle('forgeos-settings-split', split);
+
+    if (settingsNavEl) {
+      settingsNavEl.classList.toggle('hidden', !split);
+      settingsNavEl.setAttribute('aria-hidden', split ? 'false' : 'true');
+    }
+
+    const sections = settingsSectionsList();
+    const keys = new Set(
+      sections
+        .map((s) => (s instanceof HTMLElement ? String(s.dataset.settingsKey || '').trim().toLowerCase() : ''))
+        .filter(Boolean),
+    );
+
+    if (!activeSettingsKey || !keys.has(activeSettingsKey)) {
+      const saved = loadActiveSettingsKey();
+      activeSettingsKey = saved && keys.has(saved) ? saved : keys.has('system') ? 'system' : Array.from(keys)[0] || '';
+    }
+
+    for (const section of sections) {
+      if (!(section instanceof HTMLElement)) continue;
+      const key = String(section.dataset.settingsKey || '').trim().toLowerCase();
+      const hide = split && key && activeSettingsKey && key !== activeSettingsKey;
+      section.classList.toggle('forgeos-settings-section--hidden', hide);
+      section.setAttribute('aria-hidden', hide ? 'true' : 'false');
+    }
+
+    if (split && settingsNavEl) {
+      if (!settingsNavBuilt) renderSettingsNav();
+      for (const btn of Array.from(settingsNavEl.querySelectorAll('.forgeos-settings-nav__btn'))) {
+        if (!(btn instanceof HTMLElement)) continue;
+        const key = String(btn.dataset.settingsKey || '').trim().toLowerCase();
+        btn.classList.toggle('forgeos-settings-nav__btn--active', !!activeSettingsKey && key === activeSettingsKey);
+      }
+    }
+
+    if (settingSettingsLayoutSelect) settingSettingsLayoutSelect.value = mode;
   }
 
   function showGlobalSplash(opts) {
@@ -9868,6 +10005,12 @@
   });
 
   settingSidebarSelect?.addEventListener('change', () => setSidebarMode(settingSidebarSelect.value));
+  settingSettingsLayoutSelect?.addEventListener('change', () => {
+    settingsLayout = String(settingSettingsLayoutSelect.value || '').trim().toLowerCase() === 'split' ? 'split' : 'single';
+    saveSettingsLayout(settingsLayout);
+    applySettingsLayout();
+    showToast('Settings layout saved', null);
+  });
 
   btnDashboardLayoutReset?.addEventListener('click', () => {
     openConfirmModal({
@@ -10254,6 +10397,8 @@
   renderWorkspace();
   sidebarManualOpen = loadSidebarManualOpen();
   applySidebarMode(loadSidebarMode());
+  settingsLayout = loadSettingsLayout();
+  applySettingsLayout();
   fleetSeries = loadFleetSeries();
   initDashboard();
   updateClock();
