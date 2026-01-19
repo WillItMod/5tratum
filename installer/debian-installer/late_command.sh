@@ -3,9 +3,13 @@ set -eu
 
 log() { echo "[5tratumOS late_command] $*" >&2; }
 
-CDROM_BUNDLE="/cdrom/5tratumos/5tratumos-update.tgz"
+CDROM_BUNDLE="/root/5tratumos-update.tgz"
 TMP_DIR="/root/5tratumos-install"
 STAGE_DIR="${TMP_DIR}/stage"
+
+if [ ! -f "${CDROM_BUNDLE}" ] && [ -f "/cdrom/5tratumos/5tratumos-update.tgz" ]; then
+  CDROM_BUNDLE="/cdrom/5tratumos/5tratumos-update.tgz"
+fi
 
 if [ ! -f "${CDROM_BUNDLE}" ]; then
   log "Missing bundle on install media: ${CDROM_BUNDLE}"
