@@ -619,6 +619,11 @@ def system_ui_config_get() -> dict:
     if mode not in {"expanded", "compact", "auto"}:
         mode = "compact"
 
+    topbar_mode_raw = str(cfg.get("topbar_mode") or "").strip().lower()
+    topbar_mode: str | None = None
+    if topbar_mode_raw in {"static", "collapsed", "auto", "manual"}:
+        topbar_mode = topbar_mode_raw
+
     pinned_raw = cfg.get("topbar_pinned")
     pinned: bool | None = None
     if pinned_raw is not None:
@@ -638,7 +643,14 @@ def system_ui_config_get() -> dict:
     if pinned is None:
         pinned = mode == "expanded" if "workbench_topbar_mode" in cfg else True
 
-    return {"ok": True, "workbench_topbar_mode": mode, "topbar_pinned": pinned}
+    # If explicit topbar_mode is missing, derive from pinned for backwards compatibility.
+    if topbar_mode is None:
+        topbar_mode = "static" if pinned else "auto"
+
+    # Keep pinned consistent with explicit mode.
+    pinned = topbar_mode == "static"
+
+    return {"ok": True, "workbench_topbar_mode": mode, "topbar_pinned": pinned, "topbar_mode": topbar_mode}
 
 
 def system_ui_config_set(body: dict) -> dict:
@@ -667,6 +679,15 @@ def system_ui_config_set(body: dict) -> dict:
         if pinned is None:
             return {"ok": False, "error": "topbar_pinned must be true/false"}
         cfg["topbar_pinned"] = pinned
+
+    if "topbar_mode" in body or "topbarMode" in body:
+        raw = body.get("topbar_mode") if "topbar_mode" in body else body.get("topbarMode")
+        mode = str(raw or "").strip().lower()
+        if mode not in {"static", "collapsed", "auto", "manual"}:
+            return {"ok": False, "error": "topbar_mode must be static, collapsed, auto, or manual"}
+        cfg["topbar_mode"] = mode
+        # Keep pinned coherent with mode for old clients.
+        cfg["topbar_pinned"] = mode == "static"
 
     _write_ui_config(cfg)
     return {**system_ui_config_get(), "saved": True}

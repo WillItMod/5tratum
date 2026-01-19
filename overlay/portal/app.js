@@ -20,6 +20,8 @@
   const topbarActivityTextEl = document.getElementById('topbar-activity-text');
   const topbarActivityPctEl = document.getElementById('topbar-activity-pct');
   const topbarActivityBarEl = document.getElementById('topbar-activity-bar');
+  const topbarPerfEl = document.getElementById('topbar-perf');
+  const topbarPerfCountEl = document.getElementById('topbar-perf-count');
     const metricCardCpu = document.getElementById('metric-card-cpu');
     const metricCardMem = document.getElementById('metric-card-mem');
     const metricCardDisk = document.getElementById('metric-card-disk');
@@ -67,6 +69,7 @@
   const btnPower = document.getElementById('btn-power');
   const sidebarClockEl = document.getElementById('sidebar-clock');
   const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
+  const btnSidebarPin = document.getElementById('btn-sidebar-pin');
   const btnMobileMenu = document.getElementById('btn-mobile-menu');
   const mobileBackdrop = document.getElementById('mobile-backdrop');
   const btnDashboardMode = document.getElementById('btn-dashboard-mode');
@@ -101,7 +104,7 @@
   const workspaceEmptyEl = document.getElementById('workspace-empty');
   const btnResumeWorkspace = document.getElementById('btn-resume-workspace');
   const settingSidebarSelect = document.getElementById('setting-sidebar');
-  const settingTopbarPinnedInput = document.getElementById('setting-topbar-pinned');
+  const settingTopbarSelect = document.getElementById('setting-topbar');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
@@ -271,6 +274,7 @@
     let uiConfigCache = null;
     let topbarTempOpen = false;
     let topbarHoverOpen = false;
+    let sidebarManualOpen = false;
     let splashTokenSeq = 0;
     const splashTokens = new Map();
     let splashClickBound = false;
@@ -291,6 +295,7 @@
   const STORE_AUTO_SYNC_KEY = '5tratumos.storeAutoSync';
   const STORE_AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
   const SIDEBAR_MODE_KEY = 'forgeos.sidebarMode';
+  const SIDEBAR_MANUAL_OPEN_KEY = '5tratumos.sidebarManualOpen.v1';
   const WIDGET_PREFS_KEY = 'forgeos.widgetPrefs';
   const DASHBOARD_LAYOUT_KEY = 'forgeos.dashboardLayout.v1';
   const FLEET_SERIES_KEY = 'forgeos.fleetHashrateSeries.v1';
@@ -319,6 +324,8 @@
   let desktopRemoteSaveTimer = 0;
   let drawerPinned = new Set();
   let globalSplashActionsEnabled = false;
+  const perfOffenders = new Map();
+  let perfAlertCache = [];
 
   function refreshGlobalSplashLock() {
     if (!globalSplashEl) return;
@@ -358,6 +365,142 @@
         kind: 'System',
         title: 'Activity',
         message: lines,
+        danger: false,
+      });
+    });
+  }
+
+  function isAxeSuiteAppId(appId) {
+    const id = String(appId || '').trim().toLowerCase();
+    if (!id) return false;
+    if (id === 'axedoom') return false;
+    if (id === 'axesim') return true;
+    if (id === 'axemig') return true;
+    // Heuristic: AxeSuite apps are "axe*" except Doom.
+    return id.startsWith('axe');
+  }
+
+  function updatePerfWarnings(installedList) {
+    const now = Date.now();
+    const installed = Array.isArray(installedList) ? installedList : [];
+    const activeId = String(activeWindowId || '').trim().toLowerCase();
+
+    const CPU_WARN_PCT = 80;
+    const MEM_WARN_PCT = 85;
+    const EXTREME_PCT = 95;
+    const SUSTAIN_MS = 60 * 1000;
+    const EXTREME_SUSTAIN_MS = 15 * 1000;
+    const CLEAR_AFTER_MS = 30 * 1000;
+    const MEM_WARN_BYTES_NO_LIMIT = 2 * 1024 * 1024 * 1024; // 2 GiB
+
+    const seen = new Set();
+    for (const app of installed) {
+      if (!app || typeof app !== 'object') continue;
+      const id = String(app.id || '').trim().toLowerCase();
+      if (!id) continue;
+      if (isAxeSuiteAppId(id)) continue;
+
+      const status = String(app.status || '').trim().toLowerCase();
+      const runningLike = status === 'running' || status === 'restarting';
+      if (!runningLike) continue;
+
+      const res = app.resources && typeof app.resources === 'object' ? app.resources : null;
+      if (!res) continue;
+
+      const cpuPct = Number(res.cpu_perc);
+      const memUsed = Number(res.mem_used_bytes);
+      const memLimit = Number(res.mem_limit_bytes);
+      const memPct = Number.isFinite(memUsed) && Number.isFinite(memLimit) && memLimit > 0 ? (memUsed / memLimit) * 100 : NaN;
+
+      const cpuHot = Number.isFinite(cpuPct) && cpuPct >= CPU_WARN_PCT;
+      const memHot =
+        (Number.isFinite(memPct) && memPct >= MEM_WARN_PCT) ||
+        (!Number.isFinite(memPct) && Number.isFinite(memUsed) && memUsed >= MEM_WARN_BYTES_NO_LIMIT);
+      if (!cpuHot && !memHot) continue;
+
+      seen.add(id);
+      const prev = perfOffenders.get(id) || null;
+      const firstSeenAt = prev && Number(prev.firstSeenAt) ? Number(prev.firstSeenAt) : now;
+      perfOffenders.set(id, {
+        firstSeenAt,
+        lastSeenAt: now,
+        cpuPct,
+        memUsed,
+        memLimit,
+        memPct,
+      });
+    }
+
+    for (const [id, st] of Array.from(perfOffenders.entries())) {
+      if (seen.has(id)) continue;
+      const lastSeenAt = st && Number(st.lastSeenAt) ? Number(st.lastSeenAt) : 0;
+      if (!lastSeenAt || now - lastSeenAt > CLEAR_AFTER_MS) perfOffenders.delete(id);
+    }
+
+    const alerts = [];
+    for (const [id, st] of Array.from(perfOffenders.entries())) {
+      if (id === activeId) continue;
+      if (!st || typeof st !== 'object') continue;
+      const firstSeenAt = Number(st.firstSeenAt) || now;
+      const cpuPct = Number(st.cpuPct);
+      const memPct = Number(st.memPct);
+      const extreme = (Number.isFinite(cpuPct) && cpuPct >= EXTREME_PCT) || (Number.isFinite(memPct) && memPct >= EXTREME_PCT);
+      const minMs = extreme ? EXTREME_SUSTAIN_MS : SUSTAIN_MS;
+      if (now - firstSeenAt < minMs) continue;
+
+      const name = metaFor(id).name || (installedById.get(id) && installedById.get(id).name) || id;
+      alerts.push({ id, name, cpuPct, memPct, memUsed: Number(st.memUsed), memLimit: Number(st.memLimit) });
+    }
+
+    perfAlertCache = alerts
+      .slice()
+      .sort((a, b) => (Number(b.cpuPct) || 0) - (Number(a.cpuPct) || 0) || (Number(b.memPct) || 0) - (Number(a.memPct) || 0));
+
+    if (!topbarPerfEl || !topbarPerfCountEl) return;
+    if (!perfAlertCache.length) {
+      topbarPerfEl.classList.add('hidden');
+      topbarPerfEl.setAttribute('aria-hidden', 'true');
+      topbarPerfCountEl.textContent = '0';
+      return;
+    }
+    topbarPerfCountEl.textContent = String(Math.min(9, perfAlertCache.length));
+    const titleLines = perfAlertCache.slice(0, 4).map((it) => {
+      const cpu = Number.isFinite(it.cpuPct) ? `${Math.round(it.cpuPct)}% CPU` : '';
+      const mem =
+        Number.isFinite(it.memPct) && it.memLimit > 0
+          ? `${Math.round(it.memPct)}% RAM`
+          : Number.isFinite(it.memUsed)
+            ? `${formatBytes(it.memUsed)} RAM`
+            : '';
+      return `${it.name}: ${[cpu, mem].filter(Boolean).join(' • ')}`.trim();
+    });
+    topbarPerfEl.title = titleLines.join('\n');
+    topbarPerfEl.classList.remove('hidden');
+    topbarPerfEl.setAttribute('aria-hidden', 'false');
+  }
+
+  if (topbarPerfEl) {
+    topbarPerfEl.addEventListener('click', async () => {
+      const items = Array.isArray(perfAlertCache) ? perfAlertCache.slice() : [];
+      if (!items.length) return;
+      const lines = items
+        .slice(0, 10)
+        .map((it) => {
+          const cpu = Number.isFinite(it.cpuPct) ? `${Math.round(it.cpuPct)}% CPU` : '';
+          const mem =
+            Number.isFinite(it.memPct) && it.memLimit > 0
+              ? `${Math.round(it.memPct)}% RAM`
+              : Number.isFinite(it.memUsed)
+                ? `${formatBytes(it.memUsed)} RAM`
+                : '';
+          const detail = [cpu, mem].filter(Boolean).join(' • ');
+          return `- ${it.name}${detail ? ` — ${detail}` : ''}`;
+        })
+        .join('\n');
+      await openNoticeModal({
+        kind: 'System',
+        title: 'High resource usage',
+        message: `${lines}\n\nTip: stop unused apps from the Apps page.`,
         danger: false,
       });
     });
@@ -891,9 +1034,24 @@
   function loadSidebarMode() {
     try {
       const raw = String(window.localStorage.getItem(SIDEBAR_MODE_KEY) || '').trim().toLowerCase();
-      if (raw === 'static' || raw === 'collapsed' || raw === 'auto') return raw;
+      if (raw === 'static' || raw === 'collapsed' || raw === 'auto' || raw === 'manual') return raw;
     } catch {}
     return 'static';
+  }
+
+  function loadSidebarManualOpen() {
+    try {
+      const raw = String(window.localStorage.getItem(SIDEBAR_MANUAL_OPEN_KEY) || '').trim().toLowerCase();
+      return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'y' || raw === 'on';
+    } catch {
+      return false;
+    }
+  }
+
+  function saveSidebarManualOpen(open) {
+    try {
+      window.localStorage.setItem(SIDEBAR_MANUAL_OPEN_KEY, open ? '1' : '0');
+    } catch {}
   }
 
   function isMobileLayout() {
@@ -910,46 +1068,56 @@
     return 'compact';
   }
 
-  function normalizeBool(value, defaultValue) {
-    if (value === null || value === undefined) return !!defaultValue;
-    if (typeof value === 'boolean') return value;
-    const s = String(value).trim().toLowerCase();
-    if (!s) return !!defaultValue;
-    if (s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'on' || s === 'pinned') return true;
-    if (s === '0' || s === 'false' || s === 'no' || s === 'n' || s === 'off' || s === 'auto' || s === 'autohide' || s === 'unpinned')
-      return false;
-    return !!defaultValue;
+  function normalizeTopbarMode(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'static' || v === 'collapsed' || v === 'auto' || v === 'manual') return v;
+    return 'static';
   }
 
-  function getTopbarPinned() {
+  function getTopbarMode() {
     const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
-    if (Object.prototype.hasOwnProperty.call(cfg, 'topbar_pinned')) return normalizeBool(cfg.topbar_pinned, true);
-    // Migration: preserve the legacy behavior if the old key exists.
+    if (Object.prototype.hasOwnProperty.call(cfg, 'topbar_mode')) return normalizeTopbarMode(cfg.topbar_mode);
+    if (Object.prototype.hasOwnProperty.call(cfg, 'topbar_pinned')) return cfg.topbar_pinned ? 'static' : 'auto';
+    // Legacy workbench-only mode implies pinned.
     if (Object.prototype.hasOwnProperty.call(cfg, 'workbench_topbar_mode')) {
-      return normalizeWorkbenchTopbarMode(cfg.workbench_topbar_mode) === 'expanded';
+      return normalizeWorkbenchTopbarMode(cfg.workbench_topbar_mode) === 'expanded' ? 'static' : 'auto';
     }
-    return true;
+    return 'static';
   }
 
-  function applyTopbarPinnedState() {
-    const pinned = getTopbarPinned();
-    const collapsed = !pinned;
-    const open = pinned || topbarTempOpen || (!isMobileLayout() && collapsed && topbarHoverOpen);
+  function applyTopbarMode() {
+    const mode = getTopbarMode();
+    const pinned = mode === 'static';
+    const auto = mode === 'auto';
+    const manual = mode === 'manual';
+    const collapsedLike = mode !== 'static';
+
+    let open = false;
+    if (pinned) open = true;
+    else if (manual) open = !!topbarTempOpen;
+    else if (auto) open = !!topbarTempOpen || (!isMobileLayout() && topbarHoverOpen);
+    else open = false;
 
     document.body.classList.toggle('forgeos-topbar-pinned', pinned);
-    document.body.classList.toggle('forgeos-topbar-compact', collapsed);
-    document.body.classList.toggle('forgeos-topbar-auto', collapsed);
+    document.body.classList.toggle('forgeos-topbar-compact', collapsedLike);
+    document.body.classList.toggle('forgeos-topbar-auto', auto);
     document.body.classList.toggle('forgeos-topbar-open', open);
 
-    if (pinned) {
+    if (pinned || mode === 'collapsed') {
       topbarTempOpen = false;
       topbarHoverOpen = false;
     }
 
     if (btnTopbarToggle) {
-      btnTopbarToggle.setAttribute('aria-pressed', pinned ? 'true' : 'false');
-      btnTopbarToggle.setAttribute('aria-label', pinned ? 'Unpin top bar' : 'Pin top bar');
-      btnTopbarToggle.title = pinned ? 'Unpin top bar (auto-hide)' : 'Pin top bar';
+      const pressed = pinned || (manual && open);
+      btnTopbarToggle.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+      if (manual) {
+        btnTopbarToggle.setAttribute('aria-label', open ? 'Collapse top bar' : 'Expand top bar');
+        btnTopbarToggle.title = open ? 'Collapse top bar' : 'Expand top bar';
+      } else {
+        btnTopbarToggle.setAttribute('aria-label', pinned ? 'Unpin top bar' : 'Pin top bar');
+        btnTopbarToggle.title = pinned ? 'Unpin top bar (auto-hide)' : 'Pin top bar';
+      }
     }
   }
 
@@ -975,14 +1143,26 @@
 
   function applySidebarMode(mode) {
     const m = String(mode || 'static').toLowerCase();
-    document.body.classList.toggle('forgeos-sidebar-collapsed', m === 'collapsed');
+    document.body.classList.toggle('forgeos-sidebar-manual', m === 'manual');
     document.body.classList.toggle('forgeos-sidebar-auto', m === 'auto');
+    const collapsed = m === 'collapsed' || (m === 'manual' && !sidebarManualOpen);
+    document.body.classList.toggle('forgeos-sidebar-collapsed', collapsed);
+    document.body.classList.toggle('forgeos-sidebar-manual-open', m === 'manual' && !!sidebarManualOpen);
     if (settingSidebarSelect) settingSidebarSelect.value = m;
+
+    if (btnSidebarPin) {
+      const pinned = m === 'static';
+      btnSidebarPin.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+      btnSidebarPin.setAttribute('aria-label', pinned ? 'Unpin sidebar' : 'Pin sidebar');
+      btnSidebarPin.title = pinned ? 'Unpin sidebar (auto-hide)' : 'Pin sidebar';
+    }
   }
 
   function setSidebarMode(mode) {
     const next = String(mode || '').trim().toLowerCase();
-    if (!['static', 'collapsed', 'auto'].includes(next)) return;
+    if (!['static', 'collapsed', 'auto', 'manual'].includes(next)) return;
+    sidebarManualOpen = false;
+    saveSidebarManualOpen(false);
     try {
       window.localStorage.setItem(SIDEBAR_MODE_KEY, next);
     } catch {}
@@ -1487,6 +1667,7 @@
     updateAppHeader();
     renderWidgetSettings();
     if (desktopSurfaceEl) renderDesktop();
+    updatePerfWarnings(installed);
     renderTopbarActivity();
 
     if (fromCache && !healthCache.ok) setStatus('Cached');
@@ -2183,7 +2364,7 @@
     }
 
     if (activeViewKey === 'dashboard') renderWorkspace();
-    applyTopbarPinnedState();
+    applyTopbarMode();
   }
 
   function syncDashboardModeUi() {
@@ -3313,6 +3494,7 @@
     const p = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
     if (k === 'install') return `Installing ${p}%`;
     if (k === 'update') return `Updating ${p}%`;
+    if (k === 'migrate') return `Moving ${p}%`;
     if (k === 'sync') return `Syncing ${p}%`;
     return `Working ${p}%`;
   }
@@ -3855,7 +4037,7 @@
     if (!workspaceEl) return;
 
     normalizeOpenApps();
-    applyTopbarPinnedState();
+    applyTopbarMode();
 
     const apps = openAppIds.map((id) => installedById.get(id) || { id });
 
@@ -5526,11 +5708,11 @@
       const res = await apiJsonTimeout('/api/v0/system/ui', {}, 3000).catch(() => null);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
       uiConfigCache = res;
-      if (settingTopbarPinnedInput) settingTopbarPinnedInput.checked = getTopbarPinned();
-      applyTopbarPinnedState();
+      if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
+      applyTopbarMode();
     } catch {
-      if (settingTopbarPinnedInput) settingTopbarPinnedInput.checked = getTopbarPinned();
-      applyTopbarPinnedState();
+      if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
+      applyTopbarMode();
     }
   }
 
@@ -6783,15 +6965,23 @@
       let currentMount = '';
       let currentLocation = 'OS disk (system)';
       if (currentTarget) {
+        const candidates = new Set();
+        for (const m of detected) {
+          if (!m || typeof m !== 'object') continue;
+          const mp = normalizeMp(m.mountpoint);
+          if (mp) candidates.add(mp);
+        }
         for (const m of mounts) {
           if (!m || typeof m !== 'object') continue;
           const mp = normalizeMp(m.mountpoint);
-          if (!mp) continue;
-          if (currentTarget.startsWith(mp)) {
-            currentMount = mp;
-            currentLocation = mountLabel(mp);
-            break;
-          }
+          if (mp) candidates.add(mp);
+        }
+        const match = Array.from(candidates)
+          .sort((a, b) => b.length - a.length)
+          .find((mp) => currentTarget.startsWith(mp));
+        if (match) {
+          currentMount = match;
+          currentLocation = mountLabel(match);
         }
       }
 
@@ -6839,8 +7029,17 @@
         if (!okStop) return;
       }
 
-      splashToken = showGlobalSplash({ title: `Moving ${label}`, sub: 'Starting migration...' });
-      updateGlobalSplashProgress(5);
+      const startedAt = Date.now();
+      appProgress.set(id, { kind: 'migrate', pct: 5, startedAt });
+      renderTopbarActivity();
+
+      splashToken = showGlobalSplash({
+        title: `Moving ${label}`,
+        sub: 'Starting migration...',
+        showProgress: true,
+        progress: 5,
+        dismissable: false,
+      });
       const start = await apiJsonTimeout(
         '/api/v0/apps/migrate',
         { method: 'POST', body: JSON.stringify({ id, mountpoint }) },
@@ -6850,6 +7049,7 @@
 
       const deadline = Date.now() + 60 * 60 * 1000;
       let lastState = '';
+      let lastPct = 5;
       while (Date.now() < deadline) {
         await sleep(1200);
         const st = await apiJsonTimeout(`/api/v0/apps/migrate/status?id=${encodeURIComponent(id)}`, {}, 6000).catch(() => null);
@@ -6869,10 +7069,20 @@
                     : 'Working...';
           updateGlobalSplash(`Moving ${label}`, sub);
         }
-        if (Number.isFinite(Number(st.pct))) updateGlobalSplashProgress(Number(st.pct));
+        if (Number.isFinite(Number(st.pct))) {
+          const pct = Math.max(0, Math.min(100, Math.round(Number(st.pct))));
+          updateGlobalSplashProgress(pct);
+          if (pct !== lastPct) {
+            lastPct = pct;
+            appProgress.set(id, { kind: 'migrate', pct, startedAt });
+            renderTopbarActivity();
+          }
+        }
         if (state === 'done') {
           updateGlobalSplashProgress(100);
           hideGlobalSplash(splashToken);
+          appProgress.delete(id);
+          renderTopbarActivity();
           showToast('Migration complete', null);
           await refreshInstalled();
           await refreshStorageSettings();
@@ -6880,6 +7090,8 @@
         }
         if (state === 'error') {
           hideGlobalSplash(splashToken);
+          appProgress.delete(id);
+          renderTopbarActivity();
           await openNoticeModal({
             kind: 'Error',
             title: 'Migration failed',
@@ -6891,9 +7103,15 @@
         }
       }
       hideGlobalSplash(splashToken);
+      appProgress.delete(id);
+      renderTopbarActivity();
       showToast('Migration timed out', 'error');
     } catch (e) {
       if (splashToken) hideGlobalSplash(splashToken);
+      if (id) {
+        appProgress.delete(id);
+        renderTopbarActivity();
+      }
       showToast('Migration failed', 'error');
       await openNoticeModal({
         kind: 'Error',
@@ -9609,8 +9827,20 @@
       return;
     }
     const current = loadSidebarMode();
+    if (current === 'manual') {
+      sidebarManualOpen = !sidebarManualOpen;
+      saveSidebarManualOpen(sidebarManualOpen);
+      applySidebarMode('manual');
+      return;
+    }
     const next = current === 'collapsed' ? 'static' : 'collapsed';
     setSidebarMode(next);
+  });
+
+  btnSidebarPin?.addEventListener('click', () => {
+    if (isMobileLayout()) return;
+    const current = loadSidebarMode();
+    setSidebarMode(current === 'static' ? 'auto' : 'static');
   });
 
   btnMobileMenu?.addEventListener('click', () => toggleMobileSidebar());
@@ -10015,6 +10245,7 @@
   saveDashboardMode();
   syncDashboardModeUi();
   renderWorkspace();
+  sidebarManualOpen = loadSidebarManualOpen();
   applySidebarMode(loadSidebarMode());
   fleetSeries = loadFleetSeries();
   initDashboard();
@@ -10055,13 +10286,15 @@
       }
     });
   }
-  async function setTopbarPinned(nextPinned) {
-    const pinned = !!nextPinned;
-    uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), topbar_pinned: pinned };
-    if (settingTopbarPinnedInput) settingTopbarPinnedInput.checked = pinned;
-    applyTopbarPinnedState();
+  async function setTopbarMode(nextMode) {
+    const mode = normalizeTopbarMode(nextMode);
+    uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), topbar_mode: mode, topbar_pinned: mode === 'static' };
+    if (settingTopbarSelect) settingTopbarSelect.value = mode;
+    topbarTempOpen = false;
+    topbarHoverOpen = false;
+    applyTopbarMode();
     try {
-      await saveUiConfig({ topbar_pinned: pinned });
+      await saveUiConfig({ topbar_mode: mode, topbar_pinned: mode === 'static' });
       showToast('Top bar setting saved', null);
     } catch (err) {
       showToast('Top bar save failed', err && err.message ? err.message : 'error');
@@ -10069,9 +10302,9 @@
     }
   }
 
-  if (settingTopbarPinnedInput) {
-    settingTopbarPinnedInput.addEventListener('change', async () => {
-      await setTopbarPinned(!!settingTopbarPinnedInput.checked);
+  if (settingTopbarSelect) {
+    settingTopbarSelect.addEventListener('change', async () => {
+      await setTopbarMode(settingTopbarSelect.value);
     });
   }
 
@@ -10081,40 +10314,48 @@
         e.preventDefault();
         e.stopPropagation();
       } catch {}
-      await setTopbarPinned(!getTopbarPinned());
+      const mode = getTopbarMode();
+      if (mode === 'manual') {
+        topbarTempOpen = !topbarTempOpen;
+        applyTopbarMode();
+        return;
+      }
+      await setTopbarMode(mode === 'static' ? 'auto' : 'static');
     });
   }
 
   if (desktopTopbarEl) {
     desktopTopbarEl.addEventListener('mouseenter', () => {
       if (isMobileLayout()) return;
-      if (getTopbarPinned()) return;
+      if (getTopbarMode() !== 'auto') return;
       topbarHoverOpen = true;
-      applyTopbarPinnedState();
+      applyTopbarMode();
     });
     desktopTopbarEl.addEventListener('mouseleave', () => {
       if (isMobileLayout()) return;
-      if (getTopbarPinned()) return;
+      if (getTopbarMode() !== 'auto') return;
       topbarHoverOpen = false;
-      applyTopbarPinnedState();
+      applyTopbarMode();
     });
     desktopTopbarEl.addEventListener('click', (e) => {
       if (!isMobileLayout()) return;
-      if (getTopbarPinned()) return;
+      const mode = getTopbarMode();
+      if (mode !== 'auto' && mode !== 'manual') return;
       const target = e && e.target ? e.target : null;
       if (target && target.closest && target.closest('button')) return;
       topbarTempOpen = !topbarTempOpen;
-      applyTopbarPinnedState();
+      applyTopbarMode();
     });
     document.addEventListener(
       'pointerdown',
       (e) => {
-        if (getTopbarPinned()) return;
+        const mode = getTopbarMode();
+        if (mode !== 'auto' && mode !== 'manual') return;
         if (!topbarTempOpen) return;
         const target = e && e.target ? e.target : null;
         if (target && target.closest && target.closest('.forgeos-desktop-topbar')) return;
         topbarTempOpen = false;
-        applyTopbarPinnedState();
+        applyTopbarMode();
       },
       { capture: true },
     );

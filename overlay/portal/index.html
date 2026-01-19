@@ -9,8 +9,8 @@
     <title>5tratumOS</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/5tratumos.css?v=37" />
-    <script defer src="/app.js?v=75"></script>
+    <link rel="stylesheet" href="/5tratumos.css?v=38" />
+    <script defer src="/app.js?v=76"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <button id="mobile-backdrop" class="forgeos-mobile-backdrop" type="button" aria-label="Close menu"></button>
@@ -28,6 +28,14 @@
           <button id="btn-sidebar-collapse" class="forgeos-brand__btn" type="button" title="Toggle sidebar" aria-label="Toggle sidebar">
             <img class="forgeos-brand__mark forgeos-brand__mark--full" src="/assets/New%20Logos/5.png" alt="5tratumOS" />
             <img class="forgeos-brand__mark forgeos-brand__mark--icon" src="/assets/New%20Logos/5.png" alt="5tratumOS" />
+          </button>
+          <button id="btn-sidebar-pin" class="forgeos-brand__pin" type="button" aria-label="Pin sidebar" title="Pin sidebar" aria-pressed="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M14 2a2 2 0 0 1 2 2v4.17l2.12 2.12a1 1 0 0 1-.71 1.71H13v7a1 1 0 0 1-2 0v-7H4.59a1 1 0 0 1-.71-1.71L6 8.17V4a2 2 0 0 1 2-2h6Z"
+              />
+            </svg>
           </button>
         </div>
 
@@ -122,6 +130,10 @@
             </div>
             <div class="forgeos-desktop-topbar__tagline" aria-hidden="true">The 5th layer of blockchain operation.</div>
             <div class="forgeos-desktop-topbar__metrics" aria-label="System metrics">
+              <button id="topbar-perf" class="forgeos-topbar-perf hidden" type="button" aria-label="Performance warning" title="Performance warning">
+                <span class="forgeos-topbar-perf__icon" aria-hidden="true">!</span>
+                <span id="topbar-perf-count" class="forgeos-topbar-perf__count">0</span>
+              </button>
               <button id="metric-card-cpu" class="forgeos-desktop-metric forgeos-desktop-metric--cpu" type="button" aria-label="CPU details">
                 <div class="forgeos-desktop-metric__head">
                   <div class="forgeos-desktop-metric__k">CPU</div>
@@ -331,14 +343,18 @@
                       <option value="static">Static</option>
                       <option value="collapsed">Collapsed</option>
                       <option value="auto">Auto-hide</option>
+                      <option value="manual">5 click</option>
                     </select>
                   </div>
                   <div class="mt-3">
-                    <label class="forgeos-toggle" title="Pin top bar (expanded). Unpin to auto-hide.">
-                      <input id="setting-topbar-pinned" type="checkbox" />
-                      <span>Pin top bar</span>
-                    </label>
-                    <div class="mt-1 text-xs text-slate-300">Unpin collapses the top bar; hover/tap reveals it.</div>
+                    <label class="forgeos-label" for="setting-topbar">Top bar</label>
+                    <select id="setting-topbar" class="forgeos-input">
+                      <option value="static">Static</option>
+                      <option value="collapsed">Collapsed</option>
+                      <option value="auto">Auto-hide</option>
+                      <option value="manual">5 click</option>
+                    </select>
+                    <div class="mt-1 text-xs text-slate-300">Manual mode uses the pin button to expand/collapse.</div>
                   </div>
                   <div class="mt-4 text-xs text-slate-300">Channel is fixed to MAIN for now.</div>
                 </div>
