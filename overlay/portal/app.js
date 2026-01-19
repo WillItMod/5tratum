@@ -6755,6 +6755,8 @@
       const installed = installedById.get(id) || null;
       const currentTarget =
         installed && installed.storage && typeof installed.storage === 'object' ? String(installed.storage.target || '').trim() : '';
+      const isLink =
+        !!(installed && installed.storage && typeof installed.storage === 'object' && installed.storage.is_link === true);
       const status = installed ? String(installed.status || '').trim().toLowerCase() : '';
 
       let currentMount = '';
@@ -6772,6 +6774,9 @@
         }
       }
 
+      const currentDetail = currentMount ? `${currentLocation} (${currentMount})` : currentLocation;
+      const currentPathHint = currentTarget || (installed && installed.storage ? String(installed.storage.data_dir || '').trim() : '');
+
       const choices = [{ label: 'OS disk (system)', value: '' }];
       const seen = new Set(['']);
       for (const m of mounts) {
@@ -6785,15 +6790,15 @@
 
       const pick = await openChoiceModal({
         title: `Move ${label} data`,
-        message: `Current location: ${currentLocation}\n\nChoose a destination drive:`,
+        message: `Current location: ${currentDetail}\n${currentPathHint ? `Path: ${currentPathHint}\n` : ''}\nChoose a destination drive:`,
         kind: 'System',
         choices: choices.concat([{ label: 'Cancel', value: 'cancel', danger: true }]),
       });
-      if (!pick || pick === 'cancel') return;
+      if (pick === null || pick === undefined || pick === 'cancel') return;
 
       const mountpoint = String(pick).trim();
       const alreadyOnMount = mountpoint && currentMount && normalizeMp(currentMount) === normalizeMp(mountpoint);
-      if (!mountpoint && (!currentTarget || currentMount === '' || currentTarget.startsWith('/var/lib/5tratumos'))) {
+      if (!mountpoint && (!isLink || currentMount === '' || currentTarget.startsWith('/var/lib/5tratumos'))) {
         showToast('Already on local storage', null);
         return;
       }
