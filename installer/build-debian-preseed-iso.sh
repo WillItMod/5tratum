@@ -150,7 +150,28 @@ for p in /usr/lib/ISOLINUX/isohdpfx.bin /usr/lib/syslinux/isohdpfx.bin /usr/lib/
   fi
 done
 if [ -z "${mbr}" ]; then
-  die "Unable to find isohdpfx.bin (install syslinux-common/syslinux-utils)"
+  echo "warn: isohdpfx.bin not found; attempting to download syslinux-common to extract it..." >&2
+  pkg_dir="${WORK_DIR}/pkg"
+  rm -rf "${pkg_dir}"
+  mkdir -p "${pkg_dir}"
+  if command -v apt-get >/dev/null 2>&1; then
+    (
+      cd "${pkg_dir}"
+      apt-get update -y >/dev/null 2>&1 || true
+      apt-get download syslinux-common >/dev/null 2>&1 || true
+    )
+    deb="$(ls -1 "${pkg_dir}"/syslinux-common_*.deb 2>/dev/null | head -n 1 || true)"
+    if [ -n "${deb}" ] && command -v dpkg-deb >/dev/null 2>&1; then
+      dpkg-deb -x "${deb}" "${pkg_dir}/extract" >/dev/null 2>&1 || true
+      for p in "${pkg_dir}/extract/usr/lib/ISOLINUX/isohdpfx.bin" "${pkg_dir}/extract/usr/lib/syslinux/isohdpfx.bin"; do
+        if [ -f "${p}" ]; then
+          mbr="${p}"
+          break
+        fi
+      done
+    fi
+  fi
+  [ -n "${mbr}" ] || die "Unable to find isohdpfx.bin (install syslinux-common/syslinux-utils)"
 fi
 
 VOLID="5TRATUMOS_INSTALLER"
