@@ -49,7 +49,12 @@ while :; do
   sleep 3
 done
 
-apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data
+apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data openssh-server
+
+log "Enabling SSH..."
+# Provide SSH access on first boot so remote administration doesn't require console access.
+# (Systemd isn't PID1 here, so enable offline.)
+SYSTEMD_OFFLINE=1 systemctl enable ssh.service >/dev/null 2>&1 || SYSTEMD_OFFLINE=1 systemctl enable ssh >/dev/null 2>&1 || true
 
 log "Installing Docker + Compose..."
 if ! command -v docker >/dev/null 2>&1; then
