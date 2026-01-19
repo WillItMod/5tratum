@@ -9,8 +9,8 @@
     <title>5tratumOS</title>
     <link rel="icon" type="image/png" href="/assets/5tratum-icon.png" />
     <link rel="stylesheet" href="/axe.css?v=1" />
-    <link rel="stylesheet" href="/5tratumos.css?v=36" />
-    <script defer src="/app.js?v=72"></script>
+    <link rel="stylesheet" href="/5tratumos.css?v=37" />
+    <script defer src="/app.js?v=73"></script>
   </head>
   <body class="min-h-screen bg-axe-950 text-slate-100">
     <button id="mobile-backdrop" class="forgeos-mobile-backdrop" type="button" aria-label="Close menu"></button>
@@ -172,6 +172,15 @@
                   </svg>
                 </button>
               </div>
+              <button id="topbar-activity" class="forgeos-topbar-activity hidden" type="button" aria-label="Activity" aria-live="polite">
+                <div class="forgeos-topbar-activity__row">
+                  <div id="topbar-activity-text" class="forgeos-topbar-activity__text">Working...</div>
+                  <div id="topbar-activity-pct" class="forgeos-topbar-activity__pct"></div>
+                </div>
+                <div class="forgeos-meter forgeos-topbar-activity__meter" aria-hidden="true">
+                  <div id="topbar-activity-bar" class="forgeos-meter__fill"></div>
+                </div>
+              </button>
             </div>
 
             <div class="forgeos-workspace-wrap">

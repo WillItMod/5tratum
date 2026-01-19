@@ -16,6 +16,10 @@
   const metricNetSub = document.getElementById('metric-net-sub');
   const desktopTopbarEl = document.querySelector('.forgeos-desktop-topbar');
   const btnTopbarToggle = document.getElementById('btn-topbar-toggle');
+  const topbarActivityEl = document.getElementById('topbar-activity');
+  const topbarActivityTextEl = document.getElementById('topbar-activity-text');
+  const topbarActivityPctEl = document.getElementById('topbar-activity-pct');
+  const topbarActivityBarEl = document.getElementById('topbar-activity-bar');
     const metricCardCpu = document.getElementById('metric-card-cpu');
     const metricCardMem = document.getElementById('metric-card-mem');
     const metricCardDisk = document.getElementById('metric-card-disk');
@@ -333,6 +337,28 @@
       globalSplashActionsEl.classList.toggle('hidden', !show);
       globalSplashActionsEl.setAttribute('aria-hidden', show ? 'false' : 'true');
     }
+  }
+
+  if (topbarActivityEl) {
+    topbarActivityEl.addEventListener('click', async () => {
+      const items = activityItems();
+      if (!items.length) return;
+      const lines = items
+        .slice()
+        .sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0))
+        .map((it) => {
+          const p = it.pct === null || it.pct === undefined ? '' : ` (${it.pct}%)`;
+          const sub = it.sub ? `\n${it.sub}` : '';
+          return `- ${it.label}${p}${sub}`;
+        })
+        .join('\n\n');
+      await openNoticeModal({
+        kind: 'System',
+        title: 'Activity',
+        message: lines,
+        danger: false,
+      });
+    });
   }
 
   function showGlobalSplash(opts) {
@@ -1464,6 +1490,7 @@
     updateAppHeader();
     renderWidgetSettings();
     if (desktopSurfaceEl) renderDesktop();
+    renderTopbarActivity();
 
     if (fromCache && !healthCache.ok) setStatus('Cached');
   }
@@ -3260,6 +3287,111 @@
     return `Working ${p}%`;
   }
 
+  function activityItems() {
+    const items = [];
+
+    try {
+      const state = systemUpdateState();
+      const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
+      if (systemUpdateIsBusy(state)) {
+        items.push({
+          key: 'system-update',
+          label: 'Updating 5tratumOS',
+          sub: systemUpdateStateLabel(state, st),
+          pct: systemUpdateProgressPct(state, st),
+          startedAt: st && st.time ? Date.parse(String(st.time)) || 0 : 0,
+        });
+      }
+    } catch {}
+
+    for (const [idRaw, st] of Array.from(appProgress.entries())) {
+      const id = String(idRaw || '').trim();
+      if (!id || !st || typeof st !== 'object') continue;
+      const pct = Number.isFinite(Number(st.pct)) ? Math.max(0, Math.min(100, Math.round(Number(st.pct)))) : null;
+      items.push({
+        key: `app-progress:${id}`,
+        label: `${progressLabel(st.kind, pct ?? 0)} ${metaFor(id).name || id}`,
+        sub: '',
+        pct,
+        startedAt: Number(st.startedAt) || 0,
+      });
+    }
+
+    for (const [idRaw, v] of Array.from(pendingAppActions.entries())) {
+      const id = String(idRaw || '').trim();
+      if (!id) continue;
+      if (appProgress.has(id)) continue;
+      const kind = v && typeof v === 'object' ? String(v.kind || '') : '';
+      const verb =
+        kind === 'up'
+          ? 'Starting'
+          : kind === 'down'
+            ? 'Stopping'
+            : kind === 'restart'
+              ? 'Restarting'
+              : kind === 'redeploy'
+                ? 'Redeploying'
+                : 'Working on';
+      items.push({
+        key: `app-action:${id}`,
+        label: `${verb} ${metaFor(id).name || id}`,
+        sub: 'Please wait…',
+        pct: null,
+        startedAt: v && typeof v === 'object' ? Number(v.startedAt) || 0 : 0,
+      });
+    }
+
+    return items;
+  }
+
+  function renderTopbarActivity() {
+    if (!topbarActivityEl || !topbarActivityTextEl || !topbarActivityBarEl) return;
+    const items = activityItems();
+    if (!items.length) {
+      topbarActivityEl.classList.add('hidden');
+      topbarActivityEl.setAttribute('aria-hidden', 'true');
+      topbarActivityEl.classList.remove('forgeos-topbar-activity--indeterminate');
+      return;
+    }
+
+    const primary = items
+      .slice()
+      .sort((a, b) => {
+        const pa = a.pct === null || a.pct === undefined ? -1 : Number(a.pct);
+        const pb = b.pct === null || b.pct === undefined ? -1 : Number(b.pct);
+        if (pb !== pa) return pb - pa;
+        return (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0);
+      })[0];
+
+    const more = items.length > 1 ? ` (+${items.length - 1})` : '';
+    const label = `${String(primary && primary.label ? primary.label : 'Working...')}${more}`;
+    topbarActivityTextEl.textContent = label;
+
+    const pct = primary && primary.pct !== null && primary.pct !== undefined ? Number(primary.pct) : null;
+    const indeterminate = pct === null || !Number.isFinite(pct);
+    topbarActivityEl.classList.toggle('forgeos-topbar-activity--indeterminate', indeterminate);
+    if (topbarActivityPctEl) topbarActivityPctEl.textContent = indeterminate ? '' : `${Math.max(0, Math.min(100, Math.round(pct)))}%`;
+
+    if (indeterminate) {
+      topbarActivityBarEl.style.width = '100%';
+    } else {
+      setMaskedGradientBar(topbarActivityBarEl, pct);
+    }
+
+    const lines = items
+      .slice()
+      .sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0))
+      .map((it) => {
+        const p = it.pct === null || it.pct === undefined ? '' : ` (${it.pct}%)`;
+        const sub = it.sub ? ` — ${it.sub}` : '';
+        return `${it.label}${p}${sub}`;
+      });
+    topbarActivityEl.title = lines.join('\n');
+
+    topbarActivityEl.classList.remove('hidden');
+    topbarActivityEl.setAttribute('aria-hidden', 'false');
+  }
+
   function ensureProgressElements(appId) {
     const id = String(appId || '').trim();
     if (!id) return;
@@ -3301,6 +3433,8 @@
     if (globalSplashEl && !globalSplashEl.classList.contains('hidden')) {
       updateGlobalSplashProgress(pct);
     }
+
+    renderTopbarActivity();
   }
 
   function cancelProgress(appId) {
@@ -3311,14 +3445,17 @@
     appProgress.delete(id);
     const installedSet = new Set((installedAppsCache || []).map((a) => a.id));
     renderStore(storeAppsCache, installedSet);
+    renderTopbarActivity();
   }
+
+  renderTopbarActivity();
 
   function startProgress(appId, kind) {
     const id = String(appId || '').trim();
     if (!id) return;
     if (appProgress.has(id)) cancelProgress(id);
 
-    const st = { kind: String(kind || '').trim() || 'working', pct: 1, timer: null };
+    const st = { kind: String(kind || '').trim() || 'working', pct: 1, timer: null, startedAt: Date.now() };
     appProgress.set(id, st);
 
     st.timer = window.setInterval(() => {
@@ -3332,6 +3469,7 @@
     }, 650);
 
     updateProgressDom(id);
+    renderTopbarActivity();
     return st;
   }
 
@@ -3345,6 +3483,7 @@
     st.pct = 100;
     updateProgressDom(id);
     window.setTimeout(() => cancelProgress(id), 900);
+    renderTopbarActivity();
   }
 
   function setWorkspaceLayout(count, opts) {
@@ -4795,6 +4934,7 @@
     }
 
     pendingAppActions.set(id, { kind: k, startedAt: Date.now() });
+    renderTopbarActivity();
     const verb =
       k === 'up'
         ? 'Starting'
@@ -4844,6 +4984,7 @@
       await refreshInstalled();
       renderWorkspace();
       updateAppHeader();
+      renderTopbarActivity();
     }
   }
 
@@ -5779,6 +5920,7 @@
     }
 
     maybePromptSystemUpdateAvailable(check, status).catch(() => {});
+    renderTopbarActivity();
   }
 
   function stopSystemUpdatePoll() {

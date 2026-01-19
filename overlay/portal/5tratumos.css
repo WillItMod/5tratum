@@ -1229,6 +1229,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 .forgeos-desktop-topbar {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1242,6 +1243,70 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   box-shadow: 0 16px 56px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+}
+
+.forgeos-topbar-activity {
+  flex: 1 1 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.14);
+  padding: 10px 12px;
+  color: rgba(226, 232, 240, 0.95);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
+  cursor: pointer;
+  text-align: left;
+}
+
+.forgeos-topbar-activity:hover {
+  border-color: rgba(0, 229, 255, 0.18);
+  background: rgba(0, 229, 255, 0.03);
+}
+
+.forgeos-topbar-activity__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.forgeos-topbar-activity__text {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forgeos-topbar-activity__pct {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: rgba(226, 232, 240, 0.9);
+  flex: 0 0 auto;
+}
+
+.forgeos-topbar-activity__meter {
+  height: 7px;
+}
+
+.forgeos-topbar-activity--indeterminate .forgeos-meter__fill {
+  width: 100% !important;
+  background-size: 200% 100%;
+  animation: forgeos-activity-sweep 1.2s linear infinite;
+}
+
+@keyframes forgeos-activity-sweep {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 200% 0%;
+  }
 }
 
 .forgeos-desktop-topbar__brand {
