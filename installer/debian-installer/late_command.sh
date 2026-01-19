@@ -49,7 +49,7 @@ while :; do
   sleep 3
 done
 
-apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml
+apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data
 
 log "Installing Docker + Compose..."
 if ! command -v docker >/dev/null 2>&1; then

@@ -7,7 +7,7 @@ ConditionPathExists=!/etc/5tratumos/firstboot.done
 
 [Service]
 Type=oneshot
-ExecStart=/opt/5tratumos/bootstrap/firstboot.sh
+ExecStart=/bin/bash /opt/5tratumos/bootstrap/firstboot.sh
 RemainAfterExit=yes
 
 [Install]

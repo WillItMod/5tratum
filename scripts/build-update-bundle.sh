@@ -28,6 +28,16 @@ if [ -d "${ROOT_DIR}/console" ]; then
   cp -a "${ROOT_DIR}/console/." "${tmp}/console/"
 fi
 
+# Windows filesystems do not preserve executable bits reliably. Normalize script perms
+# in the staging dir so installs don't fail at first boot.
+chmod 0755 "${tmp}/bin/5tratumos" >/dev/null 2>&1 || true
+if [ -d "${tmp}/bootstrap" ]; then
+  find "${tmp}/bootstrap" -type f -name '*.sh' -exec chmod 0755 {} + || true
+fi
+if [ -d "${tmp}/console" ]; then
+  find "${tmp}/console" -type f -name '*.sh' -exec chmod 0755 {} + || true
+fi
+
 bundle_path="${DIST_DIR}/${BUNDLE_NAME}"
 sha_path="${bundle_path}.sha256"
 sig_path="${bundle_path}.sig"
