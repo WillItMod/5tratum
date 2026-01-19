@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+LOG_FILE="/root/late_command.log"
+exec >"${LOG_FILE}" 2>&1
+set -x
+
 log() { echo "[5tratumOS late_command] $*" >&2; }
 
 CDROM_BUNDLE="/root/5tratumos-update.tgz"
@@ -16,26 +20,41 @@ if [ ! -f "${CDROM_BUNDLE}" ]; then
   exit 1
 fi
 
+log "Ensuring DNS is configured for apt..."
+if [ ! -s /etc/resolv.conf ]; then
+  cat >/etc/resolv.conf <<'EOF'
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+EOF
+fi
+
 log "Installing base packages..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
+tries=0
+while :; do
+  tries=$((tries + 1))
+  if apt-get update -y; then
+    break
+  fi
+  if [ "${tries}" -ge 5 ]; then
+    log "apt-get update failed after ${tries} attempts"
+    exit 100
+  fi
+  sleep 3
+done
+
 apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml
 
-log "Installing Docker..."
+log "Installing Docker + Compose..."
 if ! command -v docker >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker.io
 fi
 
-if ! docker compose version >/dev/null 2>&1; then
-  if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
-    apt-get install -y --no-install-recommends docker-compose-plugin
-  fi
+if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+  apt-get install -y --no-install-recommends docker-compose-plugin || true
 fi
-
-if ! docker compose version >/dev/null 2>&1; then
-  if apt-cache show docker-compose >/dev/null 2>&1; then
-    apt-get install -y --no-install-recommends docker-compose
-  fi
+if ! command -v docker-compose >/dev/null 2>&1 && apt-cache show docker-compose >/dev/null 2>&1; then
+  apt-get install -y --no-install-recommends docker-compose || true
 fi
 
 log "Extracting and installing 5tratumOS bundle..."
@@ -81,8 +100,8 @@ if ! docker compose version >/dev/null 2>&1 && command -v docker-compose >/dev/n
   sed -i 's#/usr/bin/docker compose#/usr/bin/docker-compose#g' /etc/systemd/system/5tratumos-overlay.service || true
 fi
 
-systemctl daemon-reload
-systemctl enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service
+# systemctl inside installer chroot should run offline (systemd isn't PID1 yet).
+SYSTEMD_OFFLINE=1 systemctl enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service
 
 log "Applying basic kiosk-friendly defaults (sleep disabled)..."
 install -d -m 0755 /etc/systemd/logind.conf.d
@@ -94,7 +113,7 @@ HandleLidSwitch=ignore
 HandleLidSwitchExternalPower=ignore
 HandleLidSwitchDocked=ignore
 EOF
-systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
+SYSTEMD_OFFLINE=1 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
 
 log "Cleanup..."
 rm -rf "${TMP_DIR}"
