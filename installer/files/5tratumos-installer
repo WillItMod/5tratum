@@ -8,19 +8,48 @@ if ! have dialog; then
   exit 1
 fi
 
-MEDIA_IMG=""
-for p in \
-  "/run/live/medium/5tratumos.img.xz" \
-  "/lib/live/mount/medium/5tratumos.img.xz" \
-  "/cdrom/5tratumos.img.xz" \
-  "/5tratumos.img.xz"; do
-  if [ -f "$p" ]; then MEDIA_IMG="$p"; break; fi
+need_cmds=(lsblk awk cut sed wipefs sgdisk parted mkfs.ext4 mkfs.vfat mount umount debootstrap chroot curl)
+for c in "${need_cmds[@]}"; do
+  if ! have "$c"; then
+    dialog --title "5tratumOS Installer" --msgbox "Missing required command: ${c}\n\nRebuild the ISO with required packages." 10 70
+    exit 1
+  fi
 done
 
-if [ -z "${MEDIA_IMG}" ]; then
-  dialog --title "5tratumOS Installer" --msgbox "Embedded image 5tratumos.img.xz not found on install media.\n\nRebuild the ISO with dist/5tratumos.img.xz present." 10 70
+REPO_URL_DEFAULT="https://github.com/WillItMod/5tratum_Build/archive/refs/heads/main.tar.gz"
+DEBIAN_SUITE_DEFAULT="trixie"
+DEBIAN_MIRROR_DEFAULT="http://deb.debian.org/debian"
+TARGET_MNT="/mnt/5tratumos-target"
+TARGET_HOSTNAME_DEFAULT="5tratumos"
+
+cleanup() {
+  set +e
+  mountpoint -q "${TARGET_MNT}/boot/efi" && umount -R "${TARGET_MNT}/boot/efi"
+  mountpoint -q "${TARGET_MNT}/dev" && umount -R "${TARGET_MNT}/dev"
+  mountpoint -q "${TARGET_MNT}/proc" && umount -R "${TARGET_MNT}/proc"
+  mountpoint -q "${TARGET_MNT}/sys" && umount -R "${TARGET_MNT}/sys"
+  mountpoint -q "${TARGET_MNT}" && umount -R "${TARGET_MNT}"
+  set -e
+}
+trap cleanup EXIT
+
+part_path() {
+  local disk="$1"
+  local idx="$2"
+  if [[ "$disk" =~ [0-9]$ ]]; then
+    echo "${disk}p${idx}"
+  else
+    echo "${disk}${idx}"
+  fi
+}
+
+require_network() {
+  if curl -fsSL --max-time 5 https://deb.debian.org/ >/dev/null 2>&1; then
+    return 0
+  fi
+  dialog --title "Network required" --msgbox "This installer requires an Internet connection to download Debian packages and 5tratumOS.\n\nCheck your network (DHCP) and try again." 10 70
   exit 1
-fi
+}
 
 mapfile -t disks < <(lsblk -dn -o NAME,TYPE,SIZE,MODEL | awk '$2=="disk"{print $0}')
 if [ "${#disks[@]}" -eq 0 ]; then
@@ -49,21 +78,175 @@ if [ "${confirm}" != "INSTALL" ]; then
   exit 0
 fi
 
-dialog --title "Installing" --infobox "Writing image to ${target}...\n\nThis may take a few minutes." 8 60
+require_network
+
+hostname="$(dialog --clear --title \"Hostname\" --inputbox \"Enter a hostname for this 5tratumOS install:\" 10 70 \"${TARGET_HOSTNAME_DEFAULT}\" 2>&1 >/dev/tty)"
+hostname="$(echo "${hostname:-${TARGET_HOSTNAME_DEFAULT}}" | tr -cd 'a-zA-Z0-9-.' | tr 'A-Z' 'a-z')"
+if [ -z "${hostname}" ]; then hostname="${TARGET_HOSTNAME_DEFAULT}"; fi
+
+dialog --title "Installing" --infobox "Partitioning ${target}..." 6 60
 
 set +e
 umount "${target}"* >/dev/null 2>&1
 set -e
 
-if have xzcat; then
-  xzcat "${MEDIA_IMG}" | dd of="${target}" bs=8M status=progress conv=fsync
-else
-  dialog --title "Error" --msgbox "Missing xzcat (xz-utils)." 6 50
-  exit 1
+wipefs -a "${target}" >/dev/null 2>&1 || true
+sgdisk --zap-all "${target}" >/dev/null 2>&1 || true
+parted -s "${target}" mklabel gpt
+parted -s "${target}" mkpart ESP fat32 1MiB 513MiB
+parted -s "${target}" set 1 esp on
+parted -s "${target}" mkpart primary ext4 513MiB 100%
+
+udevadm settle >/dev/null 2>&1 || true
+sleep 1
+
+esp="$(part_path "${target}" 1)"
+rootp="$(part_path "${target}" 2)"
+
+dialog --title "Installing" --infobox "Formatting filesystems..." 6 60
+mkfs.vfat -F 32 -n EFI "${esp}" >/dev/null
+mkfs.ext4 -F -L 5TRATUMOS "${rootp}" >/dev/null
+
+mkdir -p "${TARGET_MNT}"
+mount "${rootp}" "${TARGET_MNT}"
+mkdir -p "${TARGET_MNT}/boot/efi"
+mount "${esp}" "${TARGET_MNT}/boot/efi"
+
+dialog --title "Installing" --infobox "Bootstrapping Debian ${DEBIAN_SUITE_DEFAULT}...\n\nThis can take several minutes." 8 70
+debootstrap --arch amd64 "${DEBIAN_SUITE_DEFAULT}" "${TARGET_MNT}" "${DEBIAN_MIRROR_DEFAULT}"
+
+dialog --title "Installing" --infobox "Configuring base system..." 6 60
+echo "${hostname}" >"${TARGET_MNT}/etc/hostname"
+cat >"${TARGET_MNT}/etc/hosts" <<EOF
+127.0.0.1 localhost
+127.0.1.1 ${hostname}
+EOF
+
+cat >"${TARGET_MNT}/etc/apt/sources.list" <<EOF
+deb ${DEBIAN_MIRROR_DEFAULT} ${DEBIAN_SUITE_DEFAULT} main contrib non-free-firmware
+deb ${DEBIAN_MIRROR_DEFAULT} ${DEBIAN_SUITE_DEFAULT}-updates main contrib non-free-firmware
+deb http://security.debian.org/debian-security ${DEBIAN_SUITE_DEFAULT}-security main contrib non-free-firmware
+EOF
+
+mkdir -p "${TARGET_MNT}/etc/systemd/network"
+cat >"${TARGET_MNT}/etc/systemd/network/20-wired.network" <<'EOF'
+[Match]
+Name=en*
+Name=eth*
+Name=ens*
+Name=eno*
+Name=enp*
+
+[Network]
+DHCP=yes
+EOF
+
+mkdir -p "${TARGET_MNT}/etc/systemd/resolved.conf.d"
+ln -sf /run/systemd/resolve/stub-resolv.conf "${TARGET_MNT}/etc/resolv.conf" || true
+
+mkdir -p "${TARGET_MNT}/dev" "${TARGET_MNT}/proc" "${TARGET_MNT}/sys"
+mount --bind /dev "${TARGET_MNT}/dev"
+mount --bind /proc "${TARGET_MNT}/proc"
+mount --bind /sys "${TARGET_MNT}/sys"
+
+dialog --title "Installing" --infobox "Installing kernel + bootloader + SSH..." 7 70
+chroot "${TARGET_MNT}" apt-get update -y
+chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  cloud-guest-utils \
+  gnupg \
+  jq \
+  python3 \
+  python3-yaml \
+  openssh-server \
+  systemd-sysv \
+  linux-image-amd64 \
+  grub-efi-amd64 \
+  efibootmgr
+
+systemctl --root "${TARGET_MNT}" enable systemd-networkd systemd-resolved ssh >/dev/null 2>&1 || true
+
+if ! chroot "${TARGET_MNT}" id -u forge >/dev/null 2>&1; then
+  chroot "${TARGET_MNT}" useradd -m -s /bin/bash forge || true
+  chroot "${TARGET_MNT}" passwd -l forge >/dev/null 2>&1 || true
 fi
+
+dialog --title "Installing" --infobox "Installing 5tratumOS..." 6 60
+mkdir -p "${TARGET_MNT}/opt/5tratumos-src"
+chroot "${TARGET_MNT}" bash -lc "cd /opt/5tratumos-src && curl -fsSL '${REPO_URL_DEFAULT}' | tar -xz --strip-components=1"
+
+dialog --title "Installing" --infobox "Installing Docker + 5tratumOS services..." 7 70
+
+# Install Docker in the target root (without starting anything inside the chroot).
+if ! chroot "${TARGET_MNT}" command -v docker >/dev/null 2>&1; then
+  chroot "${TARGET_MNT}" install -d -m 0755 /etc/apt/keyrings
+  if [ ! -f "${TARGET_MNT}/etc/apt/keyrings/docker.gpg" ]; then
+    chroot "${TARGET_MNT}" bash -lc "curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg"
+    chroot "${TARGET_MNT}" chmod a+r /etc/apt/keyrings/docker.gpg || true
+  fi
+
+  arch="$(chroot "${TARGET_MNT}" dpkg --print-architecture)"
+  codename="${DEBIAN_SUITE_DEFAULT}"
+  cat >"${TARGET_MNT}/etc/apt/sources.list.d/docker.list" <<EOF
+deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${codename} stable
+EOF
+
+  chroot "${TARGET_MNT}" apt-get update -y
+  chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
+fi
+
+install -d -m 0755 "${TARGET_MNT}/opt/5tratumos"
+rm -rf "${TARGET_MNT}/opt/5tratumos/overlay" "${TARGET_MNT}/opt/5tratumos/apps-available" "${TARGET_MNT}/opt/5tratumos/daemon" "${TARGET_MNT}/opt/5tratumos/console" "${TARGET_MNT}/opt/5tratumos/bootstrap" || true
+cp -a "${TARGET_MNT}/opt/5tratumos-src/overlay" "${TARGET_MNT}/opt/5tratumos/overlay"
+cp -a "${TARGET_MNT}/opt/5tratumos-src/apps-available" "${TARGET_MNT}/opt/5tratumos/apps-available"
+cp -a "${TARGET_MNT}/opt/5tratumos-src/daemon" "${TARGET_MNT}/opt/5tratumos/daemon"
+cp -a "${TARGET_MNT}/opt/5tratumos-src/console" "${TARGET_MNT}/opt/5tratumos/console"
+cp -a "${TARGET_MNT}/opt/5tratumos-src/bootstrap" "${TARGET_MNT}/opt/5tratumos/bootstrap"
+install -d -m 0755 "${TARGET_MNT}/opt/5tratumos/apps"
+install -d -m 0755 "${TARGET_MNT}/var/lib/5tratumos/apps"
+
+install -m 0755 "${TARGET_MNT}/opt/5tratumos-src/bin/5tratumos" "${TARGET_MNT}/usr/local/bin/5tratumos"
+
+install -d -m 0755 "${TARGET_MNT}/etc/5tratumos"
+echo "main" >"${TARGET_MNT}/etc/5tratumos/channel"
+
+install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumos-overlay.service" "${TARGET_MNT}/etc/systemd/system/5tratumos-overlay.service"
+install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumosd.service" "${TARGET_MNT}/etc/systemd/system/5tratumosd.service"
+install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumos-firstboot.service" "${TARGET_MNT}/etc/systemd/system/5tratumos-firstboot.service"
+
+systemctl --root "${TARGET_MNT}" daemon-reload || true
+systemctl --root "${TARGET_MNT}" enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service || true
+
+install -d -m 0755 "${TARGET_MNT}/etc/systemd/logind.conf.d"
+cat >"${TARGET_MNT}/etc/systemd/logind.conf.d/5tratumos.conf" <<'EOF'
+[Login]
+IdleAction=ignore
+IdleActionSec=0
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+EOF
+systemctl --root "${TARGET_MNT}" mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
+
+# Don't ship the build repo checkout.
+rm -rf "${TARGET_MNT}/opt/5tratumos-src" || true
+
+dialog --title "Installing" --infobox "Installing bootloader..." 6 60
+if [ -d /sys/firmware/efi ]; then
+  chroot "${TARGET_MNT}" grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=5tratumOS --recheck
+else
+  chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends grub-pc
+  chroot "${TARGET_MNT}" grub-install --target=i386-pc "${target}"
+fi
+chroot "${TARGET_MNT}" update-grub || true
 
 sync
 
-dialog --title "Done" --msgbox "5tratumOS was written successfully.\n\nRemove the install media and reboot." 9 60
+dialog --title "Done" --msgbox "5tratumOS installed successfully.\n\nRemove the install media and reboot.\n\nAfter boot, open http://<host>/ to create your admin user." 11 70
 reboot -f
-

@@ -7,7 +7,6 @@ have() { command -v "$1" >/dev/null 2>&1; }
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-${SCRIPT_DIR}/live-build}"
-IMAGE_XZ="${IMAGE_XZ:-${ROOT}/dist/5tratumos.img.xz}"
 OUT_ISO="${OUT_ISO:-${ROOT}/dist/5tratumos-installer.iso}"
 
 if [ "${EUID:-$(id -u)}" -ne 0 ]; then
@@ -26,7 +25,7 @@ echo "[1/4] Configuring live-build..."
   cd "${BUILD_DIR}"
   lb config \
     --mode debian \
-    --distribution bookworm \
+    --distribution trixie \
     --architectures amd64 \
     --binary-images iso-hybrid \
     --debian-installer false \
@@ -38,13 +37,19 @@ echo "[2/4] Writing installer customizations..."
 mkdir -p "${BUILD_DIR}/config/package-lists"
 cat >"${BUILD_DIR}/config/package-lists/5tratumos-installer.list.chroot" <<'EOF'
 dialog
+debootstrap
+debian-archive-keyring
+gdisk
 parted
 util-linux
 e2fsprogs
 dosfstools
 xz-utils
+zstd
 coreutils
 ca-certificates
+curl
+gnupg
 EOF
 
 mkdir -p "${BUILD_DIR}/config/includes.chroot/usr/local/sbin"
@@ -60,13 +65,7 @@ systemctl enable 5tratumos-installer.service
 EOF
 chmod +x "${BUILD_DIR}/config/hooks/normal/010-enable-installer.hook.chroot"
 
-mkdir -p "${BUILD_DIR}/config/includes.binary"
-if [ -f "${IMAGE_XZ}" ]; then
-  echo "Embedding image: ${IMAGE_XZ}"
-  install -m 0644 "${IMAGE_XZ}" "${BUILD_DIR}/config/includes.binary/5tratumos.img.xz"
-else
-  echo "warn: ${IMAGE_XZ} not found; ISO will build but installer won't have an embedded image." >&2
-fi
+echo "Note: this installer ISO performs a fresh install (Debian + 5tratumOS) and does not embed a disk image."
 
 echo "[3/4] Building ISO..."
 (
@@ -83,4 +82,3 @@ cp -f "${iso}" "${OUT_ISO}"
 
 echo "Done:"
 echo "  ${OUT_ISO}"
-
