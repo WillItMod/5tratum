@@ -158,9 +158,13 @@ if [ -z "${mbr}" ]; then
     (
       cd "${pkg_dir}"
       apt-get update -y >/dev/null 2>&1 || true
+      apt-get download isolinux >/dev/null 2>&1 || true
       apt-get download syslinux-common >/dev/null 2>&1 || true
     )
-    deb="$(ls -1 "${pkg_dir}"/syslinux-common_*.deb 2>/dev/null | head -n 1 || true)"
+    deb="$(ls -1 "${pkg_dir}"/isolinux_*.deb 2>/dev/null | head -n 1 || true)"
+    if [ -z "${deb}" ]; then
+      deb="$(ls -1 "${pkg_dir}"/syslinux-common_*.deb 2>/dev/null | head -n 1 || true)"
+    fi
     if [ -n "${deb}" ] && command -v dpkg-deb >/dev/null 2>&1; then
       dpkg-deb -x "${deb}" "${pkg_dir}/extract" >/dev/null 2>&1 || true
       for p in "${pkg_dir}/extract/usr/lib/ISOLINUX/isohdpfx.bin" "${pkg_dir}/extract/usr/lib/syslinux/isohdpfx.bin"; do
