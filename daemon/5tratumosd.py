@@ -7,6 +7,7 @@ import hmac
 import json
 import os
 import re
+import datetime
 import calendar
 import secrets
 import shlex
@@ -79,6 +80,8 @@ SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_s
 # Workers with 0 hashrate and a last-share older than this are considered stale and are hidden
 # from the Fleet "Workers" table (the pool endpoints may retain historical worker entries).
 WORKER_STALE_S = int(str(_env("WORKER_STALE_S", "900") or "900"))
+WORKER_ACTIVE_S = int(str(_env("WORKER_ACTIVE_S", "300") or "300"))
+WORKER_PRUNE_S = int(str(_env("WORKER_PRUNE_S", "86400") or "86400"))
 # Default to the public Axebench endpoint (never rely on private LAN IPs).
 DEFAULT_SUPPORT_BASE_URL = str(_env("SUPPORT_BASE_URL", "https://axebench.dreamnet.uk") or "https://axebench.dreamnet.uk").strip()
 _SUPPORT_CHECKIN_URL_RAW = _env("SUPPORT_CHECKIN_URL")
@@ -3832,6 +3835,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 "last_share_age_s",
                 "last_share_age",
                 "last_share",
+                "lastshare_ago_s",
                 "lastShareSec",
                 "lastShareSeconds",
                 "lastShare",
@@ -3879,6 +3883,27 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             elif isinstance(workers_data.get("details"), list):
                 raw_details = workers_data.get("details")
             elif isinstance(workers_data.get("miners"), list):
+                best_worker = ""
+                best_share = None
+                if isinstance(pool_data, dict):
+                    bw = (
+                        pool_data.get("best_share_all_worker")
+                        or pool_data.get("best_share_worker")
+                        or pool_data.get("best_share_worker_all_time")
+                        or pool_data.get("bestShareWorker")
+                        or ""
+                    )
+                    if isinstance(bw, str):
+                        best_worker = bw.strip()
+                    bs = (
+                        pool_data.get("best_share_all")
+                        or pool_data.get("best_share")
+                        or pool_data.get("best_share_all_time")
+                        or pool_data.get("bestShare")
+                    )
+                    if isinstance(bs, (int, float, str)):
+                        best_share = bs
+
                 normalized: list[dict] = []
                 for miner in workers_data.get("miners") or []:
                     if not isinstance(miner, dict):
@@ -3913,14 +3938,21 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                                 w["lastshare_ago_s"] = max(0, int(time.time() - ts))
                     except Exception:
                         pass
+
+                    if best_worker and best_share is not None:
+                        wn = str(w.get("workername") or "").strip()
+                        short = str(w.get("worker") or "").strip()
+                        if wn == best_worker or short == best_worker:
+                            try:
+                                w["bestshare"] = int(float(best_share))
+                            except Exception:
+                                w["bestshare"] = best_share
                     normalized.append(w)
                 raw_details = normalized
 
         if isinstance(raw_details, list):
             for w in raw_details:
                 if not isinstance(w, dict):
-                    continue
-                if _worker_is_stale(w):
                     continue
                 details.append({"app_id": app_id, "coin": coin, **w})
         return entry, details
@@ -3964,16 +3996,45 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 continue
         return 0.0
 
-    workers_out.sort(key=worker_hashrate_key, reverse=True)
+    active_workers: list[dict] = []
+    inactive_workers: list[dict] = []
+    pruned_workers = 0
+    for w in workers_out:
+        if not isinstance(w, dict):
+            continue
+        hr = worker_hashrate_key(w)
+        age = _worker_last_share_age_s(w)
+        if hr > 0:
+            active_workers.append(w)
+            continue
+        if age is None:
+            active_workers.append(w)
+            continue
+        try:
+            age_s = int(float(age))
+        except Exception:
+            age_s = 0
+        if age_s > WORKER_PRUNE_S:
+            pruned_workers += 1
+            continue
+        if age_s > WORKER_ACTIVE_S:
+            inactive_workers.append(w)
+            continue
+        active_workers.append(w)
+
+    active_workers.sort(key=worker_hashrate_key, reverse=True)
+    inactive_workers.sort(key=lambda it: float(_worker_last_share_age_s(it) or 0.0), reverse=False)
     if limit > 0:
-        workers_out = workers_out[:limit]
+        active_workers = active_workers[:limit]
 
     res = {
         "ok": True,
         "time": _now_iso(),
         "total": {"hashrate_ths": total_hashrate_ths, "workers": total_workers},
         "pools": pools,
-        "workers": workers_out,
+        "workers": active_workers,
+        "workers_inactive": inactive_workers,
+        "workers_pruned": pruned_workers,
     }
     _FLEET_CACHE["summary"] = {"time": now, "limit": limit, "data": res}
     return res

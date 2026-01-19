@@ -2202,6 +2202,43 @@ body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric--c
   background: rgba(0, 0, 0, 0.14);
 }
 
+.forgeos-fleet-workers-inactive {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.forgeos-fleet-workers-inactive > summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.92);
+  padding: 6px 2px;
+}
+
+.forgeos-fleet-workers-inactive > summary::-webkit-details-marker {
+  display: none;
+}
+
+.forgeos-fleet-workers-inactive > summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 14px;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.forgeos-fleet-workers-inactive[open] > summary::before {
+  content: '▾';
+}
+
+.forgeos-fleet-workers-inactive[open] > summary {
+  margin-bottom: 8px;
+  color: rgba(226, 232, 240, 0.9);
+}
+
 .forgeos-table {
   width: 100%;
   border-collapse: collapse;

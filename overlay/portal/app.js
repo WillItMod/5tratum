@@ -5549,10 +5549,14 @@
 
   function renderFleetWorkers(payload) {
     if (!fleetWorkersBodyEl) return;
+    const prevScroll = fleetWorkersBodyEl.querySelector('.forgeos-table-wrap')?.scrollTop ?? 0;
     fleetWorkersBodyEl.innerHTML = '';
 
     const workers = payload && typeof payload === 'object' && Array.isArray(payload.workers) ? payload.workers : [];
-    if (!workers.length) {
+    const inactive =
+      payload && typeof payload === 'object' && Array.isArray(payload.workers_inactive) ? payload.workers_inactive : [];
+
+    if (!workers.length && !inactive.length) {
       const hint = document.createElement('div');
       hint.className = 'forgeos-muted';
       hint.textContent = 'No active workers reported yet.';
@@ -5651,6 +5655,75 @@
     table.appendChild(tbody);
     wrap.appendChild(table);
     fleetWorkersBodyEl.appendChild(wrap);
+    try {
+      wrap.scrollTop = Number(prevScroll) || 0;
+    } catch {}
+
+    if (!inactive.length) return;
+
+    const details = document.createElement('details');
+    details.className = 'forgeos-fleet-workers-inactive';
+    const summary = document.createElement('summary');
+    summary.textContent = `Inactive workers (${inactive.length})`;
+    details.appendChild(summary);
+
+    const inactiveWrap = document.createElement('div');
+    inactiveWrap.className = 'forgeos-table-wrap';
+    const inactiveTable = document.createElement('table');
+    inactiveTable.className = 'forgeos-table';
+    const inactiveHead = document.createElement('thead');
+    const inactiveHeadRow = document.createElement('tr');
+    for (const label of ['Worker', 'Coin', 'Hashrate', 'Best share', 'Last share']) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      inactiveHeadRow.appendChild(th);
+    }
+    inactiveHead.appendChild(inactiveHeadRow);
+    inactiveTable.appendChild(inactiveHead);
+
+    const inactiveBody = document.createElement('tbody');
+    for (const raw of inactive.slice(0, 200)) {
+      if (!raw || typeof raw !== 'object') continue;
+      const name = workerName(raw);
+      const coin = String(raw.coin || '').trim() || '-';
+      const rate =
+        raw.hashrate_ths ?? raw.hashrate_1m_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
+      const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
+      const bestShareRaw =
+        raw.bestshare ??
+        raw.best_share ??
+        raw.bestShare ??
+        raw.bestShareValue ??
+        raw.best_share_value ??
+        raw.best ??
+        null;
+      const bestShareNum = bestShareRaw === null || bestShareRaw === undefined ? NaN : Number(bestShareRaw);
+      const bestShareTxt = Number.isFinite(bestShareNum)
+        ? formatCompactNumber(bestShareNum)
+        : bestShareRaw
+          ? String(bestShareRaw)
+          : '-';
+      const lastAgo = raw.lastshare_ago_s ?? raw.last_share_ago_s ?? raw.lastshareAgo ?? null;
+      const lastTxt =
+        lastAgo === null || lastAgo === undefined
+          ? '-'
+          : Number.isFinite(Number(lastAgo))
+            ? `${Math.max(0, Math.round(Number(lastAgo)))}s`
+            : String(lastAgo);
+
+      const tr = document.createElement('tr');
+      const cols = [name, coin, rateTxt, bestShareTxt, lastTxt];
+      for (const c of cols) {
+        const td = document.createElement('td');
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      inactiveBody.appendChild(tr);
+    }
+    inactiveTable.appendChild(inactiveBody);
+    inactiveWrap.appendChild(inactiveTable);
+    details.appendChild(inactiveWrap);
+    fleetWorkersBodyEl.appendChild(details);
   }
 
   function renderFleet(payload) {
