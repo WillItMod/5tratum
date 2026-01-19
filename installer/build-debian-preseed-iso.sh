@@ -15,6 +15,9 @@ BUNDLE_TGZ="${BUNDLE_TGZ:-${ROOT}/dist/5tratumos-update.tgz}"
 OUT_ISO="${OUT_ISO:-${ROOT}/dist/5tratumos-installer.iso}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work-preseed}"
 
+LOGO_SMALL="${LOGO_SMALL:-${ROOT}/overlay/portal/assets/New Logos/5.png}"
+LOGO_WORDMARK="${LOGO_WORDMARK:-${ROOT}/overlay/portal/assets/New Logos/WordOnlyLogo.png}"
+
 have bsdtar || die "bsdtar not found"
 have xorriso || die "xorriso not found (apt-get install -y xorriso)"
 
@@ -36,11 +39,19 @@ bsdtar -C "${WORK_DIR}/iso" -xf "${DEBIAN_ISO}"
 
 echo "[3/6] Adding 5tratumOS installer files..."
 install -d -m 0755 "${WORK_DIR}/iso/5tratumos"
+install -d -m 0755 "${WORK_DIR}/iso/5tratumos/branding"
 install -m 0644 "${SCRIPT_DIR}/debian-installer/preseed.cfg" "${WORK_DIR}/iso/preseed.cfg"
 install -m 0755 "${SCRIPT_DIR}/debian-installer/late_command.sh" "${WORK_DIR}/iso/5tratumos/late_command.sh"
 install -m 0644 "${BUNDLE_TGZ}" "${WORK_DIR}/iso/5tratumos/5tratumos-update.tgz"
 
-echo "[4/6] Patching boot configs to use preseed..."
+if [ -f "${LOGO_SMALL}" ]; then
+  install -m 0644 "${LOGO_SMALL}" "${WORK_DIR}/iso/5tratumos/branding/5.png"
+fi
+if [ -f "${LOGO_WORDMARK}" ]; then
+  install -m 0644 "${LOGO_WORDMARK}" "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png"
+fi
+
+echo "[4/6] Branding + preseed boot configs..."
 append_args="auto=true priority=critical preseed/file=/cdrom/preseed.cfg"
 
 # BIOS (isolinux)
@@ -66,11 +77,51 @@ if [ -f "${WORK_DIR}/iso/isolinux/isolinux.cfg" ]; then
   sed -i "s/^default .*/default install/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
   sed -i "s/^timeout .*/timeout 30/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
 fi
+if [ -d "${WORK_DIR}/iso/isolinux" ]; then
+  for f in "${WORK_DIR}/iso/isolinux/"*.cfg; do
+    [ -f "$f" ] || continue
+    sed -i 's/Debian GNU\/Linux installer menu/5tratumOS Installer/g' "$f" || true
+    sed -i 's/Debian Installer/5tratumOS Installer/g' "$f" || true
+    sed -i 's/Debian installer/5tratumOS installer/g' "$f" || true
+  done
+fi
+
+# Optional: generate a Syslinux splash background (requires ImageMagick's `convert`).
+if [ -d "${WORK_DIR}/iso/isolinux" ] && command -v convert >/dev/null 2>&1; then
+  if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
+    tmp_splash="${WORK_DIR}/iso/isolinux/splash.png"
+    convert -size 640x480 xc:'#07090e' \
+      "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 520x -gravity north -geometry +0+60 -composite \
+      "${WORK_DIR}/iso/5tratumos/branding/5.png" -resize 90x -gravity northeast -geometry +36+24 -composite \
+      "${tmp_splash}" || true
+  fi
+fi
 
 # UEFI (grub)
 if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
   sed -i "s#\\(linux\\s\\+/install\\.amd/vmlinuz\\s\\+\\)#\\1${append_args} #g" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
   sed -i "s/^set timeout=.*/set timeout=3/" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+fi
+if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
+  sed -i 's/Debian GNU\/Linux installer menu/5tratumOS Installer/g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+  sed -i 's/Debian Installer/5tratumOS Installer/g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+  sed -i 's/Debian installer/5tratumOS installer/g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+fi
+
+# Optional: Grub background (requires ImageMagick's `convert`).
+if command -v convert >/dev/null 2>&1; then
+  if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
+    bg="${WORK_DIR}/iso/boot/grub/background.png"
+    convert -size 1024x768 xc:'#07090e' \
+      "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 820x -gravity center -geometry +0-40 -composite \
+      "${WORK_DIR}/iso/5tratumos/branding/5.png" -resize 120x -gravity southeast -geometry +40+40 -composite \
+      "${bg}" || true
+    if [ -f "${bg}" ]; then
+      if ! grep -q 'background_image' "${WORK_DIR}/iso/boot/grub/grub.cfg"; then
+        sed -i "1i\\insmod png\\nbackground_image -m stretch /boot/grub/background.png\\n" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+      fi
+    fi
+  fi
 fi
 
 echo "[5/6] Updating md5sum.txt (if present)..."
@@ -123,4 +174,3 @@ xorriso -as mkisofs \
 
 echo "Wrote:"
 echo "  ${OUT_ISO}"
-
