@@ -2619,6 +2619,18 @@ def system_update_apply(channel: str | None = None) -> dict:
                         },
                     )
                     _mirror_tree(str(stage_root / "apps-available"), str(Path(ROOT_DIR) / "apps-available"))
+                if (stage_root / "bootstrap").is_dir():
+                    update_status_write(
+                        "deploying",
+                        target_tag=target_tag,
+                        progress=86,
+                        restarts={
+                            "overlay": bool(overlay_cfg_changed),
+                            "daemon": bool(daemon_changed),
+                            "systemd": bool(systemd_changed),
+                        },
+                    )
+                    _mirror_tree(str(stage_root / "bootstrap"), str(Path(ROOT_DIR) / "bootstrap"))
                 if (stage_root / "console").is_dir():
                     _mirror_tree(str(stage_root / "console"), str(Path(ROOT_DIR) / "console"))
 

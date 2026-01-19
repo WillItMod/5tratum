@@ -1,14 +1,29 @@
-# 5tratumOS Installer ISO (WIP)
+# 5tratumOS Installer ISO
 
-This folder contains the build config for a bootable **installer ISO**.
+This folder contains build tooling for a bootable **installer ISO** intended for USB installs and VM testing.
 
-The installer ISO boots into a minimal live environment and launches a guided, text-based installer that:
-- lists disks
-- prompts the user to select a target disk
-- installs Debian 13 (Trixie) to the selected disk
-- installs 5tratumOS (daemon + portal + templates) and enables services
-- reboots
+## Debian Installer (preseed) — recommended
 
-This is intended for USB installs and VM testing (mount ISO as CD-ROM at boot).
+This produces a Debian Installer ISO that **boots directly into an installer** (not a live desktop) and installs 5tratumOS with minimal prompts.
 
-Build entrypoint: `installer/build-installer-iso.sh`.
+Behavior:
+- installs Debian via the standard Debian Installer
+- uses Debian's normal partitioning confirmation step as the disk wipe confirmation
+- installs 5tratumOS (daemon + portal + templates) from an embedded update bundle
+- finishes with the normal "remove install media and reboot" flow
+
+Build entrypoint: `installer/build-debian-preseed-iso.sh`
+
+Prereqs on the build machine (Debian recommended):
+- `bsdtar`
+- `xorriso`
+- `syslinux-common` (for `isohdpfx.bin`)
+
+Embedded files:
+- `/preseed.cfg` from `installer/debian-installer/preseed.cfg`
+- `/5tratumos/late_command.sh` from `installer/debian-installer/late_command.sh`
+- `/5tratumos/5tratumos-update.tgz` from `dist/5tratumos-update.tgz`
+
+## Legacy: live-build TUI installer
+
+The older live-build based installer remains in `installer/build-installer-iso.sh` but is not the recommended path.

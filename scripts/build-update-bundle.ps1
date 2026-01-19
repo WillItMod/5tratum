@@ -30,14 +30,18 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 try {
   $stageOverlay = Join-Path $tmp "overlay"
   $stageDaemon = Join-Path $tmp "daemon"
+  $stageBootstrap = Join-Path $tmp "bootstrap"
+  $stageAppsAvailable = Join-Path $tmp "apps-available"
   $stageSystemd = Join-Path $tmp "systemd"
   $stageBin = Join-Path $tmp "bin"
   $stageConsole = Join-Path $tmp "console"
 
-  New-Item -ItemType Directory -Force -Path $stageOverlay, $stageDaemon, $stageSystemd, $stageBin, $stageConsole | Out-Null
+  New-Item -ItemType Directory -Force -Path $stageOverlay, $stageDaemon, $stageBootstrap, $stageAppsAvailable, $stageSystemd, $stageBin, $stageConsole | Out-Null
 
   Copy-Item -Recurse -Force -Path (Join-Path $root "overlay\\*") -Destination $stageOverlay
   Copy-Item -Recurse -Force -Path (Join-Path $root "daemon\\*") -Destination $stageDaemon
+  Copy-Item -Recurse -Force -Path (Join-Path $root "bootstrap\\*") -Destination $stageBootstrap
+  Copy-Item -Recurse -Force -Path (Join-Path $root "apps-available\\*") -Destination $stageAppsAvailable
   Copy-Item -Recurse -Force -Path (Join-Path $root "systemd\\*") -Destination $stageSystemd
   Copy-Item -Force -Path (Join-Path $root "bin\\5tratumos") -Destination (Join-Path $stageBin "5tratumos")
   if (Test-Path (Join-Path $root "console")) {
@@ -54,7 +58,7 @@ try {
 
   Push-Location $tmp
   try {
-    tar -czf $bundlePath overlay daemon systemd bin console
+    tar -czf $bundlePath overlay daemon bootstrap apps-available systemd bin console
   } finally {
     Pop-Location
   }

@@ -16,10 +16,12 @@ trap cleanup EXIT
 cd "${ROOT_DIR}"
 
 # Stage only what the daemon update applier knows how to deploy.
-mkdir -p "${tmp}/overlay" "${tmp}/daemon" "${tmp}/systemd" "${tmp}/bin" "${tmp}/console"
+mkdir -p "${tmp}/overlay" "${tmp}/daemon" "${tmp}/bootstrap" "${tmp}/apps-available" "${tmp}/systemd" "${tmp}/bin" "${tmp}/console"
 
 cp -a "${ROOT_DIR}/overlay/." "${tmp}/overlay/"
 cp -a "${ROOT_DIR}/daemon/." "${tmp}/daemon/"
+cp -a "${ROOT_DIR}/bootstrap/." "${tmp}/bootstrap/"
+cp -a "${ROOT_DIR}/apps-available/." "${tmp}/apps-available/"
 cp -a "${ROOT_DIR}/systemd/." "${tmp}/systemd/"
 cp -a "${ROOT_DIR}/bin/5tratumos" "${tmp}/bin/5tratumos"
 if [ -d "${ROOT_DIR}/console" ]; then
@@ -37,7 +39,7 @@ tar \
   --owner=0 --group=0 --numeric-owner \
   -czf "${bundle_path}" \
   -C "${tmp}" \
-  overlay daemon systemd bin console
+  overlay daemon bootstrap apps-available systemd bin console
 
 sha256sum "${bundle_path}" | sed "s|${bundle_path}|${BUNDLE_NAME}|" > "${sha_path}"
 
