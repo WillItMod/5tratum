@@ -76,6 +76,9 @@ UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN"
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
+# Workers with 0 hashrate and a last-share older than this are considered stale and are hidden
+# from the Fleet "Workers" table (the pool endpoints may retain historical worker entries).
+WORKER_STALE_S = int(str(_env("WORKER_STALE_S", "900") or "900"))
 # Default to the public Axebench endpoint (never rely on private LAN IPs).
 DEFAULT_SUPPORT_BASE_URL = str(_env("SUPPORT_BASE_URL", "https://axebench.dreamnet.uk") or "https://axebench.dreamnet.uk").strip()
 _SUPPORT_CHECKIN_URL_RAW = _env("SUPPORT_CHECKIN_URL")
@@ -3808,9 +3811,67 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         entry["ok"] = pool_data is not None
 
         details: list[dict] = []
-        if workers_data and isinstance(workers_data.get("workers_details"), list):
-            for w in workers_data.get("workers_details"):
+
+        def _worker_last_share_age_s(w: dict) -> float | None:
+            for k in (
+                "last_share_s",
+                "last_share_sec",
+                "last_share_seconds",
+                "last_share_age_s",
+                "last_share_age",
+                "last_share",
+                "lastShareSec",
+                "lastShareSeconds",
+                "lastShare",
+            ):
+                try:
+                    v = w.get(k)
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                    if isinstance(v, str) and v.strip():
+                        return float(v.strip())
+                except Exception:
+                    continue
+            return None
+
+        def _worker_hashrate_ths(w: dict) -> float:
+            for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
+                try:
+                    v = w.get(k)
+                    if isinstance(v, (int, float)):
+                        return float(v)
+                    if isinstance(v, str) and v.strip():
+                        return float(v.strip())
+                except Exception:
+                    continue
+            return 0.0
+
+        def _worker_is_stale(w: dict) -> bool:
+            try:
+                hr = _worker_hashrate_ths(w)
+                if hr > 0:
+                    return False
+                age = _worker_last_share_age_s(w)
+                if age is None:
+                    return False
+                return float(age) > float(WORKER_STALE_S)
+            except Exception:
+                return False
+
+        raw_details = None
+        if workers_data:
+            if isinstance(workers_data.get("workers_details"), list):
+                raw_details = workers_data.get("workers_details")
+            elif isinstance(workers_data.get("workers"), list):
+                raw_details = workers_data.get("workers")
+            elif isinstance(workers_data.get("details"), list):
+                raw_details = workers_data.get("details")
+
+        if isinstance(raw_details, list):
+            for w in raw_details:
                 if not isinstance(w, dict):
+                    continue
+                if _worker_is_stale(w):
                     continue
                 details.append({"app_id": app_id, "coin": coin, **w})
         return entry, details
