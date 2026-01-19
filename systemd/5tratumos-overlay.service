@@ -7,7 +7,7 @@ Wants=network-online.target docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/5tratumos/overlay
-ExecStart=/usr/bin/docker compose --project-name 5tratumos-overlay up -d
+ExecStart=/opt/5tratumos/bootstrap/overlay-up.sh
 ExecStop=/usr/bin/docker compose --project-name 5tratumos-overlay down
 TimeoutStartSec=0
 
