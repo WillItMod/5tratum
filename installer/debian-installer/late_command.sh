@@ -53,12 +53,10 @@ apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3
 
 log "Installing Docker + Compose..."
 if ! command -v docker >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends docker.io
+  # On Debian 13, docker.io may not ship the `docker` client binary; install docker-cli too.
+  apt-get install -y --no-install-recommends docker.io docker-cli containerd
 fi
 
-if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
-  apt-get install -y --no-install-recommends docker-compose-plugin || true
-fi
 if ! command -v docker-compose >/dev/null 2>&1 && apt-cache show docker-compose >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-compose || true
 fi
