@@ -6809,9 +6809,76 @@
         disabled: pendingAppActions.has(id),
         onClick: async () => openMoveAppDataModal(id),
       },
+      { type: 'sep' },
+      {
+        label: 'Uninstall...',
+        danger: true,
+        disabled: pendingAppActions.has(id),
+        onClick: async () => {
+          await uninstallAppFlow(id);
+        },
+      },
     ];
 
     openContextMenu(items, x, y);
+  }
+
+  async function uninstallAppFlow(appId, opts) {
+    const id = String(appId || '').trim();
+    if (!id) return { ok: false, error: 'missing id' };
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const closeOnDone = options.closeOnDone === true;
+    const meta = metaFor(id);
+    const label = meta.name || id;
+
+    const pick = await openChoiceModal({
+      title: `Uninstall ${label}`,
+      message:
+        'Choose how to uninstall:\n\n' +
+        'Keep data: removes containers, keeps app data (recommended).\n' +
+        'Purge data: removes containers and deletes the app data folder (irreversible).',
+      kind: 'System',
+      choices: [
+        { label: 'Keep data', value: 'keep' },
+        { label: 'Purge data', value: 'purge', danger: true },
+        { label: 'Cancel', value: 'cancel' },
+      ],
+    });
+    if (!pick || pick === 'cancel') return { ok: false, canceled: true };
+
+    const purge = pick === 'purge';
+    startProgress(id, 'uninstall');
+    const splashToken = showGlobalSplash({
+      title: `Uninstalling ${label}`,
+      sub: purge ? 'Removing containers + deleting data...' : 'Removing containers...',
+      showProgress: true,
+      progress: 1,
+    });
+
+    try {
+      openAppIds = openAppIds.filter((x) => x !== id);
+      saveOpenApps();
+      setPinnedToDrawer(id, false);
+      await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/uninstall`, {
+        method: 'POST',
+        body: JSON.stringify({ purge }),
+      });
+      await refresh();
+      finishProgress(id);
+      if (closeOnDone) closeModal();
+      return { ok: true, purge };
+    } catch (err) {
+      cancelProgress(id);
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Uninstall failed',
+        message: err && err.message ? String(err.message) : String(err),
+        danger: true,
+      });
+      return { ok: false, error: err && err.message ? String(err.message) : String(err) };
+    } finally {
+      hideGlobalSplash(splashToken);
+    }
   }
 
   let launcherSuppressClickUntil = 0;
