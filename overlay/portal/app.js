@@ -373,11 +373,18 @@
   function isAxeSuiteAppId(appId) {
     const id = String(appId || '').trim().toLowerCase();
     if (!id) return false;
-    if (id === 'axedoom') return false;
-    if (id === 'axesim') return true;
-    if (id === 'axemig') return true;
-    // Heuristic: AxeSuite apps are "axe*" except Doom.
-    return id.startsWith('axe');
+    // Explicit allowlist: keep perf alerts focused on non-AxeSuite apps (e.g. Doom).
+    // Note: AxeBTCF is distinct from AxeBTC (axebtc vs axebtcf).
+    return (
+      id === 'axebch' ||
+      id === 'axedgb' ||
+      id === 'axebtc' ||
+      id === 'axebtcf' ||
+      id === 'axelive' ||
+      id === 'axebench' ||
+      id === 'axemig' ||
+      id === 'axesim'
+    );
   }
 
   function updatePerfWarnings(installedList) {

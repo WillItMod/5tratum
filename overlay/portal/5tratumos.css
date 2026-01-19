@@ -713,6 +713,20 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item:hover {
   mask-composite: exclude;
 }
 
+/* Collapsed/auto-hidden sidebar tiles clip overflow, so keep the rainbow border inside the tile. */
+body.forgeos-sidebar-collapsed .forgeos-app-item--open::before,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item--open::before {
+  inset: 0;
+  padding: 2px;
+}
+
+body.forgeos-sidebar-collapsed .forgeos-app-item--open::after,
+body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item--open::after {
+  inset: 0;
+  opacity: 0.18;
+  filter: blur(8px);
+}
+
 .forgeos-app-item--active {
   border-color: rgba(0, 229, 255, 0.22);
   background: rgba(0, 229, 255, 0.08);
