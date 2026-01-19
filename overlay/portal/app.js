@@ -233,6 +233,7 @@
   let storeAutoSyncInFlight = false;
   let storeCustomStores = [];
   let storageCache = null;
+  const storeAppsByChannelCache = new Map();
 
   // Apps launcher pages (server-backed).
   let appsPagesState = null;
@@ -1655,6 +1656,25 @@
     });
   }
 
+  async function getStoreAppsByChannel(channel) {
+    const ch = String(channel || '').trim().toLowerCase() || 'main';
+    const cached = storeAppsByChannelCache.get(ch) || null;
+    const now = Date.now();
+    if (cached && cached.time && now - cached.time < 60000 && cached.byId instanceof Map) return cached;
+    const res = await apiJsonTimeout(`/api/v0/store/apps?channel=${encodeURIComponent(ch)}`, {}, 20000).catch(() => null);
+    if (!res || res.ok !== true) throw new Error((res && res.error) || 'store load failed');
+    const apps = Array.isArray(res.apps) ? res.apps : [];
+    const byId = new Map(
+      apps
+        .filter((a) => a && typeof a === 'object')
+        .map((a) => [String(a.id || '').trim().toLowerCase(), a])
+        .filter((pair) => pair[0]),
+    );
+    const next = { time: now, apps, byId };
+    storeAppsByChannelCache.set(ch, next);
+    return next;
+  }
+
   function renderStoreCustomButtons() {
     if (!storeChannelCustomsEl) return;
     storeChannelCustomsEl.innerHTML = '';
@@ -2068,6 +2088,18 @@
       if (id === 'axedoom') logo = '/assets/doom.webp';
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
+      const depsRaw = Array.isArray(store.dependencies)
+        ? store.dependencies
+        : typeof store.dependencies === 'string'
+          ? store.dependencies.split(/[,\s]+/g)
+          : [];
+      const deps = Array.from(
+        new Set(
+          depsRaw
+            .map((v) => String(v || '').trim().toLowerCase())
+            .filter((v) => v && v !== String(id || '').trim().toLowerCase()),
+        ),
+      );
       return {
         id,
         name,
@@ -2084,6 +2116,7 @@
         website: String(store.website || ''),
         repo,
         support: sanitizeStoreText(String(store.support || '')),
+        dependencies: deps,
         installable: !!store.installable,
       };
     }
@@ -2091,7 +2124,7 @@
     const fallback = APP_CATALOG[id] || null;
     const channel = String(activeStoreChannel || 'main');
     if (fallback) return { ...fallback, channel, installable: true };
-    return { id, name: id, desc: '', tag: 'App', logo: null, screenshots: [], channel, installable: true };
+    return { id, name: id, desc: '', tag: 'App', logo: null, screenshots: [], channel, dependencies: [], installable: true };
   }
 
   function statusKeyForUi(text) {
@@ -8787,6 +8820,171 @@
     window.setTimeout(() => input.focus(), 50);
   }
 
+  function channelCandidates(prefer) {
+    const out = [];
+    const push = (v) => {
+      const k = String(v || '').trim().toLowerCase();
+      if (!k) return;
+      if (out.includes(k)) return;
+      out.push(k);
+    };
+    push(prefer);
+    push(activeStoreChannel);
+    push('main');
+    push('global');
+    push('dev');
+    for (const entry of Array.isArray(storeCustomStores) ? storeCustomStores : []) {
+      if (!entry || typeof entry !== 'object') continue;
+      push(entry.slot);
+    }
+    return out;
+  }
+
+  async function resolveStoreAppRecord(appId, preferChannel) {
+    const id = String(appId || '').trim().toLowerCase();
+    if (!id) return null;
+
+    const local = storeById.get(id) || installedStoreById.get(id) || null;
+    if (local && typeof local === 'object') return { channel: String(local.channel || preferChannel || activeStoreChannel || 'main'), app: local };
+
+    for (const ch of channelCandidates(preferChannel)) {
+      try {
+        const bucket = await getStoreAppsByChannel(ch);
+        const app = bucket && bucket.byId ? bucket.byId.get(id) : null;
+        if (app && typeof app === 'object') return { channel: String(app.channel || ch), app };
+      } catch {}
+    }
+    return null;
+  }
+
+  async function buildInstallPlan(targetId, preferChannel) {
+    const start = String(targetId || '').trim().toLowerCase();
+    if (!start) return { ok: false, error: 'missing app id' };
+    const visited = new Set();
+    const stack = new Set();
+    const order = [];
+    const records = new Map();
+    const unresolved = new Set();
+    let cycle = false;
+
+    async function visit(id, chHint) {
+      const key = String(id || '').trim().toLowerCase();
+      if (!key) return;
+      if (visited.has(key)) return;
+      if (stack.has(key)) {
+        cycle = true;
+        return;
+      }
+      stack.add(key);
+      const rec = await resolveStoreAppRecord(key, chHint);
+      if (rec && rec.app) records.set(key, rec);
+      else unresolved.add(key);
+      const deps = rec && rec.app && Array.isArray(rec.app.dependencies) ? rec.app.dependencies : [];
+      for (const depRaw of deps) {
+        const dep = String(depRaw || '').trim().toLowerCase();
+        if (!dep || dep === key) continue;
+        await visit(dep, rec ? rec.channel : chHint);
+      }
+      stack.delete(key);
+      visited.add(key);
+      order.push(key);
+    }
+
+    await visit(start, preferChannel);
+    if (cycle) return { ok: false, error: 'dependency cycle detected' };
+    if (unresolved.size) return { ok: false, error: `unresolved dependencies: ${Array.from(unresolved).join(', ')}` };
+    return { ok: true, order, records };
+  }
+
+  async function installAppWithDependencies(appId, preferChannel, opts) {
+    const id = String(appId || '').trim().toLowerCase();
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const openAfter = options.openAfter === true;
+    const closeModalOnDone = options.closeModalOnDone === true;
+
+    const plan = await buildInstallPlan(id, preferChannel);
+    if (!plan || plan.ok !== true) return { ok: false, error: plan && plan.error ? plan.error : 'dependency plan failed' };
+
+    const order = Array.isArray(plan.order) ? plan.order : [];
+    const toInstall = order.filter((x) => !installedById.has(x));
+    const depsOnly = toInstall.filter((x) => x !== id);
+    const label = metaFor(id, { prefer: 'store' }).name || id;
+
+    if (depsOnly.length) {
+      const lines = depsOnly.map((d) => `- ${metaFor(d, { prefer: 'store' }).name || d}`).join('\n');
+      const ok = await openConfirmModal({
+        title: `Install dependencies for ${label}?`,
+        message: `This app requires:\n\n${lines}\n\nInstall and start dependencies automatically, then install ${label}.`,
+        confirmText: 'Install dependencies',
+        cancelText: 'Cancel',
+        danger: false,
+      });
+      if (!ok) return { ok: false, canceled: true };
+    }
+
+    const splashToken = showGlobalSplash({
+      title: `Installing ${label}`,
+      sub: depsOnly.length ? `Installing dependencies (0/${depsOnly.length + 1})...` : 'Preparing app...',
+      showProgress: true,
+      progress: 1,
+      dismissable: true,
+    });
+
+    try {
+      const totalSteps = Math.max(1, toInstall.length);
+      let step = 0;
+
+      for (const currentId of order) {
+        const installed = installedById.get(currentId) || null;
+        const needsInstall = !installed;
+        const rec = plan.records.get(currentId) || null;
+        const channel = rec ? String(rec.channel || preferChannel || 'main') : String(preferChannel || 'main');
+
+        if (needsInstall) {
+          step += 1;
+          startProgress(currentId, 'install');
+          updateGlobalSplashProgress(Math.round((step / totalSteps) * 90));
+          if (globalSplashTitleEl) globalSplashTitleEl.textContent = `Installing ${metaFor(currentId, { prefer: 'store' }).name || currentId}`;
+          if (globalSplashSubEl)
+            globalSplashSubEl.textContent = depsOnly.length
+              ? `Installing ${step}/${totalSteps}...`
+              : 'Preparing app...';
+
+          await apiJson(`/api/v0/apps/${encodeURIComponent(currentId)}/install`, {
+            method: 'POST',
+            body: JSON.stringify({ channel }),
+          });
+          try {
+            await apiAppAction(currentId, 'up');
+          } catch {}
+          finishProgress(currentId);
+          await refreshInstalled();
+        } else {
+          // If installed but stopped, start it when requested as a dependency chain.
+          try {
+            if (!isLaunchableStatus(installed.status)) {
+              pendingAppActions.set(currentId, { kind: 'up', startedAt: Date.now() });
+              renderTopbarActivity();
+              await apiAppAction(currentId, 'up');
+              await refreshInstalled();
+            }
+          } catch {}
+        }
+      }
+
+      updateGlobalSplashProgress(100);
+      await refresh();
+
+      if (openAfter) openApp({ id, name: metaFor(id).name || id });
+      if (closeModalOnDone) closeModal();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? String(err.message) : String(err) };
+    } finally {
+      hideGlobalSplash(splashToken);
+    }
+  }
+
   function openStoreModal(appId) {
     try {
       if (!modalEl || !modalBodyEl || !modalTitleEl) return;
@@ -8978,6 +9176,34 @@
 	    if (meta.developer) addKV('Developer', meta.developer);
 	    if (meta.support) addKV('Support', meta.support, meta.support);
 	    if (meta.storeId) addKV('Store id', meta.storeId);
+
+      const deps = Array.isArray(meta.dependencies) ? meta.dependencies : [];
+      if (deps.length) {
+        const depRow = document.createElement('div');
+        depRow.className = 'forgeos-modal__kv';
+        const k = document.createElement('div');
+        k.className = 'forgeos-modal__kv-k';
+        k.textContent = 'Dependencies';
+        const v = document.createElement('div');
+        v.className = 'forgeos-modal__kv-v';
+        v.style.display = 'flex';
+        v.style.flexWrap = 'wrap';
+        v.style.gap = '6px';
+        deps.forEach((depId) => {
+          const dep = String(depId || '').trim().toLowerCase();
+          if (!dep) return;
+          const chip = document.createElement('span');
+          chip.className = 'axe-pill';
+          const depInstalled = installedById.get(dep) || null;
+          const label = metaFor(dep, { prefer: 'store' }).name || dep;
+          chip.textContent = depInstalled ? `${label}` : `${label} (missing)`;
+          chip.title = depInstalled ? `Installed (${depInstalled.status || 'unknown'})` : 'Not installed';
+          v.appendChild(chip);
+        });
+        depRow.appendChild(k);
+        depRow.appendChild(v);
+        details.appendChild(depRow);
+      }
 
 	    const actions = document.createElement('div');
 	    actions.className = 'forgeos-modal__meta-actions';
@@ -9196,36 +9422,29 @@
 
       btnInstall.addEventListener('click', async () => {
         if (!isInstallable) return;
-        startProgress(id, 'install');
-        btnInstall.disabled = true;
-        const splashToken = showGlobalSplash({
-          title: `Installing ${meta.name || id}`,
-          sub: 'Preparing app...',
-          showProgress: true,
-          progress: 1,
-        });
         try {
-          await apiJson(`/api/v0/apps/${encodeURIComponent(id)}/install`, {
-            method: 'POST',
-            body: JSON.stringify({ channel: meta.channel || 'main' }),
+          btnInstall.disabled = true;
+          const prev = btnInstall.textContent;
+          btnInstall.textContent = 'Installing...';
+          const res = await installAppWithDependencies(id, meta.channel || activeStoreChannel || 'main', {
+            openAfter: true,
+            closeModalOnDone: true,
           });
-          await apiAppAction(id, 'up');
-          await refresh();
-          openApp({ id, name: meta.name });
-          finishProgress(id);
-          closeModal();
+          if (!res || res.ok !== true) {
+            if (res && res.canceled) return;
+            throw new Error((res && res.error) || 'install failed');
+          }
+          btnInstall.textContent = prev;
         } catch (err) {
-          cancelProgress(id);
           await openNoticeModal({
             kind: 'Error',
             title: 'Install failed',
             message: err && err.message ? String(err.message) : String(err),
             danger: true,
           });
+        } finally {
           btnInstall.disabled = false;
           btnInstall.textContent = btnInstall.dataset.defaultLabel || 'Install';
-        } finally {
-          hideGlobalSplash(splashToken);
         }
       });
 

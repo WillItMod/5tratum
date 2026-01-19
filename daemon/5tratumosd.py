@@ -3322,6 +3322,28 @@ def list_store_apps(channel: str | None) -> dict:
 
         installable = (templates_root / app_id / "docker-compose.yml").is_file() or (entry / "docker-compose.yml").is_file()
 
+        deps_raw = manifest.get("dependencies")
+        if deps_raw is None:
+            deps_raw = manifest.get("depends_on")
+        if deps_raw is None:
+            deps_raw = manifest.get("requires")
+        deps = []
+        if isinstance(deps_raw, list):
+            deps = [_safe_str(v).strip() for v in deps_raw]
+        elif isinstance(deps_raw, str):
+            deps = [v.strip() for v in deps_raw.replace(",", " ").split() if v.strip()]
+        deps = [map_store_id_to_app_id(d, ch) for d in deps if d]
+        deps_out = []
+        seen_dep = set()
+        for d in deps:
+            key = str(d or "").strip().lower()
+            if not key or key == app_id:
+                continue
+            if key in seen_dep:
+                continue
+            seen_dep.add(key)
+            deps_out.append(key)
+
         manifest_icon = _safe_str(manifest.get("icon")).strip()
         manifest_gallery = _safe_str_list(manifest.get("gallery"))
         icon_url = _prefer_local_icon(ch, entry, entry.name, manifest_icon)
@@ -3365,6 +3387,7 @@ def list_store_apps(channel: str | None) -> dict:
                 "port": manifest.get("port"),
                 "path": _safe_str(manifest.get("path")).strip(),
                 "widgets": widgets_out,
+                "dependencies": deps_out,
                 "installable": bool(installable),
             }
         )
@@ -3391,6 +3414,7 @@ def list_store_apps(channel: str | None) -> dict:
                     "port": 5300,
                     "path": "",
                     "widgets": [],
+                    "dependencies": [],
                     "installable": True,
                 }
             )
