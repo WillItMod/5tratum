@@ -1325,19 +1325,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 
 .forgeos-topbar-activity {
   flex: 0 0 auto;
-  width: 340px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.14);
-  padding: 8px 10px;
-  min-height: 96px;
-  color: rgba(226, 232, 240, 0.95);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
-  cursor: pointer;
-  text-align: left;
+  width: auto;
+  min-width: 190px;
 }
 
 .forgeos-topbar-activity:hover {
@@ -1376,6 +1365,37 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 @media (max-width: 900px) {
   .forgeos-topbar-activity {
     width: 100%;
+  }
+}
+
+@media (max-width: 540px) {
+  .forgeos-desktop-topbar {
+    padding: 6px 10px;
+    gap: 10px;
+  }
+
+  .forgeos-desktop-metric {
+    min-width: 132px;
+    min-height: 44px;
+    padding: 6px 10px;
+    gap: 10px;
+    flex-direction: row;
+  }
+
+  .forgeos-desktop-metric__k {
+    font-size: 10px;
+  }
+
+  .forgeos-desktop-metric__v {
+    font-size: 14px;
+  }
+
+  .forgeos-desktop-metric--mono .forgeos-desktop-metric__v {
+    font-size: 12px;
+  }
+
+  .forgeos-desktop-metric__sub {
+    display: none;
   }
 }
 
@@ -3636,7 +3656,8 @@ body.forgeos-workspace #btn-open-store {
 .forgeos-modal {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Must sit above the global GIF splash so errors aren't hidden behind it. */
+  z-index: 80;
   display: flex;
   align-items: center;
   justify-content: center;

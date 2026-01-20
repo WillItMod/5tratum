@@ -7446,6 +7446,7 @@
       showToast('App repaired', null);
       await refresh();
     } catch (err) {
+      hideGlobalSplash(splashToken);
       showToast('Fix failed', 'error');
       await openNoticeModal({
         kind: 'Error',
@@ -9053,6 +9054,7 @@
                 } else {
                   cancelProgress(id);
                   showToast('Update status unknown', 'warn');
+                  hideGlobalSplash(splashToken);
                   await openNoticeModal({
                     kind: 'Warning',
                     title: 'Update status unknown',
@@ -9100,14 +9102,15 @@
             await refresh();
             openApp({ id, name: meta.name });
             finishProgress(id);
-          } catch (err) {
-            cancelProgress(id);
-            await openNoticeModal({
-              kind: 'Error',
-              title: 'Install failed',
-              message: err && err.message ? String(err.message) : String(err),
-              danger: true,
-            });
+           } catch (err) {
+             cancelProgress(id);
+             hideGlobalSplash(splashToken);
+             await openNoticeModal({
+               kind: 'Error',
+               title: 'Install failed',
+               message: err && err.message ? String(err.message) : String(err),
+               danger: true,
+             });
             btnInstall.disabled = false;
             btnInstall.textContent = btnInstall.dataset.defaultLabel || 'Install';
           } finally {

@@ -3815,8 +3815,98 @@ def _installed_registry_set(app_id: str, installed: bool) -> None:
         if not isinstance(apps, dict):
             apps = {}
         now = _now_iso()
-        apps[aid] = {"installed": bool(installed), "updated_at": now}
+        current = apps.get(aid) if isinstance(apps.get(aid), dict) else {}
+        if not isinstance(current, dict):
+            current = {}
+        current["installed"] = bool(installed)
+        current["updated_at"] = now
+        apps[aid] = current
         _installed_registry_write({"ok": True, "time": now, "apps": apps})
+    except Exception:
+        pass
+
+
+def _installed_registry_update_meta(app_id: str, meta: dict) -> None:
+    aid = (app_id or "").strip().lower()
+    if not aid or not isinstance(meta, dict):
+        return
+    try:
+        obj = _installed_registry_read()
+        apps = obj.get("apps") if isinstance(obj, dict) else None
+        if not isinstance(apps, dict):
+            apps = {}
+        current = apps.get(aid) if isinstance(apps.get(aid), dict) else {}
+        if not isinstance(current, dict):
+            current = {}
+        for k, v in meta.items():
+            key = str(k or "").strip()
+            if not key:
+                continue
+            current[key] = v
+        current["updated_at"] = _now_iso()
+        apps[aid] = current
+        _installed_registry_write({"ok": True, "time": _now_iso(), "apps": apps})
+    except Exception:
+        pass
+
+
+def _store_channel_for_app_action(app_id: str, requested: str | None = None) -> str | None:
+    aid = (app_id or "").strip().lower()
+    if not aid:
+        return None
+    allowed = allowed_store_channels()
+    candidates: list[str] = []
+    req = (requested or "").strip().lower()
+    if req and req in allowed:
+        candidates.append(req)
+
+    install_meta = read_app_install_meta(aid)
+    meta_ch = str(install_meta.get("channel") or "").strip().lower()
+    if meta_ch and meta_ch in allowed and meta_ch not in candidates:
+        candidates.append(meta_ch)
+
+    sys_ch = str(read_default_channel() or "").strip().lower()
+    if sys_ch and sys_ch in allowed and sys_ch not in candidates:
+        candidates.append(sys_ch)
+
+    # Prefer global next (Fix App should work for Tailscale, etc.).
+    if "global" in allowed and "global" not in candidates:
+        candidates.append("global")
+
+    for ch in sorted(allowed):
+        if ch not in candidates:
+            candidates.append(ch)
+
+    for ch in candidates:
+        meta = store_app_by_id_in_channel(aid, ch)
+        if isinstance(meta, dict) and meta.get("installable") is True:
+            return ch
+    return None
+
+
+def _update_app_install_meta_channel(app_id: str, channel: str | None) -> None:
+    aid = (app_id or "").strip().lower()
+    ch = (channel or "").strip().lower()
+    if not aid or not ch:
+        return
+    try:
+        base = Path(APPS_DIR) / aid
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "5tratumos.json"
+        current = read_app_install_meta(aid)
+        if not isinstance(current, dict):
+            current = {}
+        current["channel"] = ch
+        store_meta = store_app_by_id_in_channel(aid, ch)
+        if isinstance(store_meta, dict):
+            sid = str(store_meta.get("store_id") or store_meta.get("id") or "").strip()
+            if sid:
+                current["store_id"] = sid
+        path.write_text(json.dumps(current, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+        try:
+            os.chmod(str(path), 0o600)
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -3856,7 +3946,15 @@ def system_channel_get() -> dict:
 def system_channel_set(body: dict) -> dict:
     if not isinstance(body, dict):
         return {"ok": False, "error": "invalid body"}
-    return {"ok": False, "error": "channel is fixed to main"}
+    channel = str(body.get("channel") or body.get("value") or "").strip().lower()
+    if channel not in {"main", "dev"}:
+        return {"ok": False, "error": "invalid channel"}
+    try:
+        Path(CHANNEL_FILE).parent.mkdir(parents=True, exist_ok=True)
+        Path(CHANNEL_FILE).write_text(f"{channel}\n", encoding="utf-8")
+    except Exception as e:
+        return {"ok": False, "error": f"failed to set channel: {e}"}
+    return {"ok": True, "channel": read_default_channel()}
 
 
 def os_update_check() -> dict:
@@ -6713,10 +6811,18 @@ class Handler(BaseHTTPRequestHandler):
             if not app_id:
                 json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "missing app id"})
                 return
-            res = stratumos_cmd(["app", "repair", app_id], timeout_s=1800)
+            req_ch = str(body.get("channel") or "").strip().lower() if isinstance(body, dict) else ""
+            ch = _store_channel_for_app_action(app_id, req_ch or None)
+            args = ["app", "repair", app_id]
+            if ch:
+                args += ["--channel", ch]
+            res = stratumos_cmd(args, timeout_s=1800)
             if res.get("ok"):
                 proxy_res = system_proxy_repair()
                 res["proxy"] = proxy_res
+                if ch:
+                    _update_app_install_meta_channel(app_id, ch)
+                    _installed_registry_update_meta(app_id, {"channel": ch})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
@@ -6745,6 +6851,10 @@ class Handler(BaseHTTPRequestHandler):
                     res = stratumos_cmd(["app", "install", app_id], timeout_s=600)
                 if res.get("ok"):
                     _installed_registry_set(app_id, True)
+                    if channel:
+                        ch = str(channel).strip().lower()
+                        _update_app_install_meta_channel(app_id, ch)
+                        _installed_registry_update_meta(app_id, {"channel": ch})
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -6766,6 +6876,9 @@ class Handler(BaseHTTPRequestHandler):
                 if channel and (channel in allowed_store_channels() or channel.startswith("custom")):
                     args += ["--channel", channel]
                 res = stratumos_cmd(args, timeout_s=1800)
+                if res.get("ok") and channel:
+                    _update_app_install_meta_channel(app_id, channel)
+                    _installed_registry_update_meta(app_id, {"channel": channel})
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
