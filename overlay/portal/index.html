@@ -138,6 +138,15 @@
                 <span class="forgeos-topbar-perf__icon" aria-hidden="true">!</span>
                 <span id="topbar-perf-count" class="forgeos-topbar-perf__count">0</span>
               </button>
+              <button id="topbar-activity" class="forgeos-topbar-activity hidden" type="button" aria-label="Activity" aria-live="polite">
+                <div class="forgeos-topbar-activity__row">
+                  <div id="topbar-activity-text" class="forgeos-topbar-activity__text">Working...</div>
+                  <div id="topbar-activity-pct" class="forgeos-topbar-activity__pct"></div>
+                </div>
+                <div class="forgeos-meter forgeos-topbar-activity__meter" aria-hidden="true">
+                  <div id="topbar-activity-bar" class="forgeos-meter__fill"></div>
+                </div>
+              </button>
               <button id="metric-card-cpu" class="forgeos-desktop-metric forgeos-desktop-metric--cpu" type="button" aria-label="CPU details">
                 <div class="forgeos-desktop-metric__head">
                   <div class="forgeos-desktop-metric__k">CPU</div>
@@ -194,15 +203,6 @@
                 </svg>
               </button>
             </div>
-            <button id="topbar-activity" class="forgeos-topbar-activity hidden" type="button" aria-label="Activity" aria-live="polite">
-              <div class="forgeos-topbar-activity__row">
-                <div id="topbar-activity-text" class="forgeos-topbar-activity__text">Working...</div>
-                <div id="topbar-activity-pct" class="forgeos-topbar-activity__pct"></div>
-              </div>
-              <div class="forgeos-meter forgeos-topbar-activity__meter" aria-hidden="true">
-                <div id="topbar-activity-bar" class="forgeos-meter__fill"></div>
-              </div>
-            </button>
           </div>
 
           <section id="view-dashboard" class="forgeos-view forgeos-view--desktop">

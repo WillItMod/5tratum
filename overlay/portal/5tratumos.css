@@ -1324,15 +1324,16 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 }
 
 .forgeos-topbar-activity {
-  flex: 1 1 100%;
-  width: 100%;
+  flex: 0 0 auto;
+  width: 340px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(0, 0, 0, 0.14);
-  padding: 10px 12px;
+  padding: 8px 10px;
+  min-height: 96px;
   color: rgba(226, 232, 240, 0.95);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.26);
   cursor: pointer;
@@ -1370,6 +1371,12 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
 
 .forgeos-topbar-activity__meter {
   height: 7px;
+}
+
+@media (max-width: 900px) {
+  .forgeos-topbar-activity {
+    width: 100%;
+  }
 }
 
 .forgeos-topbar-perf {
