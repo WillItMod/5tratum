@@ -30,13 +30,13 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 ### Windows (Balena Etcher)
 
 1) Download `5tratumos-installer.iso`
-2) Open **Balena Etcher** → “Flash from file” → select `5tratumos-installer.iso`
-3) Select your USB drive → Flash
+2) Open **Balena Etcher** -> "Flash from file" -> select `5tratumos-installer.iso`
+3) Select your USB drive -> Flash
 4) Boot the target machine from the USB drive and follow the installer prompts
 
-### Windows (Win32 Disk Imager / “WinImager”)
+### Windows (Win32 Disk Imager / "WinImager")
 
 1) Open **Win32 Disk Imager**
-2) Select `5tratumos-installer.iso` (you may need to choose “*.* / All files”)
-3) Select the correct USB drive letter → Write
+2) Select `5tratumos-installer.iso` (you may need to choose "*.* / All files")
+3) Select the correct USB drive letter -> Write
 4) Boot the target machine from the USB drive and follow the installer prompts

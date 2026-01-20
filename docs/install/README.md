@@ -53,12 +53,12 @@ If you're unsure: use the **Installer ISO**.
    - Remove the USB stick
    - Reboot
 
-## Physical hardware (USB via Win32 Disk Imager / “WinImager”)
+## Physical hardware (USB via Win32 Disk Imager / "WinImager")
 
 1. Download `5tratumos-installer.iso` from the Release assets.
 2. (Optional) Verify the download: `docs/install/VERIFY.md`
 3. Open **Win32 Disk Imager**:
-   - Image file: select `5tratumos-installer.iso` (you may need to choose “*.* / All files”)
+   - Image file: select `5tratumos-installer.iso` (you may need to choose "*.* / All files")
    - Device: select your USB drive letter
    - Write
 4. Boot the target machine from the USB stick.
