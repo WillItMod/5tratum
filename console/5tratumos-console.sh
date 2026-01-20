@@ -2,7 +2,7 @@
 set -euo pipefail
 
 URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/}"
-HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/api/v0/auth/check}"
+HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/}"
 WAIT_SECS="${TRATUMOS_CONSOLE_WAIT_SECS:-90}"
 
 read_kv() {
@@ -40,7 +40,9 @@ fi
 
 if command -v curl >/dev/null 2>&1; then
   for _ in $(seq 1 "${WAIT_SECS}"); do
-    if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then
+    code="$(curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 1 --max-time 2 "${HEALTH_URL}" 2>/dev/null || true)"
+    # Consider the service "up" if we got *any* HTTP response (including 30x/40x like login redirects).
+    if [ -n "${code}" ] && [ "${code}" != "000" ]; then
       break
     fi
     sleep 1
