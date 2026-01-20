@@ -19,7 +19,15 @@ apt-get update -y
 apt-get install -y --no-install-recommends \
   cage \
   chromium \
-  curl
+  curl \
+  kbd \
+  matchbox-window-manager \
+  x11-xserver-utils \
+  xinit \
+  xserver-xorg-core \
+  xserver-xorg-video-fbdev \
+  xserver-xorg-video-vesa \
+  xserver-xorg-video-qxl
 
 if ! id -u "${CONSOLE_USER}" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "${CONSOLE_USER}"
@@ -34,6 +42,8 @@ done
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 install -m 0755 "${SCRIPT_DIR}/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+install -d -m 0755 /usr/local/lib/5tratumos
+install -m 0755 "${SCRIPT_DIR}/5tratumos-x11-session.sh" /usr/local/lib/5tratumos/5tratumos-x11-session
 install -m 0644 "${SCRIPT_DIR}/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
 
 systemctl daemon-reload

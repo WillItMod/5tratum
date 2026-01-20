@@ -4,7 +4,6 @@ After=network-online.target 5tratumos-overlay.service 5tratumosd.service
 Wants=network-online.target
 Conflicts=getty@tty1.service
 After=getty@tty1.service
-ConditionPathExists=/dev/dri/card0
 
 [Service]
 Type=simple
@@ -21,6 +20,7 @@ Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=TRATUMOS_CONSOLE_URL=http://127.0.0.1/
 Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/
 Environment=TRATUMOS_CONSOLE_WAIT_SECS=90
+ExecCondition=/bin/bash -lc 'test -e /dev/dri/card0 -o -e /dev/fb0'
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8
