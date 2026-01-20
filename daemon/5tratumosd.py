@@ -3192,6 +3192,34 @@ def system_update_apply(channel: str | None = None) -> dict:
                     _mirror_tree(str(stage_root / "bootstrap"), str(Path(ROOT_DIR) / "bootstrap"))
                 if (stage_root / "console").is_dir():
                     _mirror_tree(str(stage_root / "console"), str(Path(ROOT_DIR) / "console"))
+                    # Ensure kiosk is actually installed/enabled on systems with a local display.
+                    # (Updates previously only copied the console files but never ran the installer.)
+                    try:
+                        if os.path.exists("/dev/dri/card0") and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
+                            if shutil.which("systemd-run"):
+                                run_cmd(
+                                    [
+                                        "systemd-run",
+                                        "--unit=5tratumos-console-install",
+                                        "--collect",
+                                        "--property=After=network-online.target",
+                                        "--property=Wants=network-online.target",
+                                        "/bin/bash",
+                                        os.path.join(ROOT_DIR, "console", "install.sh"),
+                                    ],
+                                    timeout_s=30,
+                                )
+                            else:
+                                run_cmd(
+                                    [
+                                        "/bin/bash",
+                                        "-lc",
+                                        f"nohup /bin/bash {shlex.quote(os.path.join(ROOT_DIR,'console','install.sh'))} >/var/log/5tratumos-console-install.log 2>&1 &",
+                                    ],
+                                    timeout_s=30,
+                                )
+                    except Exception:
+                        pass
 
                 if stage_bin.is_file():
                     run_cmd(["install", "-m", "0755", str(stage_bin), "/usr/local/bin/5tratumos"], timeout_s=60)
