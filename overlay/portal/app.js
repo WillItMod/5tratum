@@ -13,6 +13,7 @@
   const btnWifiScan = document.getElementById('btn-wifi-scan');
   const btnWifiDisconnect = document.getElementById('btn-wifi-disconnect');
   const wifiNetworksEl = document.getElementById('wifi-networks');
+  let wifiStateCache = { enabled: false, connected: false, ssid: '' };
   const metricCpu = document.getElementById('metric-cpu');
   const metricMem = document.getElementById('metric-mem');
   const metricDisk = document.getElementById('metric-disk');
@@ -2517,6 +2518,7 @@
       refreshSystemUpdateConfig().catch(() => {});
       refreshSystemUpdateCheck().catch(() => {});
       refreshUiConfig().catch(() => {});
+      refreshWifiStatus().catch(() => {});
       refreshMqttConfig().catch(() => {});
       refreshDiscordConfig().catch(() => {});
       refreshWatchdogConfig().catch(() => {});
@@ -2801,7 +2803,19 @@
 
     const ssidRow = document.createElement('div');
     ssidRow.className = 'forgeos-mini-card';
-    ssidRow.innerHTML = `<div class="forgeos-mini-card__k">SSID</div><div class="forgeos-mini-card__v"><span class="forgeos-mono">${escapeHtml(netSsid)}</span></div>`;
+    {
+      const k = document.createElement('div');
+      k.className = 'forgeos-mini-card__k';
+      k.textContent = 'SSID';
+      const v = document.createElement('div');
+      v.className = 'forgeos-mini-card__v';
+      const ss = document.createElement('span');
+      ss.className = 'forgeos-mono';
+      ss.textContent = netSsid;
+      v.appendChild(ss);
+      ssidRow.appendChild(k);
+      ssidRow.appendChild(v);
+    }
     wrap.appendChild(ssidRow);
 
     const passWrap = document.createElement('div');
@@ -2863,6 +2877,7 @@
     if (!wifiStatusEl && !wifiDetailEl && !btnWifiToggle) return;
     const res = await apiJsonTimeout('/api/v0/system/wifi/status', {}, 8000).catch(() => null);
     if (!res || res.ok !== true) {
+      wifiStateCache = { enabled: false, connected: false, ssid: '' };
       if (wifiStatusEl) wifiStatusEl.textContent = 'Unavailable';
       if (wifiDetailEl) wifiDetailEl.textContent = res && res.error ? String(res.error) : '-';
       if (btnWifiToggle) btnWifiToggle.disabled = true;
@@ -2873,6 +2888,7 @@
     const enabled = !!res.enabled;
     const connected = !!res.connected;
     const ssid = String(res.ssid || '').trim();
+    wifiStateCache = { enabled, connected, ssid };
     if (wifiStatusEl) wifiStatusEl.textContent = !enabled ? 'Disabled' : connected ? 'Connected' : 'Enabled';
     if (wifiDetailEl) wifiDetailEl.textContent = !enabled ? 'Wi‑Fi radio is off.' : connected ? (ssid ? `SSID: ${ssid}` : 'Connected') : 'Not connected.';
     if (btnWifiToggle) {
@@ -10613,6 +10629,55 @@
   btnStorageOrphansScan?.addEventListener('click', () => refreshStorageOrphans({ sizes: false }).catch(() => {}));
   btnStorageOrphansScanSizes?.addEventListener('click', () => refreshStorageOrphans({ sizes: true }).catch(() => {}));
   btnStorageOrphansDelete?.addEventListener('click', () => deleteSelectedStorageOrphans().catch(() => {}));
+  btnWifiToggle?.addEventListener('click', async () => {
+    btnWifiToggle.disabled = true;
+    const prev = btnWifiToggle.textContent;
+    btnWifiToggle.textContent = 'Working...';
+    try {
+      await refreshWifiStatus();
+      const target = !wifiStateCache.enabled;
+      const res = await apiJsonTimeout(
+        '/api/v0/system/wifi/toggle',
+        { method: 'POST', body: JSON.stringify({ enabled: target }) },
+        60000,
+      ).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'toggle failed');
+      if (!target && wifiNetworksEl) wifiNetworksEl.innerHTML = '';
+      await refreshWifiStatus();
+    } catch (e) {
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Wi‑Fi update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnWifiToggle.disabled = false;
+      btnWifiToggle.textContent = prev;
+    }
+  });
+  btnWifiScan?.addEventListener('click', () => scanWifiNetworks().catch(() => {}));
+  btnWifiDisconnect?.addEventListener('click', async () => {
+    btnWifiDisconnect.disabled = true;
+    const prev = btnWifiDisconnect.textContent;
+    btnWifiDisconnect.textContent = 'Disconnecting...';
+    try {
+      const res = await apiJsonTimeout('/api/v0/system/wifi/disconnect', { method: 'POST', body: '{}' }, 30000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'disconnect failed');
+      if (wifiNetworksEl) wifiNetworksEl.innerHTML = '';
+      await refreshWifiStatus();
+    } catch (e) {
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Wi‑Fi disconnect failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnWifiDisconnect.disabled = false;
+      btnWifiDisconnect.textContent = prev;
+    }
+  });
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
