@@ -54,9 +54,24 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl restart console-setup.service >/dev/null 2>&1 || true
 fi
 
-# Default: enable kiosk mode (fullscreen local console) on hardware.
-# This is a no-op on headless systems because the service is gated by /dev/dri/card0.
-if [ -e /dev/dri/card0 ] && [ -f /opt/5tratumos/console/install.sh ]; then
+# Default: enable kiosk mode (fullscreen local console) when a local display is present.
+# Gate on either DRM (/dev/dri/card0) or framebuffer (/dev/fb0) so VMs without DRM still
+# install the X11 fallback.
+if [ -f /opt/5tratumos/console/install.sh ] && { [ -e /dev/dri/card0 ] || [ -e /dev/fb0 ]; }; then
+  need_console_install=0
+  if ! command -v cage >/dev/null 2>&1 || ! command -v chromium >/dev/null 2>&1; then
+    need_console_install=1
+  fi
+  if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -q; then
+    if [ ! -x /usr/local/lib/5tratumos/5tratumos-x11-session ] || ! command -v xinit >/dev/null 2>&1; then
+      need_console_install=1
+    fi
+  fi
+
+  if [ "${need_console_install}" = "0" ]; then
+    # Deps already installed.
+    :
+  else
   # Bundles built on Windows may land with CRLF and without exec bits; normalize so installs work.
   if command -v sed >/dev/null 2>&1; then
     sed -i 's/\r$//' /opt/5tratumos/console/*.sh >/dev/null 2>&1 || true
@@ -72,6 +87,7 @@ if [ -e /dev/dri/card0 ] && [ -f /opt/5tratumos/console/install.sh ]; then
       /bin/bash /opt/5tratumos/console/install.sh >/dev/null 2>&1 || true
   else
     ( /bin/bash /opt/5tratumos/console/install.sh || true ) >/dev/null 2>&1 &
+  fi
   fi
 fi
 

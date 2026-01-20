@@ -28,6 +28,12 @@ if [ -d "${ROOT_DIR}/console" ]; then
   cp -a "${ROOT_DIR}/console/." "${tmp}/console/"
 fi
 
+# Normalize CRLF line endings (Windows checkouts) so shebangs and systemd units work on Linux.
+if command -v sed >/dev/null 2>&1; then
+  find "${tmp}" -type f -name '*.sh' -exec sed -i 's/\r$//' {} + >/dev/null 2>&1 || true
+  find "${tmp}" -type f -name '*.service' -exec sed -i 's/\r$//' {} + >/dev/null 2>&1 || true
+fi
+
 # Windows filesystems do not preserve executable bits reliably. Normalize script perms
 # in the staging dir so installs don't fail at first boot.
 chmod 0755 "${tmp}/bin/5tratumos" >/dev/null 2>&1 || true

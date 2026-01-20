@@ -111,8 +111,21 @@ EOF
 fi
 setupcon --force >/dev/null 2>&1 || true
 
-log "Installing kiosk packages (cage + chromium)..."
-apt-get install -y --no-install-recommends cage chromium || true
+log "Installing kiosk packages (cage + chromium + X11 fallback)..."
+# Wayland (cage) works best on bare metal with DRM.
+# In VMs (Proxmox/qemu), Chromium often needs an X11 fallback via xinit+Xorg.
+apt-get install -y --no-install-recommends \
+  cage \
+  chromium \
+  matchbox-window-manager \
+  x11-xserver-utils \
+  xinit \
+  xserver-xorg-core \
+  xserver-xorg-input-libinput \
+  xserver-xorg-legacy \
+  xserver-xorg-video-fbdev \
+  xserver-xorg-video-vesa \
+  xserver-xorg-video-qxl
 
 log "Enabling NetworkManager (for WiFi + robust DHCP)..."
 SYSTEMD_OFFLINE=1 systemctl enable NetworkManager.service >/dev/null 2>&1 || true
@@ -191,6 +204,12 @@ fi
 if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
+  if [ -f "${STAGE_DIR}/console/5tratumos-x11-session.sh" ]; then
+    install -d -m 0755 /usr/local/lib/5tratumos
+    install -m 0755 "${STAGE_DIR}/console/5tratumos-x11-session.sh" /usr/local/lib/5tratumos/5tratumos-x11-session
+  fi
+  # Normalize CRLF line endings in case the bundle was built on Windows.
+  sed -i 's/\r$//' /usr/local/bin/5tratumos-console /etc/systemd/system/5tratumos-console@.service /usr/local/lib/5tratumos/5tratumos-x11-session 2>/dev/null || true
   for grp in video input render; do
     if getent group "${grp}" >/dev/null 2>&1; then
       usermod -aG "${grp}" forge >/dev/null 2>&1 || true
