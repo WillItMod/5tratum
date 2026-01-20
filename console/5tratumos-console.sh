@@ -69,6 +69,10 @@ detect_backend() {
       return 0
     fi
   fi
+  if [ ! -e /dev/dri/card0 ]; then
+    printf '%s' "x11"
+    return 0
+  fi
   printf '%s' "wayland"
 }
 
@@ -76,6 +80,12 @@ backend="$(detect_backend)"
 log "backend=${backend}"
 
 if [ "${backend}" = "x11" ]; then
+  # In VMs, default to software GL to avoid white/blank Chromium windows.
+  if [ -z "${TRATUMOS_CONSOLE_SWGL:-}" ] && command -v systemd-detect-virt >/dev/null 2>&1; then
+    if systemd-detect-virt -q; then
+      export TRATUMOS_CONSOLE_SWGL=1
+    fi
+  fi
   export XDG_SESSION_TYPE=x11
   unset MOZ_ENABLE_WAYLAND || true
   session="/usr/local/lib/5tratumos/5tratumos-x11-session"
@@ -88,6 +98,15 @@ fi
 
 export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
+
+# Ensure Wayland runtime dir is correct (systemd unit should not set it).
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+if [ ! -d "${XDG_RUNTIME_DIR}" ]; then
+  log "XDG_RUNTIME_DIR is missing: ${XDG_RUNTIME_DIR}"
+  exit 1
+fi
 
 # wlroots (cage) can fail to render on some virtual GPUs unless software rendering
 # and/or hardware cursors are disabled. Allow safe fallbacks by default.
