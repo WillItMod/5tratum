@@ -132,6 +132,9 @@ fi
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
+if [ -f "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" ]; then
+  install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" /etc/systemd/system/5tratumos-firstboot-update.service
+fi
 
 if [ -f "${SRC_ROOT}/console/5tratumos-console.sh" ] && [ -f "${SRC_ROOT}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${SRC_ROOT}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
@@ -148,6 +151,9 @@ systemctl daemon-reload
 systemctl enable --now 5tratumosd.service
 systemctl enable --now 5tratumos-overlay.service
 systemctl enable --now 5tratumos-firstboot.service
+if [ -f /etc/systemd/system/5tratumos-firstboot-update.service ]; then
+  systemctl enable 5tratumos-firstboot-update.service || true
+fi
 
 echo "[5/7] Disabling sleep/suspend..."
 install -d -m 0755 /etc/systemd/logind.conf.d

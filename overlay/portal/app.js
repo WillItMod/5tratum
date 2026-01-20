@@ -256,6 +256,8 @@
   let storeAutoSyncEnabled = true;
   let storeAutoSyncInFlight = false;
   let storeCustomStores = [];
+  let storeCustomConfigPollTimer = null;
+  let storeCustomConfigLoaded = false;
   let storageCache = null;
   let storageOrphansCache = null;
   let storageOrphansSelection = { paths: new Set(), containers: new Set() };
@@ -295,6 +297,9 @@
     let systemUpdatePollInFlight = false;
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
+    let systemUpdatePostDone = false;
+    let systemUpdateReconnectTimer = null;
+    let systemUpdateReconnectInFlight = false;
     let uiConfigCache = null;
     let topbarTempOpen = false;
     let topbarHoverOpen = false;
@@ -328,6 +333,7 @@
   const DESKTOP_STATE_KEY_V2 = '5tratumos.desktopState.v2';
   const DESKTOP_STATE_KEY_V1 = '5tratumos.desktopState.v1';
   const DRAWER_PINNED_KEY = '5tratumos.drawerPinned.v1';
+  const SIDEBAR_APPS_ORDER_KEY = '5tratumos.sidebarAppsOrder.v1';
   const SETTINGS_LAYOUT_KEY = '5tratumos.settingsLayout.v1';
   const SETTINGS_SECTION_KEY = '5tratumos.settingsSection.v1';
   const STORE_RENDER_STEP = 72;
@@ -346,6 +352,10 @@
   let modalOnClose = null;
   let desktopState = { items: {} };
   let desktopDragId = '';
+  let sidebarDragId = '';
+  let sidebarAppsOrder = [];
+  let sidebarSuppressClickId = '';
+  let sidebarSuppressClickUntil = 0;
   let desktopRemoteLoaded = false;
   let desktopRemoteSaveTimer = 0;
   let drawerPinned = new Set();
@@ -1165,6 +1175,38 @@
     } catch {
       return [];
     }
+  }
+
+  function loadSidebarAppsOrder() {
+    try {
+      const raw = window.localStorage.getItem(SIDEBAR_APPS_ORDER_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((v) => String(v || '').trim()).filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  function saveSidebarAppsOrder() {
+    try {
+      window.localStorage.setItem(SIDEBAR_APPS_ORDER_KEY, JSON.stringify(sidebarAppsOrder));
+    } catch {}
+  }
+
+  function normalizeSidebarAppsOrder(visibleIds) {
+    const ids = Array.isArray(visibleIds) ? visibleIds.map((v) => String(v || '').trim()).filter(Boolean) : [];
+    const keep = new Set(ids);
+    const seen = new Set();
+    sidebarAppsOrder = Array.isArray(sidebarAppsOrder) ? sidebarAppsOrder.map((v) => String(v || '').trim()) : [];
+    sidebarAppsOrder = sidebarAppsOrder.filter((id) => id && keep.has(id) && !seen.has(id) && (seen.add(id) || true));
+    for (const id of ids) {
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        sidebarAppsOrder.push(id);
+      }
+    }
+    saveSidebarAppsOrder();
   }
 
   function loadInstalledCache() {
@@ -2345,7 +2387,7 @@
   function fallbackLogoFor(appId, name) {
     const id = String(appId || '').trim();
     const label = String(name || id || '?').trim() || '?';
-    if (id.toLowerCase() === 'axedoom') return '/assets/doom.webp';
+    if (id.toLowerCase() === 'axedoom') return '/assets/pngimg.com%20-%20doom_PNG19.png';
     const key = id || label;
     const cached = fallbackLogoCache.get(key);
     if (cached) return cached;
@@ -2408,7 +2450,7 @@
       name: 'Doom',
       desc: 'Play Doom in your browser (Freedoom). Optional install.',
       tag: 'Fun',
-      logo: '/assets/doom.webp',
+      logo: '/assets/pngimg.com%20-%20doom_PNG19.png',
       screenshots: [makeShot('Doom', 'Freedoom + Chocolate Doom (noVNC)')],
     },
   };
@@ -2427,7 +2469,7 @@
       const category = sanitizeStoreText(String(store.category || '')).trim();
       let logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
       if (id === 'axedoom') name = 'Doom';
-      if (id === 'axedoom') logo = '/assets/doom.webp';
+      if (id === 'axedoom') logo = '/assets/pngimg.com%20-%20doom_PNG19.png';
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
       const depsRaw = Array.isArray(store.dependencies)
@@ -3616,6 +3658,19 @@
     return `${v.toFixed(decimals)} ${units[u]}`;
   }
 
+  function formatBytesTerse(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '-';
+    const units = ['B', 'K', 'M', 'G', 'T', 'P'];
+    let v = bytes;
+    let u = 0;
+    while (v >= 1024 && u < units.length - 1) {
+      v /= 1024;
+      u += 1;
+    }
+    const decimals = u === 0 ? 0 : v >= 100 ? 0 : v >= 10 ? 0 : 1;
+    return `${v.toFixed(decimals)}${units[u]}`;
+  }
+
   function formatCompactNumber(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return '-';
@@ -3766,16 +3821,37 @@
     if (metricMemSub) metricMemSub.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
 
     const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
-    const preferred =
-      disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
-    if (preferred && metricDisk) {
-      const dTotal = Number(preferred.total_bytes) || 0;
-      const dUsed = Number(preferred.used_bytes) || 0;
-      const diskPct = dTotal > 0 ? Math.max(0, Math.round((dUsed / dTotal) * 100)) : 0;
+    const validDisks = disks
+      .filter((d) => d && Number(d.total_bytes) > 0)
+      .slice(0, 16)
+      .sort((a, b) => {
+        const ap = String(a.path || '');
+        const bp = String(b.path || '');
+        const score = (p) => (p === '/srv/5tratumos-data' ? 0 : p === '/' ? 1 : 2);
+        const as = score(ap);
+        const bs = score(bp);
+        if (as !== bs) return as - bs;
+        return ap.localeCompare(bp);
+      });
+
+    if (validDisks.length && metricDisk) {
+      const sumTotal = validDisks.reduce((acc, d) => acc + (Number(d.total_bytes) || 0), 0);
+      const sumUsed = validDisks.reduce((acc, d) => acc + (Number(d.used_bytes) || 0), 0);
+      const diskPct = sumTotal > 0 ? Math.max(0, Math.round((sumUsed / sumTotal) * 100)) : 0;
+
+      const diskSummary = validDisks
+        .slice(0, 2)
+        .map((d, i) => `${i + 1}:${formatBytesTerse(Number(d.used_bytes) || 0)}/${formatBytesTerse(Number(d.total_bytes) || 0)}`)
+        .join(' ');
+      const titleSummary = validDisks
+        .slice(0, 4)
+        .map((d, i) => `${i + 1}:${String(d.path || '-')}: ${formatBytes(Number(d.used_bytes) || 0)} / ${formatBytes(Number(d.total_bytes) || 0)}`)
+        .join(' • ');
+
       metricDisk.textContent = `${diskPct}%`;
-      metricDisk.title = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
+      metricDisk.title = titleSummary;
       if (metricDiskBar) setMaskedGradientBar(metricDiskBar, diskPct);
-      if (metricDiskSub) metricDiskSub.textContent = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
+      if (metricDiskSub) metricDiskSub.textContent = diskSummary || '-';
     }
 
     if (metricNetBar || metricNetSub) {
@@ -6749,8 +6825,14 @@
         updateGlobalSplashProgress(pct);
       }
     } else if (systemUpdateSplashToken) {
-      hideGlobalSplash(systemUpdateSplashToken);
-      systemUpdateSplashToken = null;
+      if (state === 'done') {
+        beginSystemUpdateRedirect();
+      } else {
+        hideGlobalSplash(systemUpdateSplashToken);
+        systemUpdateSplashToken = null;
+        systemUpdatePostDone = false;
+        stopSystemUpdateReconnectPoll();
+      }
     }
 
     if (btnUpdateCheck) btnUpdateCheck.disabled = busy;
@@ -6803,6 +6885,74 @@
     systemUpdatePollTimer = window.setTimeout(() => systemUpdatePollTick().catch(() => {}), ms);
   }
 
+  function stopStoreCustomConfigPoll() {
+    if (!storeCustomConfigPollTimer) return;
+    window.clearTimeout(storeCustomConfigPollTimer);
+    storeCustomConfigPollTimer = null;
+  }
+
+  function scheduleStoreCustomConfigPoll(delayMs) {
+    if (storeCustomConfigPollTimer) return;
+    const ms = Math.max(750, Number(delayMs) || 1500);
+    storeCustomConfigPollTimer = window.setTimeout(() => {
+      storeCustomConfigPollTimer = null;
+      refreshStoreCustomConfig().catch(() => {});
+    }, ms);
+  }
+
+  function stopSystemUpdateReconnectPoll() {
+    if (!systemUpdateReconnectTimer) return;
+    window.clearTimeout(systemUpdateReconnectTimer);
+    systemUpdateReconnectTimer = null;
+  }
+
+  function scheduleSystemUpdateReconnectPoll(delayMs) {
+    stopSystemUpdateReconnectPoll();
+    const ms = Math.max(750, Number(delayMs) || 1500);
+    systemUpdateReconnectTimer = window.setTimeout(() => systemUpdateReconnectTick().catch(() => {}), ms);
+  }
+
+  function beginSystemUpdateRedirect() {
+    if (systemUpdatePostDone) return;
+    systemUpdatePostDone = true;
+    scheduleSystemUpdateReconnectPoll(750);
+  }
+
+  async function systemUpdateReconnectTick() {
+    if (systemUpdateReconnectInFlight) return;
+    systemUpdateReconnectInFlight = true;
+    try {
+      if (systemUpdateSplashToken) {
+        updateGlobalSplash('Updating 5tratumOS', 'Update complete. Opening login...');
+        updateGlobalSplashProgress(100);
+      } else {
+        systemUpdateSplashToken = showGlobalSplash({
+          title: 'Updating 5tratumOS',
+          sub: 'Update complete. Opening login...',
+          showProgress: true,
+          progress: 100,
+          dismissable: false,
+        });
+      }
+
+      const ctl = new AbortController();
+      const timer = window.setTimeout(() => ctl.abort(), 2000);
+      try {
+        const res = await fetch('/login.html', { method: 'GET', cache: 'no-store', signal: ctl.signal }).catch(() => null);
+        if (res && res.ok) {
+          window.location.href = '/login.html';
+          return;
+        }
+      } finally {
+        window.clearTimeout(timer);
+      }
+
+      scheduleSystemUpdateReconnectPoll(1500);
+    } finally {
+      systemUpdateReconnectInFlight = false;
+    }
+  }
+
   async function systemUpdatePollTick() {
     if (systemUpdatePollInFlight) return;
     systemUpdatePollInFlight = true;
@@ -6822,7 +6972,10 @@
         scheduleSystemUpdatePoll(1400);
       } else {
         stopSystemUpdatePoll();
-        if (state === 'done') refreshSystemUpdateCheck({ force: true }).catch(() => {});
+        if (state === 'done') {
+          beginSystemUpdateRedirect();
+          refreshSystemUpdateCheck({ force: true }).catch(() => {});
+        }
       }
     } catch {
       if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting...';
@@ -7181,9 +7334,15 @@
   async function refreshStoreCustomConfig() {
     try {
       const ok = await ensureHealthy();
-      if (!ok) return;
+      if (!ok) {
+        if (!storeCustomConfigLoaded) scheduleStoreCustomConfigPoll(2500);
+        return;
+      }
       const res = await apiJsonTimeout('/api/v0/store/config', {}, 4000).catch(() => null);
-      if (!res || res.ok !== true) return;
+      if (!res || res.ok !== true) {
+        if (!storeCustomConfigLoaded) scheduleStoreCustomConfigPoll(2500);
+        return;
+      }
       if (storeTokenStatusEl) {
         const present = !!res.token_present;
         storeTokenStatusEl.textContent = present ? 'Token saved' : 'No token saved';
@@ -7207,13 +7366,17 @@
         return al.localeCompare(bl, undefined, { sensitivity: 'base' });
       });
       storeCustomStores = out;
+      storeCustomConfigLoaded = true;
+      stopStoreCustomConfigPoll();
       renderStoreCustomButtons();
       if (!allowedStoreChannels().includes(String(activeStoreChannel || '').toLowerCase())) {
         activeStoreChannel = 'main';
         saveStoreChannel();
         applyStoreChannelUi();
       }
-    } catch {}
+    } catch {
+      if (!storeCustomConfigLoaded) scheduleStoreCustomConfigPoll(3500);
+    }
   }
 
   async function saveStoreToken() {
@@ -7632,6 +7795,7 @@
     await Promise.allSettled([
       refreshInstalled(),
       refreshStore(),
+      refreshStoreCustomConfig(),
       refreshMetrics(),
       refreshWidgets(),
       refreshFleet(),
@@ -8427,6 +8591,11 @@
       return running || isPinnedToDrawer(id);
     });
 
+    const visibleIds = visible.map((a) => String(a && a.id ? a.id : '').trim()).filter(Boolean);
+    normalizeSidebarAppsOrder(visibleIds);
+    const orderIndex = new Map(sidebarAppsOrder.map((id, i) => [id, i]));
+    visible.sort((a, b) => (orderIndex.get(String(a.id || '').trim()) ?? 1e9) - (orderIndex.get(String(b.id || '').trim()) ?? 1e9));
+
     if (!visible.length) {
       installedEmptyEl.style.display = 'block';
       installedEmptyEl.textContent = 'No running apps. Pin apps to the drawer from Workbench or App Store.';
@@ -8445,18 +8614,62 @@
       const statusClass = isLaunchableStatus(app.status) ? ' forgeos-app-item--running' : ' forgeos-app-item--stopped';
       btn.className = `forgeos-app-item${statusClass}${!launchable ? ' forgeos-app-item--inactive' : ''}${selectedAppId && app.id === selectedAppId ? ' forgeos-app-item--active' : ''}`;
       btn.setAttribute('role', 'listitem');
-      btn.addEventListener('click', () => toggleAppOpen(app));
+      btn.addEventListener('click', (e) => {
+        const now = Date.now();
+        if (sidebarSuppressClickId === String(app.id || '') && now < sidebarSuppressClickUntil) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        toggleAppOpen(app);
+      });
       btn.draggable = !pendingAppActions.has(app.id);
       btn.addEventListener('dragstart', (e) => {
         if (!btn.draggable) return;
-        desktopDragId = app.id || '';
+        const id = String(app.id || '').trim();
+        sidebarDragId = id;
+        desktopDragId = id;
         try {
-          e.dataTransfer.effectAllowed = 'copy';
-          e.dataTransfer.setData('text/plain', String(app.id || ''));
+          e.dataTransfer.effectAllowed = 'copyMove';
+          e.dataTransfer.setData('text/plain', id);
         } catch {}
       });
       btn.addEventListener('dragend', () => {
         desktopDragId = '';
+        sidebarDragId = '';
+        for (const node of Array.from(installedAppsEl.children)) node.classList.remove('forgeos-app-item--dragover');
+      });
+      btn.addEventListener('dragover', (e) => {
+        if (!sidebarDragId) return;
+        e.preventDefault();
+        try {
+          e.dataTransfer.dropEffect = 'move';
+        } catch {}
+        for (const node of Array.from(installedAppsEl.children)) node.classList.remove('forgeos-app-item--dragover');
+        btn.classList.add('forgeos-app-item--dragover');
+      });
+      btn.addEventListener('dragleave', () => {
+        btn.classList.remove('forgeos-app-item--dragover');
+      });
+      btn.addEventListener('drop', (e) => {
+        if (!sidebarDragId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const src = String(sidebarDragId || '').trim();
+        const dst = String(app.id || '').trim();
+        for (const node of Array.from(installedAppsEl.children)) node.classList.remove('forgeos-app-item--dragover');
+        sidebarDragId = '';
+        if (!src || !dst || src === dst) return;
+        normalizeSidebarAppsOrder(visibleIds);
+        const next = sidebarAppsOrder.filter((id) => id !== src);
+        const at = next.indexOf(dst);
+        const idx = at >= 0 ? at : next.length;
+        next.splice(idx, 0, src);
+        sidebarAppsOrder = next;
+        saveSidebarAppsOrder();
+        sidebarSuppressClickId = src;
+        sidebarSuppressClickUntil = Date.now() + 500;
+        renderInstalledApps(installedAppsCache);
       });
       btn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -9226,10 +9439,24 @@
       const memPct = total > 0 ? Math.max(0, Math.round((used / total) * 100)) : 0;
 
       const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
-      const preferred =
-        disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
-      const diskText = preferred
-        ? `${preferred.path} ${Math.round((Number(preferred.used_bytes || 0) / Math.max(1, Number(preferred.total_bytes || 0))) * 100)}%`
+      const validDisks = disks
+        .filter((d) => d && Number(d.total_bytes) > 0)
+        .slice(0, 16)
+        .sort((a, b) => {
+          const ap = String(a.path || '');
+          const bp = String(b.path || '');
+          const score = (p) => (p === '/srv/5tratumos-data' ? 0 : p === '/' ? 1 : 2);
+          const as = score(ap);
+          const bs = score(bp);
+          if (as !== bs) return as - bs;
+          return ap.localeCompare(bp);
+        });
+
+      const diskText = validDisks.length
+        ? validDisks
+            .slice(0, 2)
+            .map((d, i) => `${i + 1}:${formatBytesTerse(Number(d.used_bytes) || 0)}/${formatBytesTerse(Number(d.total_bytes) || 0)}`)
+            .join(' ')
         : '-';
 
       sysV.textContent = `CPU ${cpuPct}% \u00b7 MEM ${memPct}% \u00b7 DISK ${diskText} \u00b7 UPTIME ${formatUptime(metrics.uptime_s)}`;
@@ -11040,6 +11267,7 @@
   openAppIds = loadOpenApps();
   widgetPrefs = loadWidgetPrefs();
   drawerPinned = loadDrawerPinned();
+  sidebarAppsOrder = loadSidebarAppsOrder();
   activeStoreChannel = loadStoreChannel();
   storeAutoSyncEnabled = loadStoreAutoSyncEnabled();
   storeRenderLimit = STORE_RENDER_STEP;

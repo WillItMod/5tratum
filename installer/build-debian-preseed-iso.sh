@@ -23,6 +23,11 @@ WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work-preseed}"
 LOGO_SMALL="${LOGO_SMALL:-${ROOT}/overlay/portal/assets/New Logos/5.png}"
 LOGO_WORDMARK="${LOGO_WORDMARK:-${ROOT}/overlay/portal/assets/New Logos/WordOnlyLogo.png}"
 
+# Optional: embed an update token on the ISO for private update repos.
+# Provide a filepath at build time (do not commit secrets to git):
+#   UPDATE_TOKEN_FILE=/path/to/update.token ./installer/build-debian-preseed-iso.sh
+UPDATE_TOKEN_FILE="${UPDATE_TOKEN_FILE:-}"
+
 have bsdtar || die "bsdtar not found"
 have xorriso || die "xorriso not found (apt-get install -y xorriso)"
 
@@ -52,6 +57,9 @@ install -d -m 0755 "${WORK_DIR}/iso/5tratumos/branding"
 install -m 0644 "${SCRIPT_DIR}/debian-installer/preseed.cfg" "${WORK_DIR}/iso/preseed.cfg"
 install -m 0755 "${SCRIPT_DIR}/debian-installer/late_command.sh" "${WORK_DIR}/iso/5tratumos/late_command.sh"
 install -m 0644 "${BUNDLE_TGZ}" "${WORK_DIR}/iso/5tratumos/5tratumos-update.tgz"
+if [ -n "${UPDATE_TOKEN_FILE}" ] && [ -f "${UPDATE_TOKEN_FILE}" ]; then
+  install -m 0644 "${UPDATE_TOKEN_FILE}" "${WORK_DIR}/iso/5tratumos/update.token"
+fi
 
 if [ -f "${LOGO_SMALL}" ]; then
   install -m 0644 "${LOGO_SMALL}" "${WORK_DIR}/iso/5tratumos/branding/5.png"

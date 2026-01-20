@@ -733,6 +733,12 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item--open::
   box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.08) inset, 0 0 22px rgba(0, 229, 255, 0.12);
 }
 
+.forgeos-app-item--dragover {
+  border-color: rgba(168, 85, 247, 0.35);
+  background: rgba(168, 85, 247, 0.12);
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.12) inset, 0 0 22px rgba(168, 85, 247, 0.14);
+}
+
 .forgeos-app-item__top {
   display: flex;
   align-items: center;

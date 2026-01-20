@@ -183,6 +183,9 @@ JSON
 install -m 0644 "${STAGE_DIR}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 install -m 0644 "${STAGE_DIR}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${STAGE_DIR}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
+if [ -f "${STAGE_DIR}/systemd/5tratumos-firstboot-update.service" ]; then
+  install -m 0644 "${STAGE_DIR}/systemd/5tratumos-firstboot-update.service" /etc/systemd/system/5tratumos-firstboot-update.service
+fi
 
 # Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
 if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
@@ -203,6 +206,9 @@ fi
 
 # systemctl inside installer chroot should run offline (systemd isn't PID1 yet).
 SYSTEMD_OFFLINE=1 systemctl enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service
+if [ -f /etc/systemd/system/5tratumos-firstboot-update.service ]; then
+  SYSTEMD_OFFLINE=1 systemctl enable 5tratumos-firstboot-update.service >/dev/null 2>&1 || true
+fi
 
 log "Applying basic kiosk-friendly defaults (sleep disabled)..."
 install -d -m 0755 /etc/systemd/logind.conf.d
