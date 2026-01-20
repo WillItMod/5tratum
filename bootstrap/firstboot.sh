@@ -26,16 +26,22 @@ fi
 
 # Default: enable kiosk mode (fullscreen local console) on hardware.
 # This is a no-op on headless systems because the service is gated by /dev/dri/card0.
-if [ -e /dev/dri/card0 ] && [ -x /opt/5tratumos/console/install.sh ]; then
+if [ -e /dev/dri/card0 ] && [ -f /opt/5tratumos/console/install.sh ]; then
+  # Bundles built on Windows may land with CRLF and without exec bits; normalize so installs work.
+  if command -v sed >/dev/null 2>&1; then
+    sed -i 's/\r$//' /opt/5tratumos/console/*.sh >/dev/null 2>&1 || true
+  fi
+  chmod 0755 /opt/5tratumos/console/*.sh >/dev/null 2>&1 || true
+
   # Don't block boot/SSH while installing large UI packages (chromium/cage).
   if command -v systemd-run >/dev/null 2>&1; then
     systemd-run \
       --unit=5tratumos-console-install \
       --property=After=network-online.target \
       --property=Wants=network-online.target \
-      /opt/5tratumos/console/install.sh >/dev/null 2>&1 || true
+      /bin/bash /opt/5tratumos/console/install.sh >/dev/null 2>&1 || true
   else
-    ( /opt/5tratumos/console/install.sh || true ) >/dev/null 2>&1 &
+    ( /bin/bash /opt/5tratumos/console/install.sh || true ) >/dev/null 2>&1 &
   fi
 fi
 

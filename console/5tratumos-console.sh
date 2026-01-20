@@ -52,15 +52,34 @@ fi
 export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
 
-exec /usr/bin/cage -- /usr/bin/chromium \
-  --app="${URL}" \
-  ${TRATUMOS_CONSOLE_LANG:+--lang="${TRATUMOS_CONSOLE_LANG}"} \
-  --enable-features=UseOzonePlatform \
-  --ozone-platform=wayland \
-  --no-first-run \
-  --no-default-browser-check \
-  --disable-session-crashed-bubble \
-  --disable-infobars \
-  --disable-features=TranslateUI \
-  --disable-translate \
-  --autoplay-policy=no-user-gesture-required
+chromium_args=(
+  "--app=${URL}"
+  "--enable-features=UseOzonePlatform"
+  "--ozone-platform=wayland"
+  "--no-first-run"
+  "--no-default-browser-check"
+  "--disable-session-crashed-bubble"
+  "--disable-infobars"
+  "--disable-features=TranslateUI"
+  "--disable-translate"
+  "--autoplay-policy=no-user-gesture-required"
+)
+
+if [ -n "${TRATUMOS_CONSOLE_LANG:-}" ]; then
+  chromium_args+=("--lang=${TRATUMOS_CONSOLE_LANG}")
+fi
+
+if [ "${TRATUMOS_CONSOLE_SWGL:-0}" = "1" ]; then
+  chromium_args+=("--disable-gpu" "--use-gl=swiftshader")
+fi
+
+if [ "${TRATUMOS_CONSOLE_ENABLE_LOGGING:-0}" = "1" ]; then
+  chromium_args+=("--enable-logging=stderr" "--v=1")
+fi
+
+if [ -n "${TRATUMOS_CONSOLE_CHROMIUM_FLAGS:-}" ]; then
+  # shellcheck disable=SC2206
+  chromium_args+=(${TRATUMOS_CONSOLE_CHROMIUM_FLAGS})
+fi
+
+exec /usr/bin/cage -- /usr/bin/chromium "${chromium_args[@]}"

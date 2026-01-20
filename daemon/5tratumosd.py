@@ -302,6 +302,11 @@ def set_console_enabled(*, enabled: bool) -> dict:
     if not os.path.exists("/usr/local/bin/5tratumos-console") or not os.path.exists("/etc/systemd/system/5tratumos-console@.service"):
         installer = "/opt/5tratumos/console/install.sh"
         if os.path.exists(installer):
+            try:
+                _normalize_crlf_inplace(installer)
+                os.chmod(installer, 0o755)
+            except Exception:
+                pass
             subprocess.run(["bash", installer], check=False, timeout=15 * 60)
 
     try:
@@ -494,6 +499,22 @@ def _write_store_config(cfg: dict) -> None:
         pass
 
 
+def _normalize_crlf_inplace(path: str) -> None:
+    p = str(path or "").strip()
+    if not p:
+        return
+    try:
+        raw = Path(p).read_bytes()
+    except Exception:
+        return
+    if b"\r\n" not in raw:
+        return
+    try:
+        Path(p).write_bytes(raw.replace(b"\r\n", b"\n"))
+    except Exception:
+        return
+
+
 def update_repo() -> str:
     return str(UPDATE_REPO or "").strip()
 
@@ -595,6 +616,19 @@ def store_config_set(body: dict) -> dict:
     cfg["custom"] = custom
     _write_store_config(cfg)
     return {**store_config_get(), "saved": True}
+
+
+def store_auth_get() -> dict:
+    tok = _read_store_token_file()
+    return {"ok": True, "token_present": bool(tok)}
+
+
+def store_auth_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    token = str(body.get("token") or "").strip()
+    _write_store_token_file(token)
+    return {"ok": True, "saved": True, "token_present": bool(_read_store_token_file())}
 
 
 def store_custom_channels() -> list[str]:
@@ -3195,6 +3229,15 @@ def system_update_apply(channel: str | None = None) -> dict:
                     # Ensure kiosk is actually installed/enabled on systems with a local display.
                     # (Updates previously only copied the console files but never ran the installer.)
                     try:
+                        console_dir = os.path.join(ROOT_DIR, "console")
+                        for name in ("install.sh", "5tratumos-console.sh"):
+                            p = os.path.join(console_dir, name)
+                            if os.path.isfile(p):
+                                _normalize_crlf_inplace(p)
+                                try:
+                                    os.chmod(p, 0o755)
+                                except Exception:
+                                    pass
                         if os.path.exists("/dev/dri/card0") and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
                             if shutil.which("systemd-run"):
                                 run_cmd(
@@ -6219,6 +6262,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, store_config_get())
             return
 
+        if path == "/api/v0/store/auth":
+            json_response(self, HTTPStatus.OK, store_auth_get())
+            return
+
         if path == "/api/v0/apps/installed":
             apps = []
             app_ids = list_installed_app_ids()
@@ -6460,6 +6507,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/store/config":
             res = store_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/store/auth":
+            res = store_auth_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 

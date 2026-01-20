@@ -23,6 +23,8 @@ Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/
 Environment=TRATUMOS_CONSOLE_WAIT_SECS=90
 Restart=on-failure
 RestartSec=2
+TimeoutStopSec=8
+KillMode=mixed
 ExecStart=/usr/local/bin/5tratumos-console
 
 [Install]
