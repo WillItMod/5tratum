@@ -244,6 +244,40 @@ case "${cmd}" in
         [ "${EUID:-$(id -u)}" -eq 0 ] || die "store sync requires root (writes ${ROOT_DIR}/store)"
         have curl || die "curl not found (install curl)"
         have tar || die "tar not found"
+        STORE_TOKEN_FILE="${FIVETRATUMOS_STORE_TOKEN_FILE:-/etc/5tratumos/store.token}"
+
+        is_custom_slot() {
+          local slot="${1:-}"
+          [[ "${slot}" =~ ^custom[-_a-z0-9]{0,48}$ ]]
+        }
+
+        store_token() {
+          [ -f "${STORE_TOKEN_FILE}" ] || return 0
+          head -n 1 "${STORE_TOKEN_FILE}" 2>/dev/null | tr -d '\r\n' | cut -c1-4096
+        }
+
+        custom_store_slots() {
+          python3 - "${STORE_CONFIG_FILE}" <<'PY'
+import json
+import sys
+
+path = sys.argv[1] if len(sys.argv) > 1 else ""
+try:
+    data = json.load(open(path, "r", encoding="utf-8"))
+except Exception:
+    data = {}
+
+custom = data.get("custom") if isinstance(data, dict) else {}
+if not isinstance(custom, dict):
+    sys.exit(0)
+
+for key in sorted(custom.keys()):
+    k = str(key or "").strip().lower()
+    if not k.startswith("custom"):
+        continue
+    print(k)
+PY
+        }
 
         custom_store_url() {
           local slot="$1"
@@ -314,12 +348,44 @@ PY
 
         target="${1:-all}"
         case "${target}" in
-          ""|all|main|dev|global|custom1|custom2) ;;
-          *) die "invalid store sync target: ${target} (expected main|dev|global|custom1|custom2|all)" ;;
+          ""|all|main|dev|global) ;;
+          custom*) ;;
+          *) die "invalid store sync target: ${target} (expected main|dev|global|custom*|all)" ;;
         esac
 
         store_base="${ROOT_DIR}/store"
         mkdir -p "${store_base}"
+
+        sync_one_github_private() {
+          local ch="$1"
+          local repo="$2"
+          local ref="$3"
+          local dest="${store_base}/${ch}"
+          local tmp="${store_base}/.tmp-${ch}-$$"
+          local tok
+          tok="$(store_token)"
+          [ -n "${tok}" ] || die "no GitHub token configured (Settings -> App Store Sync -> Save token)"
+          rm -rf "${tmp}"
+          mkdir -p "${tmp}"
+
+          local api="https://api.github.com/repos/${repo}/tarball/${ref}"
+          echo "syncing store (${ch})..."
+          # Use --location-trusted so Authorization header is kept across redirects.
+          if ! curl -fsSL --location-trusted \
+            -H "Authorization: Bearer ${tok}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${api}" | tar -xz -C "${tmp}" --strip-components=1; then
+            die "failed to download private store (${repo}@${ref})"
+          fi
+
+          rm -rf "${dest}.bak" >/dev/null 2>&1 || true
+          if [ -d "${dest}" ]; then
+            mv "${dest}" "${dest}.bak" || true
+          fi
+          mv "${tmp}" "${dest}"
+          rm -rf "${dest}.bak" >/dev/null 2>&1 || true
+        }
 
         sync_one() {
           local ch="$1"
@@ -393,12 +459,15 @@ PY
           mv "${tmp}" "${dest}"
         }
 
-        main_repo="u""mbrel-community-store"
-        dev_repo="u""mbrel-dev-community-store"
-        main_url="https://github.com/WillItMod/${main_repo}/archive/refs/heads/main.tar.gz"
-        main_url_fallback="https://github.com/WillItMod/${main_repo}/archive/refs/heads/master.tar.gz"
-        dev_url="https://github.com/WillItMod/${dev_repo}/archive/refs/heads/main.tar.gz"
-        dev_url_fallback="https://github.com/WillItMod/${dev_repo}/archive/refs/heads/master.tar.gz"
+        main_repo="${FIVETRATUMOS_MAIN_STORE_REPO:-WillItMod/5tratum-store}"
+        main_branch="${FIVETRATUMOS_MAIN_STORE_BRANCH:-main}"
+        dev_repo="${FIVETRATUMOS_DEV_STORE_REPO:-WillItMod/5tratum-store}"
+        dev_branch="${FIVETRATUMOS_DEV_STORE_BRANCH:-dev}"
+        # Fallback to public tarball URLs if the repos are public.
+        main_url="https://github.com/${main_repo}/archive/refs/heads/${main_branch}.tar.gz"
+        main_url_fallback=""
+        dev_url="https://github.com/${dev_repo}/archive/refs/heads/${dev_branch}.tar.gz"
+        dev_url_fallback=""
         global_repo="${FIVETRATUMOS_GLOBAL_STORE_REPO:-}"
         global_repo="${global_repo:-$(legacy_env GLOBAL_STORE_REPO)}"
         global_repo="${global_repo:-WillItMod/global-apps}"
@@ -431,24 +500,41 @@ PY
         }
 
         if [ "${target}" = "all" ] || [ -z "${target}" ]; then
-          sync_one "main" "${main_url}" "${main_url_fallback}"
-          sync_one "dev" "${dev_url}" "${dev_url_fallback}"
+          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-1}" = "1" ]; then
+            sync_one_github_private "main" "${main_repo}" "${main_branch}"
+            sync_one_github_private "dev" "${dev_repo}" "${dev_branch}"
+          else
+            sync_one "main" "${main_url}" "${main_url_fallback}"
+            sync_one "dev" "${dev_url}" "${dev_url_fallback}"
+          fi
           sync_one "global" "${global_url}" "${global_url_fallback}"
-          for slot in custom1 custom2; do
-            raw="$(custom_store_url "${slot}")"
-            if [ -n "${raw}" ]; then
-              sync_custom "${slot}"
+          while IFS= read -r slot; do
+            [ -n "${slot}" ] || continue
+            if is_custom_slot "${slot}"; then
+              raw="$(custom_store_url "${slot}")"
+              if [ -n "${raw}" ]; then
+                sync_custom "${slot}"
+              fi
             fi
-          done
+          done < <(custom_store_slots)
           sync_global_assets
         elif [ "${target}" = "main" ]; then
-          sync_one "main" "${main_url}" "${main_url_fallback}"
+          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-1}" = "1" ]; then
+            sync_one_github_private "main" "${main_repo}" "${main_branch}"
+          else
+            sync_one "main" "${main_url}" "${main_url_fallback}"
+          fi
+        elif [ "${target}" = "dev" ]; then
+          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-1}" = "1" ]; then
+            sync_one_github_private "dev" "${dev_repo}" "${dev_branch}"
+          else
+            sync_one "dev" "${dev_url}" "${dev_url_fallback}"
+          fi
         elif [ "${target}" = "global" ]; then
           sync_one "global" "${global_url}" "${global_url_fallback}"
           sync_global_assets
-        elif [ "${target}" = "dev" ]; then
-          sync_one "dev" "${dev_url}" "${dev_url_fallback}"
         else
+          is_custom_slot "${target}" || die "invalid custom store slot: ${target}"
           sync_custom "${target}"
         fi
 

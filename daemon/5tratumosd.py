@@ -67,6 +67,12 @@ UPDATE_TOKEN_FILE = str(_env("UPDATE_TOKEN_FILE", "/etc/5tratumos/update.token")
 UPDATE_PUBKEY_FILE = str(_env("UPDATE_PUBKEY_FILE", "/etc/5tratumos/update_signing.pub") or "/etc/5tratumos/update_signing.pub")
 UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
+STORE_TOKEN_FILE = str(_env("STORE_TOKEN_FILE", "/etc/5tratumos/store.token") or "/etc/5tratumos/store.token")
+STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/5tratum-store") or "WillItMod/5tratum-store").strip()
+STORE_MAIN_BRANCH = str(_env("MAIN_STORE_BRANCH", "main") or "main").strip()
+STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/5tratum-store") or "WillItMod/5tratum-store").strip()
+STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "dev") or "dev").strip()
+STORE_MAIN_PRIVATE = str(_env("MAIN_STORE_PRIVATE", "1") or "1").strip() == "1"
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
@@ -499,6 +505,46 @@ def _write_store_config(cfg: dict) -> None:
         pass
 
 
+def _read_store_token_file() -> str:
+    path = str(STORE_TOKEN_FILE or "").strip()
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    tok = (raw or "").strip()
+    if not tok:
+        return ""
+    tok = tok.splitlines()[0].strip()
+    return tok[:4096].strip()
+
+
+def _write_store_token_file(token: str) -> None:
+    path = str(STORE_TOKEN_FILE or "").strip()
+    if not path:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    tok = str(token or "").strip()
+    if not tok:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+        return
+
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(tok)
+        f.write("\n")
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
 def _normalize_crlf_inplace(path: str) -> None:
     p = str(path or "").strip()
     if not p:
@@ -560,7 +606,16 @@ def store_config_get() -> dict:
             continue
         label = str(entry.get("label") or "").strip()
         out[slot] = {"url": url, "label": label}
-    return {"ok": True, "custom": out}
+    return {
+        "ok": True,
+        "custom": out,
+        "token_present": bool(_read_store_token_file()),
+        "main_repo": STORE_MAIN_REPO,
+        "main_branch": STORE_MAIN_BRANCH,
+        "dev_repo": STORE_DEV_REPO,
+        "dev_branch": STORE_DEV_BRANCH,
+        "private": STORE_MAIN_PRIVATE,
+    }
 
 
 def _normalize_store_url(url: str) -> str:
