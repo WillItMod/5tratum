@@ -123,9 +123,9 @@ cat >"${TARGET_MNT}/etc/hosts" <<EOF
 EOF
 
 cat >"${TARGET_MNT}/etc/apt/sources.list" <<EOF
-deb ${DEBIAN_MIRROR_DEFAULT} ${DEBIAN_SUITE_DEFAULT} main contrib non-free-firmware
-deb ${DEBIAN_MIRROR_DEFAULT} ${DEBIAN_SUITE_DEFAULT}-updates main contrib non-free-firmware
-deb http://security.debian.org/debian-security ${DEBIAN_SUITE_DEFAULT}-security main contrib non-free-firmware
+deb ${DEBIAN_MIRROR_DEFAULT} ${DEBIAN_SUITE_DEFAULT} main contrib non-free-firmware non-free
+deb ${DEBIAN_MIRROR_DEFAULT} ${DEBIAN_SUITE_DEFAULT}-updates main contrib non-free-firmware non-free
+deb http://security.debian.org/debian-security ${DEBIAN_SUITE_DEFAULT}-security main contrib non-free-firmware non-free
 EOF
 
 mkdir -p "${TARGET_MNT}/etc/systemd/network"
@@ -153,10 +153,22 @@ dialog --title "Installing" --infobox "Installing kernel + bootloader + SSH..." 
 chroot "${TARGET_MNT}" apt-get update -y
 chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends \
   ca-certificates \
+  console-setup \
+  console-setup-linux \
   curl \
   cloud-guest-utils \
+  firmware-atheros \
+  firmware-brcm80211 \
+  firmware-iwlwifi \
+  firmware-linux \
+  firmware-linux-nonfree \
+  firmware-misc-nonfree \
+  firmware-realtek \
   gnupg \
   jq \
+  kbd \
+  keyboard-configuration \
+  network-manager \
   python3 \
   python3-yaml \
   cage \
@@ -179,7 +191,7 @@ if [ ! -f "${TARGET_MNT}/etc/default/keyboard" ]; then
   cat >"${TARGET_MNT}/etc/default/keyboard" <<'EOF'
 # KEYBOARD CONFIGURATION FILE
 XKBMODEL="pc105"
-XKBLAYOUT="uk"
+XKBLAYOUT="gb"
 XKBVARIANT=""
 XKBOPTIONS=""
 BACKSPACE="guess"
@@ -196,6 +208,7 @@ EOF
 fi
 
 systemctl --root "${TARGET_MNT}" enable systemd-networkd systemd-resolved ssh >/dev/null 2>&1 || true
+systemctl --root "${TARGET_MNT}" enable NetworkManager.service >/dev/null 2>&1 || true
 
 if ! chroot "${TARGET_MNT}" id -u forge >/dev/null 2>&1; then
   chroot "${TARGET_MNT}" useradd -m -s /bin/bash forge || true

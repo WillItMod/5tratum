@@ -274,7 +274,7 @@ def _parse_shell_kv(path: str) -> dict[str, str]:
 
 def keyboard_status() -> dict:
     kb = _parse_shell_kv("/etc/default/keyboard")
-    layout = (kb.get("XKBLAYOUT") or "").strip() or "uk"
+    layout = (kb.get("XKBLAYOUT") or "").strip() or "gb"
     variant = (kb.get("XKBVARIANT") or "").strip()
     options = (kb.get("XKBOPTIONS") or "").strip()
 
@@ -300,7 +300,7 @@ def keyboard_status() -> dict:
     needs_setup = console_failed or (vc_keymap.strip() in {"", "(unset)"})
 
     common = [
-        {"layout": "uk", "label": "UK (QWERTY)"},
+        {"layout": "gb", "label": "UK (QWERTY)"},
         {"layout": "us", "label": "US (QWERTY)"},
         {"layout": "fr", "label": "French (AZERTY)"},
         {"layout": "be", "label": "Belgian (AZERTY)"},
@@ -324,7 +324,7 @@ def keyboard_status() -> dict:
         "console_setup_failed": console_failed,
         "needs_setup": bool(needs_setup),
         "common": common,
-        "default_layout": "uk",
+        "default_layout": "gb",
     }
 
 
@@ -347,6 +347,9 @@ def keyboard_set(body: dict) -> dict:
     layout = str(body.get("layout") or "").strip().lower()
     if not layout:
         return {"ok": False, "error": "missing layout"}
+    # Friendly alias: people say "uk" but Debian/XKB uses "gb".
+    if layout == "uk":
+        layout = "gb"
     if not _LAYOUT_RE.match(layout):
         return {"ok": False, "error": "invalid layout"}
 

@@ -26,10 +26,18 @@ apt-get install -y --no-install-recommends \
   console-setup-linux \
   curl \
   cloud-guest-utils \
+  firmware-atheros \
+  firmware-brcm80211 \
+  firmware-iwlwifi \
+  firmware-linux \
+  firmware-linux-nonfree \
+  firmware-misc-nonfree \
+  firmware-realtek \
   gnupg \
   jq \
   kbd \
   keyboard-configuration \
+  network-manager \
   python3 \
   python3-yaml
 
@@ -45,7 +53,7 @@ if [ ! -f /etc/default/keyboard ]; then
   cat >/etc/default/keyboard <<'EOF'
 # KEYBOARD CONFIGURATION FILE
 XKBMODEL="pc105"
-XKBLAYOUT="uk"
+XKBLAYOUT="gb"
 XKBVARIANT=""
 XKBOPTIONS=""
 BACKSPACE="guess"
@@ -61,6 +69,9 @@ FONTSIZE="16"
 EOF
 fi
 setupcon --force >/dev/null 2>&1 || true
+
+echo "[2.7/7] Enabling NetworkManager..."
+systemctl enable --now NetworkManager.service >/dev/null 2>&1 || true
 
 if ! have docker; then
   echo "[2/6] Installing Docker Engine + Compose v2..."

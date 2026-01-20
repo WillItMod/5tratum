@@ -34,6 +34,14 @@ if [ -f /etc/apt/sources.list ]; then
 fi
 rm -f /etc/apt/sources.list.d/cdrom.list || true
 
+log "Ensuring firmware repos are enabled (non-free-firmware + non-free)..."
+if [ -f /etc/apt/sources.list ]; then
+  # Ensure common components are present so WiFi/Ethernet firmware packages can install.
+  sed -i 's/\bmain\b/main contrib non-free-firmware non-free/g' /etc/apt/sources.list || true
+  # De-duplicate if the line already contained some components.
+  sed -i 's/ contrib contrib/ contrib/g; s/ non-free-firmware non-free-firmware/ non-free-firmware/g; s/ non-free non-free/ non-free/g' /etc/apt/sources.list || true
+fi
+
 log "Installing base packages..."
 export DEBIAN_FRONTEND=noninteractive
 tries=0
@@ -54,10 +62,18 @@ apt-get install -y --no-install-recommends \
   console-setup \
   console-setup-linux \
   curl \
+  firmware-atheros \
+  firmware-brcm80211 \
+  firmware-iwlwifi \
+  firmware-linux \
+  firmware-linux-nonfree \
+  firmware-misc-nonfree \
+  firmware-realtek \
   gnupg \
   jq \
   kbd \
   keyboard-configuration \
+  network-manager \
   openssh-server \
   python3 \
   python3-yaml \
@@ -78,7 +94,7 @@ if [ ! -f /etc/default/keyboard ]; then
   cat >/etc/default/keyboard <<'EOF'
 # KEYBOARD CONFIGURATION FILE
 XKBMODEL="pc105"
-XKBLAYOUT="uk"
+XKBLAYOUT="gb"
 XKBVARIANT=""
 XKBOPTIONS=""
 BACKSPACE="guess"
@@ -97,6 +113,9 @@ setupcon --force >/dev/null 2>&1 || true
 
 log "Installing kiosk packages (cage + chromium)..."
 apt-get install -y --no-install-recommends cage chromium || true
+
+log "Enabling NetworkManager (for WiFi + robust DHCP)..."
+SYSTEMD_OFFLINE=1 systemctl enable NetworkManager.service >/dev/null 2>&1 || true
 
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.

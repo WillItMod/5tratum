@@ -25,12 +25,12 @@ EOF
 fi
 
 # Ensure console keymap/font setup is configured non-interactively so console-setup.service doesn't fail on boot.
-# Default layout: UK (QWERTY). Users can later change this from the UI.
+# Default layout: UK (QWERTY). Debian XKB layout name is "gb" (not "uk").
 if [ ! -f /etc/default/keyboard ]; then
   cat >/etc/default/keyboard <<'EOF'
 # KEYBOARD CONFIGURATION FILE
 XKBMODEL="pc105"
-XKBLAYOUT="uk"
+XKBLAYOUT="gb"
 XKBVARIANT=""
 XKBOPTIONS=""
 BACKSPACE="guess"
