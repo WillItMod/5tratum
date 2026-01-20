@@ -1057,6 +1057,11 @@ def _storage_app_roots() -> list[tuple[str, str, str]]:
     """
     roots: list[tuple[str, str, str]] = []
     roots.append((os.path.join(STATE_DIR, "apps"), "", "OS disk (system)"))
+    # Also include the default internal data dir if present (even if not registered yet).
+    try:
+        roots.append((os.path.join(DATA_DIR, "5tratumos", "apps"), DATA_DIR, "Internal"))
+    except Exception:
+        pass
     try:
         st = system_storage_status()
     except Exception:
@@ -1073,6 +1078,30 @@ def _storage_app_roots() -> list[tuple[str, str, str]]:
                 continue
             label = str(m.get("label") or "").strip() or "External drive"
             roots.append((os.path.join(mp, "5tratumos", "apps"), mp, label))
+    # Opportunistically discover any mounts that already contain a 5tratumos/apps tree.
+    # This makes orphan scanning + cleanup work even if a drive isn't registered yet.
+    try:
+        seen_mps: set[str] = set()
+        for _root, mp, _label in roots:
+            if mp:
+                seen_mps.add(mp)
+        with open("/proc/mounts", "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                mp = parts[1]
+                fstype = parts[2]
+                if not mp or mp in seen_mps:
+                    continue
+                if fstype in {"proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "cgroup2", "overlay"}:
+                    continue
+                probe = os.path.join(mp, "5tratumos", "apps")
+                if os.path.isdir(probe):
+                    roots.append((probe, mp, "External drive"))
+                    seen_mps.add(mp)
+    except Exception:
+        pass
     # De-dupe by real path.
     seen: set[str] = set()
     out: list[tuple[str, str, str]] = []
@@ -1156,6 +1185,16 @@ def app_migrate_data(app_id: str, mountpoint: str | None, *, keep_backup: bool =
                 else:
                     dest_root = os.path.join(STATE_DIR, "apps")
                     dest_path = os.path.join(dest_root, aid)
+                # Always allow cleaning the specific source and destination roots involved in this migration,
+                # even if the drive isn't registered yet (prevents stale data from blocking future moves).
+                try:
+                    allowed_roots.append(dest_root)
+                except Exception:
+                    pass
+                try:
+                    allowed_roots.append(os.path.dirname(src_real))
+                except Exception:
+                    pass
 
                 migrate_status_write(aid, "stopping", pct=10, from_path=src_real, to_path=dest_path)
                 stratumos_cmd(["app", "down", aid], timeout_s=600)
@@ -1221,8 +1260,21 @@ def app_migrate_data(app_id: str, mountpoint: str | None, *, keep_backup: bool =
                             return
                     except Exception:
                         pass
-                    migrate_status_write(aid, "error", error="destination already exists", pct=100)
-                    return
+                    # If the user opted to not keep backups, try to clean up the stale destination folder
+                    # so a re-migration doesn't get stuck.
+                    if not keep_backup:
+                        ok, err = _safe_delete_any(dest_path, allowed_roots)
+                        if ok:
+                            try:
+                                os.makedirs(dest_root, exist_ok=True)
+                            except Exception:
+                                pass
+                        else:
+                            migrate_status_write(aid, "error", error=f"destination already exists ({err})", pct=100)
+                            return
+                    else:
+                        migrate_status_write(aid, "error", error="destination already exists", pct=100)
+                        return
 
                 os.makedirs(dest_root, exist_ok=True)
                 os.makedirs(dest_path, exist_ok=True)
