@@ -2,6 +2,19 @@
 
 5tratumOS is distributed as **boot media** attached to each GitHub Release.
 
+## Requirements
+
+- **CPU:** AMD/INTEL only (x86_64 / amd64)
+- **RAM:** 16GB absolute minimum
+- **USB drive:** 1GB minimum (2GB+ recommended)
+
+This will not run on a potato. But it will run on a donut. Actually, it runs on donuts.
+
+## Latest release
+
+- v0.3.89 installer ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso`
+- v0.3.89 checksum: `https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso.sha256`
+
 ## Downloads (per release)
 
 For now, releases include only the **AMD64 installer ISO**:
@@ -16,7 +29,7 @@ If you're unsure: use the **Installer ISO**.
 ## Before you start
 
 - Back up anything important. The installer will wipe the selected disk.
-- Use a **USB stick (8GB+)** for the installer, or attach the ISO to a VM.
+- Use a **USB stick (1GB+)** for the installer, or attach the ISO to a VM.
 - After install completes, remove the USB/ISO and reboot into the installed OS.
 
 ## Proxmox / VM
@@ -34,6 +47,20 @@ If you're unsure: use the **Installer ISO**.
    - Flash from file: `5tratumos-installer.iso`
    - Select target: your USB stick
    - Flash
+4. Boot the target machine from the USB stick.
+5. Follow the installer prompts to select the target disk and confirm the wipe.
+6. When finished:
+   - Remove the USB stick
+   - Reboot
+
+## Physical hardware (USB via Win32 Disk Imager / “WinImager”)
+
+1. Download `5tratumos-installer.iso` from the Release assets.
+2. (Optional) Verify the download: `docs/install/VERIFY.md`
+3. Open **Win32 Disk Imager**:
+   - Image file: select `5tratumos-installer.iso` (you may need to choose “*.* / All files”)
+   - Device: select your USB drive letter
+   - Write
 4. Boot the target machine from the USB stick.
 5. Follow the installer prompts to select the target disk and confirm the wipe.
 6. When finished:

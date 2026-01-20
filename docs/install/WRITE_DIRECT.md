@@ -4,6 +4,13 @@ If you prefer not to use Balena Etcher, you can write the boot media directly to
 
 This is destructive to the target drive. Double-check the device path.
 
+## Windows (Win32 Disk Imager / “WinImager”)
+
+1. Open **Win32 Disk Imager**.
+2. Select `5tratumos-installer.iso` (you may need to choose “*.* / All files”).
+3. Select the correct target USB drive letter.
+4. Click **Write**, then boot from the USB drive and follow the installer.
+
 ## Linux
 
 1. Identify the device (example: `/dev/sdX`):
