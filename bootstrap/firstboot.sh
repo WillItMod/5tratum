@@ -12,10 +12,9 @@ if [ ! -s /etc/machine-id ]; then
 fi
 
 if command -v ssh-keygen >/dev/null 2>&1; then
-  if ls /etc/ssh/ssh_host_* >/dev/null 2>&1; then
-    rm -f /etc/ssh/ssh_host_* || true
+  if ! ls /etc/ssh/ssh_host_* >/dev/null 2>&1; then
+    ssh-keygen -A >/dev/null 2>&1 || true
   fi
-  ssh-keygen -A >/dev/null 2>&1 || true
 fi
 
 if [ ! -f /etc/5tratumos/console.json ]; then
@@ -28,7 +27,16 @@ fi
 # Default: enable kiosk mode (fullscreen local console) on hardware.
 # This is a no-op on headless systems because the service is gated by /dev/dri/card0.
 if [ -e /dev/dri/card0 ] && [ -x /opt/5tratumos/console/install.sh ]; then
-  /opt/5tratumos/console/install.sh || true
+  # Don't block boot/SSH while installing large UI packages (chromium/cage).
+  if command -v systemd-run >/dev/null 2>&1; then
+    systemd-run \
+      --unit=5tratumos-console-install \
+      --property=After=network-online.target \
+      --property=Wants=network-online.target \
+      /opt/5tratumos/console/install.sh >/dev/null 2>&1 || true
+  else
+    ( /opt/5tratumos/console/install.sh || true ) >/dev/null 2>&1 &
+  fi
 fi
 
 if [ -x /opt/5tratumos/bootstrap/os-tune.sh ]; then

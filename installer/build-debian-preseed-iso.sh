@@ -3,6 +3,11 @@ set -euo pipefail
 
 die() { echo "error: $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+have_imagemagick_convert() {
+  command -v convert >/dev/null 2>&1 || return 1
+  convert -version 2>/dev/null | grep -qi 'ImageMagick' || return 1
+  return 0
+}
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -35,7 +40,11 @@ fi
 echo "[2/6] Extracting ISO..."
 rm -rf "${WORK_DIR}"
 mkdir -p "${WORK_DIR}/iso"
-bsdtar -C "${WORK_DIR}/iso" -xf "${DEBIAN_ISO}"
+# Debian netinst ISO contains a root-level RockRidge symlink named "debian" which can
+# cause extraction failures on some filesystems/environments (e.g. MSYS2 on Windows).
+# It isn't required for booting or installation.
+bsdtar -C "${WORK_DIR}/iso" -xf "${DEBIAN_ISO}" --exclude debian
+chmod -R u+w "${WORK_DIR}/iso" >/dev/null 2>&1 || true
 
 echo "[3/6] Adding 5tratumOS installer files..."
 install -d -m 0755 "${WORK_DIR}/iso/5tratumos"
@@ -87,7 +96,7 @@ if [ -d "${WORK_DIR}/iso/isolinux" ]; then
 fi
 
 # Optional: generate a Syslinux splash background (requires ImageMagick's `convert`).
-if [ -d "${WORK_DIR}/iso/isolinux" ] && command -v convert >/dev/null 2>&1; then
+if [ -d "${WORK_DIR}/iso/isolinux" ] && have_imagemagick_convert; then
   if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
     tmp_splash="${WORK_DIR}/iso/isolinux/splash.png"
     convert -size 640x480 xc:'#07090e' \
@@ -109,7 +118,7 @@ if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
 fi
 
 # Optional: Grub background (requires ImageMagick's `convert`).
-if command -v convert >/dev/null 2>&1; then
+if have_imagemagick_convert; then
   if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
     bg="${WORK_DIR}/iso/boot/grub/background.png"
     convert -size 1024x768 xc:'#07090e' \
@@ -126,6 +135,7 @@ fi
 
 echo "[5/6] Updating md5sum.txt (if present)..."
 if [ -f "${WORK_DIR}/iso/md5sum.txt" ]; then
+  chmod u+w "${WORK_DIR}/iso/md5sum.txt" >/dev/null 2>&1 || true
   (cd "${WORK_DIR}/iso" && find . -type f ! -name md5sum.txt -print0 | xargs -0 md5sum > md5sum.txt)
 fi
 
@@ -175,16 +185,24 @@ if [ -z "${mbr}" ]; then
       done
     fi
   fi
-  [ -n "${mbr}" ] || die "Unable to find isohdpfx.bin (install syslinux-common/syslinux-utils)"
 fi
 
 VOLID="5TRATUMOS_INSTALLER"
+
+mbr_arg="${mbr}"
+if [ -z "${mbr_arg}" ]; then
+  # xorriso can take the isohybrid MBR from an existing ISO (no syslinux package needed).
+  mbr_arg="--interval:local_fs:0s-15s:zero_mbrpt,zero_gpt,zero_apm:${DEBIAN_ISO}"
+  echo "warn: isohdpfx.bin not found; using MBR from: ${DEBIAN_ISO}" >&2
+fi
+
+rm -f "${OUT_ISO}" >/dev/null 2>&1 || true
 
 xorriso -as mkisofs \
   -o "${OUT_ISO}" \
   -V "${VOLID}" \
   -r -J -joliet-long \
-  -isohybrid-mbr "${mbr}" \
+  -isohybrid-mbr "${mbr_arg}" \
   -partition_offset 16 \
   -b "${isolinux_bin}" \
   -c "${boot_cat}" \

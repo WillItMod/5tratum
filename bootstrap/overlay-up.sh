@@ -7,16 +7,29 @@ log() {
   printf '[overlay-up] %s\n' "$*" >&2
 }
 
-has_nonlocal_nameserver() {
-  [ -f /etc/resolv.conf ] || return 1
-  # Require at least one nameserver and forbid localhost DNS (which isn't running on minimal installs).
-  awk '
-    $1 == "nameserver" {
-      ns=$2
-      if (ns != "127.0.0.1" && ns != "::1" && ns != "127.0.0.53") ok=1
-    }
-    END { exit(ok ? 0 : 1) }
-  ' /etc/resolv.conf
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+    return $?
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+    return $?
+  fi
+  log "ERROR: docker compose not available (install docker-compose-plugin or docker-compose)"
+  return 127
+}
+
+dns_ready() {
+  if command -v getent >/dev/null 2>&1; then
+    getent ahostsv4 registry-1.docker.io >/dev/null 2>&1
+    return $?
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSI --max-time 5 https://registry-1.docker.io >/dev/null 2>&1
+    return $?
+  fi
+  return 1
 }
 
 wait_for_dns() {
@@ -25,7 +38,7 @@ wait_for_dns() {
   start_s="$(date +%s 2>/dev/null || echo 0)"
 
   while true; do
-    if has_nonlocal_nameserver && getent ahostsv4 registry-1.docker.io >/dev/null 2>&1; then
+    if dns_ready; then
       return 0
     fi
 
@@ -59,15 +72,13 @@ wait_for_docker() {
   done
 }
 
-main() {
+overlay_up() {
   log "Waiting for Docker daemon..."
   if ! wait_for_docker 180; then
     log "ERROR: Docker not ready after timeout"
     exit 1
   fi
 
-  # On some boots, networking is up but /etc/resolv.conf is still pointing at localhost (or empty).
-  # If we try to pull before DNS is usable, the overlay service fails and won't retry automatically.
   log "Waiting for DNS..."
   if ! wait_for_dns 180; then
     log "ERROR: DNS not ready after timeout"
@@ -75,8 +86,23 @@ main() {
   fi
 
   log "Starting portal..."
-  /usr/bin/docker compose --project-name 5tratumos-overlay up -d
+  compose --project-name 5tratumos-overlay up -d
   log "Portal started"
+}
+
+overlay_down() {
+  log "Stopping portal..."
+  # Don't fail shutdown just because Compose isn't installed/running.
+  compose --project-name 5tratumos-overlay down || true
+  log "Portal stopped"
+}
+
+main() {
+  case "${1:-up}" in
+    up) overlay_up ;;
+    down) overlay_down ;;
+    *) log "Usage: $0 [up|down]"; exit 2 ;;
+  esac
 }
 
 main "$@"

@@ -51,6 +51,16 @@ done
 
 apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data openssh-server
 
+log "Making console-setup optional on headless/serial systems..."
+# On some VMs/serial-only installs, Debian's console-setup.service can fail noisily because
+# there is no virtual console (/dev/tty0). Skipping the unit avoids a scary red [FAILED]
+# without impacting SSH/headless usage.
+install -d -m 0755 /etc/systemd/system/console-setup.service.d
+cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
+[Unit]
+ConditionPathExists=/dev/tty0
+EOF
+
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.
 # (Systemd isn't PID1 here, so enable offline.)
@@ -62,7 +72,12 @@ if ! command -v docker >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker.io docker-cli containerd
 fi
 
-if ! command -v docker-compose >/dev/null 2>&1 && apt-cache show docker-compose >/dev/null 2>&1; then
+# Prefer Compose v2 plugin if available; fall back to docker-compose v1.
+if ! docker compose version >/dev/null 2>&1 && apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+  apt-get install -y --no-install-recommends docker-compose-plugin || true
+fi
+
+if ! docker compose version >/dev/null 2>&1 && ! command -v docker-compose >/dev/null 2>&1 && apt-cache show docker-compose >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-compose || true
 fi
 
@@ -88,6 +103,15 @@ fi
 
 install -d -m 0755 /var/lib/5tratumos/apps
 install -d -m 0755 /etc/5tratumos
+
+# Optional: install a GitHub token from removable media (for private update repos).
+# Safer than embedding it into update.json because it's stored in a dedicated 0600 file.
+for tok in /cdrom/update.token /cdrom/5tratumos/update.token; do
+  if [ -f "${tok}" ]; then
+    install -m 0600 "${tok}" /etc/5tratumos/update.token || true
+    break
+  fi
+done
 
 if [ -f "${STAGE_DIR}/bin/5tratumos" ]; then
   install -m 0755 "${STAGE_DIR}/bin/5tratumos" /usr/local/bin/5tratumos

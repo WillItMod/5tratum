@@ -3,6 +3,7 @@ Description=5tratumOS First Boot Tasks
 After=local-fs.target
 Before=ssh.service
 Before=5tratumosd.service
+Before=5tratumos-overlay.service
 ConditionPathExists=!/etc/5tratumos/firstboot.done
 
 [Service]

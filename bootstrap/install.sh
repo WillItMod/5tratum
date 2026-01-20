@@ -27,6 +27,13 @@ apt-get install -y --no-install-recommends \
   python3 \
   python3-yaml
 
+echo "[2.5/7] Avoiding console-setup failure on headless systems..."
+install -d -m 0755 /etc/systemd/system/console-setup.service.d
+cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
+[Unit]
+ConditionPathExists=/dev/tty0
+EOF
+
 if ! have docker; then
   echo "[2/6] Installing Docker Engine + Compose v2..."
   install -d -m 0755 /etc/apt/keyrings

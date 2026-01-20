@@ -19,7 +19,7 @@ StandardOutput=journal
 StandardError=journal
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=TRATUMOS_CONSOLE_URL=http://127.0.0.1/
-Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/api/v0/health
+Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/api/v0/auth/check
 Environment=TRATUMOS_CONSOLE_WAIT_SECS=90
 Restart=on-failure
 RestartSec=2

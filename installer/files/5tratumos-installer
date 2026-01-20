@@ -165,6 +165,13 @@ chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends \
   grub-efi-amd64 \
   efibootmgr
 
+# Avoid console-setup boot failures on headless/serial-only systems.
+mkdir -p "${TARGET_MNT}/etc/systemd/system/console-setup.service.d"
+cat >"${TARGET_MNT}/etc/systemd/system/console-setup.service.d/5tratumos.conf" <<'EOF'
+[Unit]
+ConditionPathExists=/dev/tty0
+EOF
+
 systemctl --root "${TARGET_MNT}" enable systemd-networkd systemd-resolved ssh >/dev/null 2>&1 || true
 
 if ! chroot "${TARGET_MNT}" id -u forge >/dev/null 2>&1; then

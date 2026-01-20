@@ -2,6 +2,20 @@
 
 This repo includes a simple Windows PowerShell deploy script that can push the **portal overlay** and/or the **daemon** to a remote host over SSH.
 
+## Raspberry Pi (Debian/RPi Lite) one-shot install
+
+On a Raspberry Pi already running a Debian/Raspbian-based minimal image, you can install 5tratumOS via a single script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh | sudo bash
+```
+
+Optional: provide a GitHub token for private update repos (saved to `/etc/5tratumos/update.token`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh | sudo UPDATE_TOKEN='ghp_...' bash
+```
+
 ### Prerequisites
 
 - SSH access to the host (key-based auth recommended).
