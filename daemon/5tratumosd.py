@@ -11,6 +11,7 @@ import datetime
 import calendar
 import secrets
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -61,6 +62,7 @@ FEATURES_FILE = str(_env("FEATURES_FILE", "/etc/5tratumos/features.json") or "/e
 BUILD_FILE = str(_env("BUILD_FILE", "/etc/5tratumos/build.json") or "/etc/5tratumos/build.json")
 UPDATE_REPO = str(_env("UPDATE_REPO", "WillItMod/5tratum") or "WillItMod/5tratum")
 UPDATE_CONFIG_FILE = str(_env("UPDATE_CONFIG_FILE", "/etc/5tratumos/update.json") or "/etc/5tratumos/update.json")
+UPDATE_TOKEN_FILE = str(_env("UPDATE_TOKEN_FILE", "/etc/5tratumos/update.token") or "/etc/5tratumos/update.token")
 UPDATE_PUBKEY_FILE = str(_env("UPDATE_PUBKEY_FILE", "/etc/5tratumos/update_signing.pub") or "/etc/5tratumos/update_signing.pub")
 UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
@@ -431,6 +433,46 @@ def _write_update_config(cfg: dict) -> None:
         pass
 
 
+def _read_update_token_file() -> str:
+    path = str(UPDATE_TOKEN_FILE or "").strip()
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    tok = (raw or "").strip()
+    if not tok:
+        return ""
+    tok = tok.splitlines()[0].strip()
+    return tok[:4096].strip()
+
+
+def _write_update_token_file(token: str) -> None:
+    path = str(UPDATE_TOKEN_FILE or "").strip()
+    if not path:
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    tok = str(token or "").strip()
+    if not tok:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+        return
+
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(tok)
+        f.write("\n")
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+
 def _read_store_config() -> dict:
     cfg = _read_json(STORE_CONFIG_FILE)
     return cfg if isinstance(cfg, dict) else {}
@@ -449,6 +491,9 @@ def update_repo() -> str:
 
 
 def update_token() -> str:
+    tok_file = _read_update_token_file()
+    if tok_file:
+        return tok_file
     cfg = _read_update_config()
     tok = str(cfg.get("token") or cfg.get("github_token") or "").strip()
     if tok:
@@ -983,8 +1028,101 @@ def migrate_status_write(app_id: str, state: str, *, pct: int | None = None, **e
         obj[k] = v
     _write_json_atomic(_migrate_status_path(app_id), obj)
 
+def _human_bytes(n: int | None) -> str:
+    if n is None:
+        return "-"
+    try:
+        v = int(n)
+    except Exception:
+        return "-"
+    if v < 0:
+        return "-"
+    units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    f = float(v)
+    idx = 0
+    while f >= 1024.0 and idx < len(units) - 1:
+        f /= 1024.0
+        idx += 1
+    if idx == 0:
+        return f"{int(f)} {units[idx]}"
+    return f"{f:.2f} {units[idx]}"
 
-def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
+
+def _storage_app_roots() -> list[tuple[str, str, str]]:
+    """
+    Return [(root_path, mountpoint, label)] for all 5tratumOS app-data roots.
+    - Local: STATE_DIR/apps
+    - External: <mp>/5tratumos/apps for detected + registered mounts
+    """
+    roots: list[tuple[str, str, str]] = []
+    roots.append((os.path.join(STATE_DIR, "apps"), "", "OS disk (system)"))
+    try:
+        st = system_storage_status()
+    except Exception:
+        st = {}
+    mounts = st.get("mounts") if isinstance(st, dict) else None
+    if isinstance(mounts, list):
+        for m in mounts:
+            if not isinstance(m, dict):
+                continue
+            mp = str(m.get("mountpoint") or "").strip()
+            if not mp:
+                continue
+            if not (bool(m.get("registered")) or bool(m.get("has_5tratumos"))):
+                continue
+            label = str(m.get("label") or "").strip() or "External drive"
+            roots.append((os.path.join(mp, "5tratumos", "apps"), mp, label))
+    # De-dupe by real path.
+    seen: set[str] = set()
+    out: list[tuple[str, str, str]] = []
+    for root, mp, label in roots:
+        try:
+            rp = os.path.realpath(root)
+        except Exception:
+            rp = root
+        if rp in seen:
+            continue
+        seen.add(rp)
+        out.append((root, mp, label))
+    return out
+
+
+def _is_under_dir(path: str, root: str) -> bool:
+    try:
+        rp = os.path.realpath(path)
+        rr = os.path.realpath(root)
+    except Exception:
+        rp = path
+        rr = root
+    if rp == rr:
+        return True
+    return rp.startswith(rr.rstrip(os.sep) + os.sep)
+
+
+def _safe_delete_any(path: str, allowed_roots: list[str]) -> tuple[bool, str]:
+    p = str(path or "").strip()
+    if not p:
+        return False, "missing path"
+    if not os.path.exists(p) and not os.path.islink(p):
+        return True, ""
+    if not any(_is_under_dir(p, root) for root in allowed_roots):
+        return False, "refusing to delete outside app storage roots"
+    if any(os.path.realpath(p) == os.path.realpath(root) for root in allowed_roots):
+        return False, "refusing to delete storage root"
+    try:
+        if os.path.islink(p):
+            os.unlink(p)
+            return True, ""
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+            return True, ""
+        os.remove(p)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def app_migrate_data(app_id: str, mountpoint: str | None, *, keep_backup: bool = False) -> dict:
     aid = str(app_id or "").strip().lower()
     if not aid:
         return {"ok": False, "error": "missing app id"}
@@ -1009,6 +1147,7 @@ def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
                 src_real, src_is_link = _app_state_target(aid)
                 src_path = _app_state_dir(aid)
                 os.makedirs(os.path.dirname(src_path), exist_ok=True)
+                allowed_roots = [r for (r, _mp, _label) in _storage_app_roots()]
 
                 if mp:
                     dest_root = os.path.join(mp, "5tratumos", "apps")
@@ -1049,7 +1188,20 @@ def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
                         return
                     migrate_status_write(aid, "starting", pct=90)
                     stratumos_cmd(["app", "up", aid], timeout_s=600)
-                    migrate_status_write(aid, "done", pct=100, mountpoint="")
+                    cleanup_ok = True
+                    cleanup_error = ""
+                    if not keep_backup:
+                        migrate_status_write(aid, "cleaning", pct=95)
+                        cleanup_ok, cleanup_error = _safe_delete_any(src_real, allowed_roots)
+                    migrate_status_write(
+                        aid,
+                        "done",
+                        pct=100,
+                        mountpoint="",
+                        cleaned=bool(not keep_backup),
+                        cleanup_ok=cleanup_ok,
+                        cleanup_error=cleanup_error,
+                    )
                     return
                 if moving_to_local and not src_is_link:
                     # Already local (no-op).
@@ -1082,15 +1234,17 @@ def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
 
                 migrate_status_write(aid, "switching", pct=75)
                 ts = int(time.time())
+                backup_path = ""
                 if os.path.islink(src_path):
                     try:
                         os.unlink(src_path)
                     except Exception:
                         pass
                 else:
-                    # Keep a local backup so migrations are reversible.
+                    # For safety, keep a local backup unless the user opts out.
                     try:
-                        os.rename(src_path, f"{src_path}.bak.{ts}")
+                        backup_path = f"{src_path}.bak.{ts}"
+                        os.rename(src_path, backup_path)
                     except Exception:
                         pass
                 if mp:
@@ -1102,12 +1256,154 @@ def app_migrate_data(app_id: str, mountpoint: str | None) -> dict:
 
                 migrate_status_write(aid, "starting", pct=90)
                 stratumos_cmd(["app", "up", aid], timeout_s=600)
-                migrate_status_write(aid, "done", pct=100, mountpoint=mp or "")
+                cleanup_ok = True
+                cleanup_error = ""
+                if not keep_backup:
+                    migrate_status_write(aid, "cleaning", pct=95)
+                    # Remove old copies:
+                    # - If we were already on external storage, src_real is the old external directory.
+                    # - If we migrated from local, backup_path is the renamed local directory.
+                    candidates = []
+                    if src_is_link:
+                        candidates.append(src_real)
+                    if backup_path:
+                        candidates.append(backup_path)
+                    # Best effort cleanup; keep the first failure.
+                    for cand in candidates:
+                        ok, err = _safe_delete_any(cand, allowed_roots)
+                        if not ok and cleanup_ok:
+                            cleanup_ok = False
+                            cleanup_error = err
+                migrate_status_write(
+                    aid,
+                    "done",
+                    pct=100,
+                    mountpoint=mp or "",
+                    cleaned=bool(not keep_backup),
+                    cleanup_ok=cleanup_ok,
+                    cleanup_error=cleanup_error,
+                )
             except Exception as e:
                 migrate_status_write(aid, "error", error=str(e), pct=100)
 
         threading.Thread(target=worker, daemon=True).start()
-        return {"ok": True, "started": True, "app_id": aid, "mountpoint": mp}
+        return {"ok": True, "started": True, "app_id": aid, "mountpoint": mp, "keep_backup": bool(keep_backup)}
+
+
+def system_storage_orphans(scan_sizes: bool = False) -> dict:
+    installed = set(list_installed_app_ids())
+    roots = _storage_app_roots()
+    items: list[dict] = []
+
+    def maybe_size(path: str) -> int | None:
+        if not scan_sizes:
+            return None
+        proc = run_cmd(["du", "-sb", path], timeout_s=5)
+        if proc.returncode != 0:
+            return None
+        try:
+            return int(str((proc.stdout or "").split()[0]).strip() or "0")
+        except Exception:
+            return None
+
+    for root, mp, label in roots:
+        if not os.path.isdir(root):
+            continue
+        try:
+            with os.scandir(root) as it:
+                for ent in it:
+                    name = ent.name
+                    p = os.path.join(root, name)
+                    if not ent.is_dir(follow_symlinks=False) and not ent.is_symlink():
+                        continue
+                    base_id = name
+                    kind = "data"
+                    reason = ""
+                    if ".bak." in name:
+                        base_id = name.split(".bak.", 1)[0]
+                        kind = "backup"
+                        reason = "migration backup"
+                    elif ".migrating." in name:
+                        base_id = name.split(".migrating.", 1)[0]
+                        kind = "stale"
+                        reason = "stale migration temp"
+                    if ent.is_symlink():
+                        try:
+                            target = os.path.realpath(p)
+                            if not os.path.exists(target):
+                                kind = "broken_link"
+                                reason = "broken symlink"
+                        except Exception:
+                            kind = "broken_link"
+                            reason = "broken symlink"
+                    if base_id not in installed:
+                        if not reason:
+                            reason = "app not installed"
+                        sz = maybe_size(p)
+                        items.append(
+                            {
+                                "path": p,
+                                "mountpoint": mp,
+                                "label": label,
+                                "app_id": base_id,
+                                "kind": kind,
+                                "reason": reason,
+                                "size_bytes": sz,
+                                "size": _human_bytes(sz),
+                            }
+                        )
+        except Exception:
+            continue
+
+    # Orphan containers: 5tratumos-<app>-* where <app> not installed.
+    containers: list[dict] = []
+    proc = run_cmd(["docker", "ps", "-a", "--format", "{{.Names}}"], timeout_s=6)
+    if proc.returncode == 0:
+        for ln in (proc.stdout or "").splitlines():
+            name = ln.strip()
+            if not name:
+                continue
+            if name.startswith("5tratumos-overlay-"):
+                continue
+            m = re.match(r"^5tratumos-([a-z0-9][a-z0-9_-]*)-", name)
+            if not m:
+                continue
+            aid = m.group(1)
+            if aid in installed:
+                continue
+            containers.append({"name": name, "app_id": aid, "reason": "app not installed"})
+
+    return {"ok": True, "time": _now_iso(), "sizes": bool(scan_sizes), "data": items, "containers": containers}
+
+
+def system_storage_orphans_delete(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    if body.get("confirm") is not True:
+        return {"ok": False, "error": "confirm required"}
+    allowed_roots = [r for (r, _mp, _label) in _storage_app_roots()]
+
+    paths = body.get("paths")
+    containers = body.get("containers")
+    path_list = [str(p).strip() for p in (paths or [])] if isinstance(paths, list) else []
+    ctr_list = [str(c).strip() for c in (containers or [])] if isinstance(containers, list) else []
+
+    deleted_paths: list[dict] = []
+    for p in path_list:
+        ok, err = _safe_delete_any(p, allowed_roots)
+        deleted_paths.append({"path": p, "ok": ok, "error": err})
+
+    deleted_containers: list[dict] = []
+    for name in ctr_list:
+        if not name:
+            continue
+        proc = run_cmd(["docker", "rm", "-f", name], timeout_s=30)
+        ok = proc.returncode == 0
+        deleted_containers.append(
+            {"name": name, "ok": ok, "error": (proc.stderr or proc.stdout or "").strip() if not ok else ""}
+        )
+
+    return {"ok": True, "time": _now_iso(), "paths": deleted_paths, "containers": deleted_containers}
 
 
 AXE_SUITE_APP_IDS = {
@@ -2165,15 +2461,16 @@ def _parse_sha256(text: str, bundle_name: str) -> str:
 def system_update_config_get() -> dict:
     cfg = _update_config_effective()
     tok_cfg = str(cfg.get("token") or cfg.get("github_token") or "").strip()
+    tok_file = _read_update_token_file()
     tok_env = str(UPDATE_TOKEN_ENV or "").strip()
-    token_present = bool(tok_cfg or tok_env)
+    token_present = bool(tok_cfg or tok_file or tok_env)
     pubkey_present = bool(_read_update_pubkey())
     return {
         "ok": True,
         "repo": str(update_repo()),
         "repo_source": "fixed",
         "token_configured": token_present,
-        "token_source": "config" if tok_cfg else ("env" if tok_env else "none"),
+        "token_source": "file" if tok_file else ("config" if tok_cfg else ("env" if tok_env else "none")),
         "check_interval_s": int(cfg.get("check_interval_s") or 3600),
         "auto_apply": bool(cfg.get("auto_apply")),
         "dismissed_tag": str(cfg.get("dismissed_tag") or ""),
@@ -2193,11 +2490,10 @@ def system_update_config_set(body: dict) -> dict:
 
     if "token" in body or "github_token" in body:
         token = str(body.get("token") or body.get("github_token") or "").strip()
-        if not token:
-            cfg.pop("token", None)
-            cfg.pop("github_token", None)
-        else:
-            cfg["token"] = token
+        # Keep tokens out of JSON by default.
+        _write_update_token_file(token)
+        cfg.pop("token", None)
+        cfg.pop("github_token", None)
 
     if "check_interval_s" in body or "check_interval" in body:
         cfg["check_interval_s"] = _normalize_update_check_interval_s(body.get("check_interval_s") or body.get("check_interval"))
@@ -5441,6 +5737,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/system/storage":
             json_response(self, HTTPStatus.OK, system_storage_status())
             return
+        if path == "/api/v0/system/storage/orphans":
+            scan_sizes = False
+            if "sizes" in qs and qs["sizes"]:
+                scan_sizes = str(qs["sizes"][0] or "").strip().lower() in {"1", "true", "yes", "y"}
+            json_response(self, HTTPStatus.OK, system_storage_orphans(scan_sizes=scan_sizes))
+            return
 
         if path == "/api/v0/desktop/state":
             json_response(self, HTTPStatus.OK, desktop_state_get())
@@ -5886,7 +6188,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/apps/migrate":
             app_id = str(body.get("id") or body.get("app_id") or "").strip().lower() if isinstance(body, dict) else ""
             mountpoint = str(body.get("mountpoint") or body.get("mount") or "").strip() if isinstance(body, dict) else ""
-            res = app_migrate_data(app_id, mountpoint)
+            keep_backup = bool(body.get("keep_backup")) if isinstance(body, dict) else False
+            res = app_migrate_data(app_id, mountpoint, keep_backup=keep_backup)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/storage/orphans/delete":
+            res = system_storage_orphans_delete(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 

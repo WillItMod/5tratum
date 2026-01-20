@@ -115,8 +115,13 @@
   const storageDefaultSelect = document.getElementById('setting-storage-default');
   const btnStorageSave = document.getElementById('btn-storage-save');
   const btnStorageRefresh = document.getElementById('btn-storage-refresh');
+  const btnStorageOrphansScan = document.getElementById('btn-storage-orphans-scan');
+  const btnStorageOrphansScanSizes = document.getElementById('btn-storage-orphans-scan-sizes');
+  const btnStorageOrphansDelete = document.getElementById('btn-storage-orphans-delete');
   const storageListEl = document.getElementById('storage-list');
   const storageStatusEl = document.getElementById('storage-status');
+  const storageOrphansListEl = document.getElementById('storage-orphans-list');
+  const storageOrphansStatusEl = document.getElementById('storage-orphans-status');
   const btnOpenTerminal = document.getElementById('btn-open-terminal');
   const settingsWidgetsEl = document.getElementById('settings-widgets');
   const settingsWidgetsEmptyEl = document.getElementById('settings-widgets-empty');
@@ -241,6 +246,8 @@
   let storeAutoSyncInFlight = false;
   let storeCustomStores = [];
   let storageCache = null;
+  let storageOrphansCache = null;
+  let storageOrphansSelection = { paths: new Set(), containers: new Set() };
   const storeAppsByChannelCache = new Map();
 
   // Apps launcher pages (server-backed).
@@ -6193,6 +6200,206 @@
     }
   }
 
+  function updateStorageOrphansActions() {
+    const hasPaths = storageOrphansSelection.paths && storageOrphansSelection.paths.size > 0;
+    const hasCtrs = storageOrphansSelection.containers && storageOrphansSelection.containers.size > 0;
+    const enabled = hasPaths || hasCtrs;
+    if (btnStorageOrphansDelete) btnStorageOrphansDelete.disabled = !enabled;
+  }
+
+  function renderStorageOrphans() {
+    if (!storageOrphansListEl && !storageOrphansStatusEl) return;
+    const res = storageOrphansCache && typeof storageOrphansCache === 'object' ? storageOrphansCache : null;
+    const data = res && Array.isArray(res.data) ? res.data : [];
+    const containers = res && Array.isArray(res.containers) ? res.containers : [];
+
+    if (storageOrphansStatusEl) {
+      if (!res) storageOrphansStatusEl.textContent = 'Scan to find orphaned app data and containers.';
+      else if (res.ok !== true) storageOrphansStatusEl.textContent = 'Scan failed.';
+      else storageOrphansStatusEl.textContent = `${data.length} orphaned folders, ${containers.length} orphaned containers.`;
+    }
+
+    if (!storageOrphansListEl) return;
+    storageOrphansListEl.innerHTML = '';
+
+    const makeRow = ({ title, subtitle, checked, onToggle }) => {
+      const row = document.createElement('div');
+      row.className = 'forgeos-mini-card flex items-start gap-3';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!checked;
+      cb.addEventListener('change', () => onToggle(!!cb.checked));
+      cb.className = 'mt-1';
+      const body = document.createElement('div');
+      body.className = 'min-w-0';
+      const t = document.createElement('div');
+      t.className = 'font-semibold';
+      t.textContent = title;
+      const s = document.createElement('div');
+      s.className = 'forgeos-muted text-sm break-words';
+      s.textContent = subtitle;
+      body.appendChild(t);
+      body.appendChild(s);
+      row.appendChild(cb);
+      row.appendChild(body);
+      return row;
+    };
+
+    if (!res || res.ok !== true) {
+      const empty = document.createElement('div');
+      empty.className = 'forgeos-muted';
+      empty.textContent = res && res.error ? String(res.error) : '-';
+      storageOrphansListEl.appendChild(empty);
+      updateStorageOrphansActions();
+      return;
+    }
+
+    const block = (title) => {
+      const h = document.createElement('div');
+      h.className = 'text-sm font-semibold text-slate-200 mt-2';
+      h.textContent = title;
+      return h;
+    };
+
+    const sortedData = data
+      .filter((x) => x && typeof x === 'object' && x.path)
+      .slice()
+      .sort((a, b) => String(a.path || '').localeCompare(String(b.path || '')));
+    const sortedCtrs = containers
+      .filter((x) => x && typeof x === 'object' && x.name)
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+    if (!sortedData.length && !sortedCtrs.length) {
+      const empty = document.createElement('div');
+      empty.className = 'forgeos-muted';
+      empty.textContent = 'No orphaned data found.';
+      storageOrphansListEl.appendChild(empty);
+      storageOrphansSelection = { paths: new Set(), containers: new Set() };
+      updateStorageOrphansActions();
+      return;
+    }
+
+    if (sortedData.length) {
+      storageOrphansListEl.appendChild(block('Folders'));
+      for (const item of sortedData) {
+        const path = String(item.path || '');
+        const appId = String(item.app_id || '').trim() || 'unknown';
+        const kind = String(item.kind || '').trim() || 'data';
+        const size = String(item.size || '').trim() || '-';
+        const label = String(item.label || '').trim() || 'Drive';
+        const reason = String(item.reason || '').trim();
+        const title = `${appId} • ${kind} • ${size} • ${label}`;
+        const subtitle = `${reason ? reason + ' • ' : ''}${path}`;
+        const checked = storageOrphansSelection.paths.has(path);
+        storageOrphansListEl.appendChild(
+          makeRow({
+            title,
+            subtitle,
+            checked,
+            onToggle: (on) => {
+              if (on) storageOrphansSelection.paths.add(path);
+              else storageOrphansSelection.paths.delete(path);
+              updateStorageOrphansActions();
+            },
+          }),
+        );
+      }
+    }
+
+    if (sortedCtrs.length) {
+      storageOrphansListEl.appendChild(block('Containers'));
+      for (const item of sortedCtrs) {
+        const name = String(item.name || '');
+        const appId = String(item.app_id || '').trim() || 'unknown';
+        const reason = String(item.reason || '').trim();
+        const checked = storageOrphansSelection.containers.has(name);
+        storageOrphansListEl.appendChild(
+          makeRow({
+            title: `${appId} • ${name}`,
+            subtitle: reason || 'Orphan container',
+            checked,
+            onToggle: (on) => {
+              if (on) storageOrphansSelection.containers.add(name);
+              else storageOrphansSelection.containers.delete(name);
+              updateStorageOrphansActions();
+            },
+          }),
+        );
+      }
+    }
+
+    updateStorageOrphansActions();
+  }
+
+  async function refreshStorageOrphans(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const sizes = options.sizes === true;
+    if (!storageOrphansStatusEl && !storageOrphansListEl) return;
+    if (btnStorageOrphansScan) btnStorageOrphansScan.disabled = true;
+    if (btnStorageOrphansScanSizes) btnStorageOrphansScanSizes.disabled = true;
+    if (storageOrphansStatusEl) storageOrphansStatusEl.textContent = sizes ? 'Scanning (sizes may take a while)...' : 'Scanning...';
+    try {
+      const res = await apiJsonTimeout(`/api/v0/system/storage/orphans?sizes=${sizes ? '1' : '0'}`, {}, sizes ? 20000 : 8000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'scan failed');
+      storageOrphansCache = res;
+      storageOrphansSelection = { paths: new Set(), containers: new Set() };
+      renderStorageOrphans();
+    } catch (e) {
+      storageOrphansCache = { ok: false, error: e && e.message ? String(e.message) : String(e) };
+      storageOrphansSelection = { paths: new Set(), containers: new Set() };
+      renderStorageOrphans();
+    } finally {
+      if (btnStorageOrphansScan) btnStorageOrphansScan.disabled = false;
+      if (btnStorageOrphansScanSizes) btnStorageOrphansScanSizes.disabled = false;
+      updateStorageOrphansActions();
+    }
+  }
+
+  async function deleteSelectedStorageOrphans() {
+    const paths = Array.from(storageOrphansSelection.paths || []);
+    const containers = Array.from(storageOrphansSelection.containers || []);
+    if (!paths.length && !containers.length) return;
+
+    const ok = await openConfirmModal({
+      title: 'Delete selected orphaned items?',
+      message:
+        `This will permanently delete:\n\n` +
+        `${paths.length} folder(s)\n` +
+        `${containers.length} container(s)\n\n` +
+        `This cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!ok) return;
+
+    if (btnStorageOrphansDelete) btnStorageOrphansDelete.disabled = true;
+    if (storageOrphansStatusEl) storageOrphansStatusEl.textContent = 'Deleting...';
+    try {
+      const res = await apiJsonTimeout(
+        '/api/v0/system/storage/orphans/delete',
+        { method: 'POST', body: JSON.stringify({ confirm: true, paths, containers }) },
+        30000,
+      ).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'delete failed');
+      showToast('Cleanup complete', null);
+      await refreshStorageSettings();
+      await refreshStorageOrphans({ sizes: false });
+    } catch (e) {
+      showToast('Cleanup failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Cleanup failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      if (btnStorageOrphansDelete) btnStorageOrphansDelete.disabled = false;
+      updateStorageOrphansActions();
+    }
+  }
+
   async function refreshConsoleSettings() {
     if (!kioskEnabledInput && !kioskStatusEl) return;
     try {
@@ -7257,6 +7464,22 @@
         if (!okStop) return;
       }
 
+      const cleanupPick = await openChoiceModal({
+        title: 'After the move',
+        message:
+          'Do you want to keep a backup copy on the source drive?\n\n' +
+          'Delete source copy: recommended to avoid duplicated/dirty data.\n' +
+          'Keep backup: safer, but uses extra disk space.',
+        kind: 'System',
+        choices: [
+          { label: 'Delete source copy (recommended)', value: 'delete' },
+          { label: 'Keep backup on source', value: 'keep' },
+          { label: 'Cancel', value: 'cancel', danger: true },
+        ],
+      });
+      if (!cleanupPick || cleanupPick === 'cancel') return;
+      const keep_backup = cleanupPick === 'keep';
+
       const startedAt = Date.now();
       appProgress.set(id, { kind: 'migrate', pct: 5, startedAt });
       renderTopbarActivity();
@@ -7270,7 +7493,7 @@
       });
       const start = await apiJsonTimeout(
         '/api/v0/apps/migrate',
-        { method: 'POST', body: JSON.stringify({ id, mountpoint }) },
+        { method: 'POST', body: JSON.stringify({ id, mountpoint, keep_backup }) },
         15000,
       ).catch(() => null);
       if (!start || start.ok !== true) throw new Error((start && (start.error || start.stderr)) || 'migration failed to start');
@@ -7294,6 +7517,8 @@
                   ? 'Switching paths...'
                   : state === 'starting'
                     ? 'Starting app...'
+                    : state === 'cleaning'
+                      ? 'Cleaning up old files...'
                     : 'Working...';
           updateGlobalSplash(`Moving ${label}`, sub);
         }
@@ -7482,8 +7707,8 @@
       title: `Uninstall ${label}`,
       message:
         'Choose how to uninstall:\n\n' +
-        'Keep data: removes containers, keeps app data (recommended).\n' +
-        'Purge data: removes containers and deletes the app data folder (irreversible).',
+        'Keep data: removes containers, keeps app data (fast reinstall).\n' +
+        'Purge data: removes containers and deletes the app data folder (recommended for a clean uninstall; irreversible).',
       kind: 'System',
       choices: [
         { label: 'Keep data', value: 'keep' },
@@ -9835,8 +10060,8 @@
           title: `Uninstall ${label}`,
           message:
             'Choose how to uninstall:\n\n' +
-            'Keep data: removes containers, keeps app data (recommended).\n' +
-            'Purge data: removes containers and deletes the app data folder (irreversible).',
+            'Keep data: removes containers, keeps app data (fast reinstall).\n' +
+            'Purge data: removes containers and deletes the app data folder (recommended for a clean uninstall; irreversible).',
           kind: 'System',
           choices: [
             { label: 'Keep data', value: 'keep' },
@@ -10196,6 +10421,9 @@
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
   btnStorageRefresh?.addEventListener('click', () => refreshStorageSettings().catch(() => {}));
   btnStorageSave?.addEventListener('click', () => saveStorageSettings().catch(() => {}));
+  btnStorageOrphansScan?.addEventListener('click', () => refreshStorageOrphans({ sizes: false }).catch(() => {}));
+  btnStorageOrphansScanSizes?.addEventListener('click', () => refreshStorageOrphans({ sizes: true }).catch(() => {}));
+  btnStorageOrphansDelete?.addEventListener('click', () => deleteSelectedStorageOrphans().catch(() => {}));
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
