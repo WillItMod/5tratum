@@ -1,6 +1,8 @@
 # 5tratum / 5tratumOS Trademark & Branding Policy
 
-`5tratum`, `5tratumOS`, the associated logos/marks, and related product names are trademarks of WillItMod (the “Licensor”).
+`5tratum`, `5tratumOS`, the associated logos/marks, and related product names are trademarks of Hurricane Cloud Solutions LTD (trading as "5tratum") (the "Licensor").
+
+`WillItMod` is the maintainer/publisher name for the project. Do not use it (or the Licensor's marks) in a way that implies endorsement, partnership, or certification without explicit written permission.
 
 This document explains what you may and may not do with our branding.
 
@@ -15,7 +17,7 @@ Official project sites and stores may be hosted under (including regional TLDs):
 - `5tratum.xyz`
 
 ## Allowed
-- Referencing 5tratumOS by name when describing compatibility (e.g. “works with 5tratumOS”).
+- Referencing 5tratumOS by name when describing compatibility (e.g. "works with 5tratumOS").
 - Linking to the official repositories and release pages.
 - Using unmodified logos/marks in articles/reviews that are clearly about the official project.
 
