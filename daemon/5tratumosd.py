@@ -49,6 +49,7 @@ APPS_DIR = os.path.join(ROOT_DIR, "apps")
 DATA_DIR = str(_env("DATA_DIR", "/srv/5tratumos-data") or "/srv/5tratumos-data")
 STATE_DIR = str(_env("STATE_DIR", "/var/lib/5tratumos") or "/var/lib/5tratumos")
 SUPPORT_DIR = str(_env("SUPPORT_DIR", os.path.join(STATE_DIR, "support")) or os.path.join(STATE_DIR, "support"))
+INSTALLED_APPS_FILE = os.path.join(STATE_DIR, "apps_installed.json")
 CHANNEL_FILE = str(_env("CHANNEL_FILE", "/etc/5tratumos/channel") or "/etc/5tratumos/channel")
 STORE_DIR = str(_env("STORE_DIR", os.path.join(ROOT_DIR, "store")) or os.path.join(ROOT_DIR, "store"))
 GLOBAL_STORE_REPO = str(_env("GLOBAL_STORE_REPO", "WillItMod/global-apps") or "WillItMod/global-apps")
@@ -1291,7 +1292,9 @@ def app_migrate_data(app_id: str, mountpoint: str | None, *, keep_backup: bool =
 
 
 def system_storage_orphans(scan_sizes: bool = False) -> dict:
-    installed = set(list_installed_app_ids())
+    installed_defs = set(list_installed_app_ids())
+    installed_reg = _installed_registry_installed_set()
+    installed = set(installed_defs) | set(installed_reg)
     roots = _storage_app_roots()
     items: list[dict] = []
 
@@ -1373,7 +1376,29 @@ def system_storage_orphans(scan_sizes: bool = False) -> dict:
                 continue
             containers.append({"name": name, "app_id": aid, "reason": "app not installed"})
 
-    return {"ok": True, "time": _now_iso(), "sizes": bool(scan_sizes), "data": items, "containers": containers}
+    # "Safe" means we have some installed-app signal, OR there are no 5tratumos-* app containers
+    # at all (so this looks like leftover data from old installs rather than a live system with
+    # missing app definitions).
+    safe = bool(installed) or (len(containers) == 0)
+    warning = ""
+    if not safe and (len(installed_defs) == 0 and len(installed_reg) == 0) and (len(containers) > 0):
+        warning = (
+            "No installed apps detected. Orphan cleanup is unsafe because app definitions may be missing. "
+            "Reinstall/repair apps before deleting anything."
+        )
+
+    return {
+        "ok": True,
+        "time": _now_iso(),
+        "sizes": bool(scan_sizes),
+        "safe": safe,
+        "warning": warning,
+        "installed_defs": len(installed_defs),
+        "installed_registry": len(installed_reg),
+        "installed_total": len(installed),
+        "data": items,
+        "containers": containers,
+    }
 
 
 def system_storage_orphans_delete(body: dict) -> dict:
@@ -1382,6 +1407,8 @@ def system_storage_orphans_delete(body: dict) -> dict:
     if body.get("confirm") is not True:
         return {"ok": False, "error": "confirm required"}
     allowed_roots = [r for (r, _mp, _label) in _storage_app_roots()]
+    installed = set(list_installed_app_ids()) | _installed_registry_installed_set()
+    force = bool(body.get("force")) if isinstance(body, dict) else False
 
     paths = body.get("paths")
     containers = body.get("containers")
@@ -1390,6 +1417,20 @@ def system_storage_orphans_delete(body: dict) -> dict:
 
     deleted_paths: list[dict] = []
     for p in path_list:
+        # Safety: refuse to delete data for apps we still consider installed unless forced.
+        try:
+            base = os.path.basename(p.rstrip("/\\"))
+            base_id = base
+            if ".bak." in base:
+                base_id = base.split(".bak.", 1)[0]
+            elif ".migrating." in base:
+                base_id = base.split(".migrating.", 1)[0]
+            base_id = str(base_id or "").strip().lower()
+        except Exception:
+            base_id = ""
+        if base_id and base_id in installed and not force:
+            deleted_paths.append({"path": p, "ok": False, "error": "refusing to delete installed app data"})
+            continue
         ok, err = _safe_delete_any(p, allowed_roots)
         deleted_paths.append({"path": p, "ok": ok, "error": err})
 
@@ -3377,6 +3418,79 @@ def list_installed_app_ids() -> list[str]:
     return ids
 
 
+def _installed_registry_read() -> dict:
+    obj = _read_json(INSTALLED_APPS_FILE)
+    return obj if isinstance(obj, dict) else {}
+
+
+def _installed_registry_write(obj: dict) -> None:
+    _write_json_atomic(INSTALLED_APPS_FILE, obj if isinstance(obj, dict) else {})
+    try:
+        os.chmod(INSTALLED_APPS_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def _installed_registry_bootstrap() -> None:
+    """
+    Ensure the installed-app registry exists and is populated from APPS_DIR.
+
+    This registry is used as a safety signal for storage/orphan cleanup so
+    data isn't misclassified as orphan if app definitions temporarily vanish.
+    """
+    try:
+        obj = _installed_registry_read()
+        apps = obj.get("apps") if isinstance(obj, dict) else None
+        if not isinstance(apps, dict):
+            apps = {}
+        now = _now_iso()
+        changed = False
+        for aid in list_installed_app_ids():
+            if aid not in apps or not isinstance(apps.get(aid), dict):
+                apps[aid] = {"installed": True, "updated_at": now}
+                changed = True
+            else:
+                if bool(apps[aid].get("installed")) is not True:
+                    apps[aid]["installed"] = True
+                    apps[aid]["updated_at"] = now
+                    changed = True
+        if changed or not os.path.isfile(INSTALLED_APPS_FILE):
+            _installed_registry_write({"ok": True, "time": now, "apps": apps})
+    except Exception:
+        pass
+
+
+def _installed_registry_set(app_id: str, installed: bool) -> None:
+    aid = (app_id or "").strip().lower()
+    if not aid:
+        return
+    try:
+        obj = _installed_registry_read()
+        apps = obj.get("apps") if isinstance(obj, dict) else None
+        if not isinstance(apps, dict):
+            apps = {}
+        now = _now_iso()
+        apps[aid] = {"installed": bool(installed), "updated_at": now}
+        _installed_registry_write({"ok": True, "time": now, "apps": apps})
+    except Exception:
+        pass
+
+
+def _installed_registry_installed_set() -> set[str]:
+    out: set[str] = set()
+    obj = _installed_registry_read()
+    apps = obj.get("apps") if isinstance(obj, dict) else None
+    if not isinstance(apps, dict):
+        return out
+    for k, v in apps.items():
+        aid = str(k or "").strip().lower()
+        if not aid:
+            continue
+        if isinstance(v, dict) and bool(v.get("installed")):
+            out.add(aid)
+    return out
+
+
 def read_default_channel() -> str:
     env_ch = (os.environ.get("FIVETRATUMOS_CHANNEL") or _env("CHANNEL", "") or "").strip().lower()
     if env_ch in {"main", "dev"}:
@@ -4702,7 +4816,50 @@ _SSH_DROPIN_OLD_PATHS = [
 ]
 _SSH_CLOUDINIT_DROPIN = "/etc/ssh/sshd_config.d/50-cloud-init.conf"
 _SSH_CLOUDINIT_DISABLED = "/etc/ssh/sshd_config.d/50-cloud-init.conf.disabled"
-_SSH_ADMIN_USER = str(_env("SSH_ADMIN_USER", "admin") or "admin")
+
+
+def _unix_user_exists(username: str) -> bool:
+    user = (username or "").strip()
+    if not user:
+        return False
+    chk = run_cmd(["id", user], timeout_s=6)
+    return chk.returncode == 0
+
+
+def _ssh_admin_user() -> str:
+    # Explicit override (advanced deployments).
+    env_user = str(_env("SSH_ADMIN_USER", "") or "").strip()
+    if env_user:
+        return env_user
+
+    # Prefer the default admin account when it exists (legacy installs).
+    if _unix_user_exists("admin"):
+        return "admin"
+
+    # Next: console user (installer + kiosk deployments).
+    try:
+        cfg = _read_json(CONSOLE_CONFIG_FILE)
+    except Exception:
+        cfg = {}
+    if isinstance(cfg, dict):
+        u = str(cfg.get("user") or "").strip()
+        if u and _unix_user_exists(u):
+            return u
+
+    # Next: web auth user, if it also exists as a Unix user.
+    try:
+        auth = _read_json(AUTH_FILE)
+    except Exception:
+        auth = {}
+    if isinstance(auth, dict):
+        users = auth.get("users")
+        if isinstance(users, list) and users:
+            u = str((users[0] or {}).get("username") or "").strip()
+            if u and _unix_user_exists(u):
+                return u
+
+    # Final fallback.
+    return "forge" if _unix_user_exists("forge") else "admin"
 
 
 def _ensure_unix_user(username: str) -> dict:
@@ -4841,14 +4998,15 @@ def ssh_status() -> dict:
     enabled = enabled_raw in {"enabled", "enabled-runtime", "static"}
     active = active_raw == "active"
     eff = _sshd_effective_settings()
-    admin = _unix_user_password_state(_SSH_ADMIN_USER)
+    admin_user = _ssh_admin_user()
+    admin = _unix_user_password_state(admin_user)
     return {
         "ok": True,
         "installed": True,
         "enabled": enabled,
         "active": active,
         "service": svc,
-        "admin_user": _SSH_ADMIN_USER,
+        "admin_user": admin_user,
         "effective": eff if eff.get("ok") else None,
         "admin": admin if admin.get("ok") else None,
     }
@@ -4865,9 +5023,9 @@ def ssh_set_enabled(enabled: bool) -> dict:
         return {"ok": False, "error": f"failed to write ssh config: {e}"}
 
     if enabled:
-        ensure = _ensure_unix_user(_SSH_ADMIN_USER)
+        ensure = _ensure_unix_user(_ssh_admin_user())
         if not ensure.get("ok"):
-            return {"ok": False, "error": f"failed to ensure admin user '{_SSH_ADMIN_USER}': {ensure.get('error')}"}
+            return {"ok": False, "error": f"failed to ensure admin user '{_ssh_admin_user()}': {ensure.get('error')}"}
 
     if enabled:
         proc = run_cmd(["systemctl", "enable", "--now", svc], timeout_s=30)
@@ -4895,7 +5053,7 @@ def ssh_set_admin_password(password: str) -> dict:
     pw = str(password or "")
     if len(pw) < 10:
         return {"ok": False, "error": "password too short (min 10 characters)"}
-    user = _SSH_ADMIN_USER
+    user = _ssh_admin_user()
     ensure = _ensure_unix_user(user)
     if not ensure.get("ok"):
         return {"ok": False, "error": f"user not available: {user} ({ensure.get('error')})"}
@@ -4916,7 +5074,7 @@ def ssh_add_authorized_key(pubkey: str) -> dict:
     if not (key.startswith("ssh-") or key.startswith("ecdsa-")):
         return {"ok": False, "error": "invalid public key format"}
 
-    user = _SSH_ADMIN_USER
+    user = _ssh_admin_user()
     ensure = _ensure_unix_user(user)
     if not ensure.get("ok"):
         return {"ok": False, "error": f"user not available: {user} ({ensure.get('error')})"}
@@ -6208,6 +6366,8 @@ class Handler(BaseHTTPRequestHandler):
                     res = stratumos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=600)
                 else:
                     res = stratumos_cmd(["app", "install", app_id], timeout_s=600)
+                if res.get("ok"):
+                    _installed_registry_set(app_id, True)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -6217,6 +6377,8 @@ class Handler(BaseHTTPRequestHandler):
                 if purge:
                     args.append("--purge")
                 res = stratumos_cmd(args, timeout_s=600)
+                if res.get("ok"):
+                    _installed_registry_set(app_id, False)
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -6293,6 +6455,8 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9000)
     args = parser.parse_args()
+
+    _installed_registry_bootstrap()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")

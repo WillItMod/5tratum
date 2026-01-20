@@ -248,6 +248,7 @@
   let storageCache = null;
   let storageOrphansCache = null;
   let storageOrphansSelection = { paths: new Set(), containers: new Set() };
+  let storageOrphansSafe = true;
   const storeAppsByChannelCache = new Map();
 
   // Apps launcher pages (server-backed).
@@ -6201,6 +6202,10 @@
   }
 
   function updateStorageOrphansActions() {
+    if (!storageOrphansSafe) {
+      if (btnStorageOrphansDelete) btnStorageOrphansDelete.disabled = true;
+      return;
+    }
     const hasPaths = storageOrphansSelection.paths && storageOrphansSelection.paths.size > 0;
     const hasCtrs = storageOrphansSelection.containers && storageOrphansSelection.containers.size > 0;
     const enabled = hasPaths || hasCtrs;
@@ -6212,22 +6217,28 @@
     const res = storageOrphansCache && typeof storageOrphansCache === 'object' ? storageOrphansCache : null;
     const data = res && Array.isArray(res.data) ? res.data : [];
     const containers = res && Array.isArray(res.containers) ? res.containers : [];
+    storageOrphansSafe = !(res && res.ok === true && res.safe === false);
 
     if (storageOrphansStatusEl) {
       if (!res) storageOrphansStatusEl.textContent = 'Scan to find orphaned app data and containers.';
       else if (res.ok !== true) storageOrphansStatusEl.textContent = 'Scan failed.';
-      else storageOrphansStatusEl.textContent = `${data.length} orphaned folders, ${containers.length} orphaned containers.`;
+      else if (storageOrphansSafe) storageOrphansStatusEl.textContent = `${data.length} orphaned folders, ${containers.length} orphaned containers.`;
+      else
+        storageOrphansStatusEl.textContent =
+          (res.warning ? String(res.warning) : 'Orphan cleanup is disabled for safety.') +
+          ` (${data.length} folders, ${containers.length} containers)`;
     }
 
     if (!storageOrphansListEl) return;
     storageOrphansListEl.innerHTML = '';
 
-    const makeRow = ({ title, subtitle, checked, onToggle }) => {
+    const makeRow = ({ title, subtitle, checked, onToggle, disabled }) => {
       const row = document.createElement('div');
       row.className = 'forgeos-mini-card flex items-start gap-3';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = !!checked;
+      cb.disabled = !!disabled;
       cb.addEventListener('change', () => onToggle(!!cb.checked));
       cb.className = 'mt-1';
       const body = document.createElement('div');
@@ -6297,6 +6308,7 @@
             title,
             subtitle,
             checked,
+            disabled: !storageOrphansSafe,
             onToggle: (on) => {
               if (on) storageOrphansSelection.paths.add(path);
               else storageOrphansSelection.paths.delete(path);
@@ -6319,6 +6331,7 @@
             title: `${appId} • ${name}`,
             subtitle: reason || 'Orphan container',
             checked,
+            disabled: !storageOrphansSafe,
             onToggle: (on) => {
               if (on) storageOrphansSelection.containers.add(name);
               else storageOrphansSelection.containers.delete(name);
