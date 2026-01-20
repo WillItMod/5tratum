@@ -68,11 +68,11 @@ UPDATE_PUBKEY_FILE = str(_env("UPDATE_PUBKEY_FILE", "/etc/5tratumos/update_signi
 UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
 STORE_TOKEN_FILE = str(_env("STORE_TOKEN_FILE", "/etc/5tratumos/store.token") or "/etc/5tratumos/store.token")
-STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/5tratum-store") or "WillItMod/5tratum-store").strip()
+STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/umbrel-dev-community-store") or "WillItMod/umbrel-dev-community-store").strip()
 STORE_MAIN_BRANCH = str(_env("MAIN_STORE_BRANCH", "main") or "main").strip()
-STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/5tratum-store") or "WillItMod/5tratum-store").strip()
-STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "dev") or "dev").strip()
-STORE_MAIN_PRIVATE = str(_env("MAIN_STORE_PRIVATE", "1") or "1").strip() == "1"
+STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/umbrel-community-store") or "WillItMod/umbrel-community-store").strip()
+STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "main") or "main").strip()
+STORE_MAIN_PRIVATE = str(_env("MAIN_STORE_PRIVATE", "0") or "0").strip() == "1"
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
