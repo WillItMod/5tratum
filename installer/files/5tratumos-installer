@@ -159,6 +159,8 @@ chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends \
   jq \
   python3 \
   python3-yaml \
+  cage \
+  chromium \
   openssh-server \
   systemd-sysv \
   linux-image-amd64 \
@@ -178,6 +180,11 @@ if ! chroot "${TARGET_MNT}" id -u forge >/dev/null 2>&1; then
   chroot "${TARGET_MNT}" useradd -m -s /bin/bash forge || true
   chroot "${TARGET_MNT}" passwd -l forge >/dev/null 2>&1 || true
 fi
+
+# Ensure kiosk user has graphics/input group membership (best-effort).
+for grp in video input render; do
+  chroot "${TARGET_MNT}" bash -lc "getent group '${grp}' >/dev/null 2>&1 && usermod -aG '${grp}' forge >/dev/null 2>&1 || true" || true
+done
 
 dialog --title "Installing" --infobox "Installing 5tratumOS..." 6 60
 mkdir -p "${TARGET_MNT}/opt/5tratumos-src"
@@ -226,6 +233,13 @@ echo "main" >"${TARGET_MNT}/etc/5tratumos/channel"
 install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumos-overlay.service" "${TARGET_MNT}/etc/systemd/system/5tratumos-overlay.service"
 install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumosd.service" "${TARGET_MNT}/etc/systemd/system/5tratumosd.service"
 install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumos-firstboot.service" "${TARGET_MNT}/etc/systemd/system/5tratumos-firstboot.service"
+
+# Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
+if [ -f "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console.sh" ] && [ -f "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console@.service" ]; then
+  install -m 0755 "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console.sh" "${TARGET_MNT}/usr/local/bin/5tratumos-console"
+  install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console@.service" "${TARGET_MNT}/etc/systemd/system/5tratumos-console@.service"
+  systemctl --root "${TARGET_MNT}" enable "5tratumos-console@forge.service" >/dev/null 2>&1 || true
+fi
 
 systemctl --root "${TARGET_MNT}" daemon-reload || true
 systemctl --root "${TARGET_MNT}" enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service || true

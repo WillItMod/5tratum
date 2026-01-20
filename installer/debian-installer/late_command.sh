@@ -61,6 +61,9 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 ConditionPathExists=/dev/tty0
 EOF
 
+log "Installing kiosk packages (cage + chromium)..."
+apt-get install -y --no-install-recommends cage chromium || true
+
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.
 # (Systemd isn't PID1 here, so enable offline.)
@@ -127,6 +130,18 @@ JSON
 install -m 0644 "${STAGE_DIR}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 install -m 0644 "${STAGE_DIR}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${STAGE_DIR}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
+
+# Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
+if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
+  install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+  install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
+  for grp in video input render; do
+    if getent group "${grp}" >/dev/null 2>&1; then
+      usermod -aG "${grp}" forge >/dev/null 2>&1 || true
+    fi
+  done
+  SYSTEMD_OFFLINE=1 systemctl enable "5tratumos-console@forge.service" >/dev/null 2>&1 || true
+fi
 
 # Fallback for distros without docker compose plugin: use docker-compose if available.
 if ! docker compose version >/dev/null 2>&1 && command -v docker-compose >/dev/null 2>&1; then

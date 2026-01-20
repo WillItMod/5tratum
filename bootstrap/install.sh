@@ -12,6 +12,8 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
   die "run as root (try: sudo $0)"
 fi
 
+CONSOLE_USER="${FIVETRATUMOS_CONSOLE_USER:-${TRATUMOS_CONSOLE_USER:-forge}}"
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
@@ -68,6 +70,9 @@ else
   echo "[2/6] Docker already installed; skipping."
 fi
 
+echo "[3/6] Installing kiosk packages (cage + chromium)..."
+apt-get install -y --no-install-recommends cage chromium || true
+
 echo "[3/6] Installing 5tratumOS overlay + AxeSuite templates..."
 install -d -m 0755 /opt/5tratumos
 rm -rf /opt/5tratumos/overlay /opt/5tratumos/apps-available /opt/5tratumos/daemon /opt/5tratumos/console
@@ -90,6 +95,18 @@ fi
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
+
+if [ -f "${SRC_ROOT}/console/5tratumos-console.sh" ] && [ -f "${SRC_ROOT}/console/5tratumos-console@.service" ]; then
+  install -m 0755 "${SRC_ROOT}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+  install -m 0644 "${SRC_ROOT}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
+  for grp in video input render; do
+    if getent group "${grp}" >/dev/null 2>&1; then
+      usermod -aG "${grp}" "${CONSOLE_USER}" >/dev/null 2>&1 || true
+    fi
+  done
+  systemctl enable --now "5tratumos-console@${CONSOLE_USER}.service" || true
+fi
+
 systemctl daemon-reload
 systemctl enable --now 5tratumosd.service
 systemctl enable --now 5tratumos-overlay.service

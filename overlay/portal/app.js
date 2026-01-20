@@ -7,6 +7,12 @@
   const hostIp = document.getElementById('host-ip');
   const trustedNetworksEl = document.getElementById('trusted-networks');
   const tailscaleStatusEl = document.getElementById('tailscale-status');
+  const wifiStatusEl = document.getElementById('wifi-status');
+  const wifiDetailEl = document.getElementById('wifi-detail');
+  const btnWifiToggle = document.getElementById('btn-wifi-toggle');
+  const btnWifiScan = document.getElementById('btn-wifi-scan');
+  const btnWifiDisconnect = document.getElementById('btn-wifi-disconnect');
+  const wifiNetworksEl = document.getElementById('wifi-networks');
   const metricCpu = document.getElementById('metric-cpu');
   const metricMem = document.getElementById('metric-mem');
   const metricDisk = document.getElementById('metric-disk');
@@ -2727,6 +2733,173 @@
     });
   }
 
+  function renderWifiNetworks(networks) {
+    if (!wifiNetworksEl) return;
+    const list = Array.isArray(networks) ? networks : [];
+    wifiNetworksEl.innerHTML = '';
+    if (!list.length) return;
+
+    const makeRow = (net) => {
+      const ssid = String(net && net.ssid ? net.ssid : '').trim();
+      const inUse = !!(net && net.in_use);
+      const sec = String(net && net.security ? net.security : '').trim();
+      const sig = typeof (net && net.signal) === 'number' ? net.signal : Number(net && net.signal) || 0;
+
+      const row = document.createElement('div');
+      row.className = 'forgeos-mini-card flex items-center justify-between gap-3';
+
+      const left = document.createElement('div');
+      left.className = 'min-w-0';
+
+      const title = document.createElement('div');
+      title.className = 'font-semibold truncate';
+      title.textContent = ssid || '(hidden network)';
+
+      const sub = document.createElement('div');
+      sub.className = 'forgeos-muted text-sm';
+      sub.textContent = `${inUse ? 'Connected • ' : ''}${sec ? sec : 'Open'} • ${Math.max(0, Math.min(100, sig))}%`;
+
+      left.appendChild(title);
+      left.appendChild(sub);
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'axe-btn';
+      btn.textContent = inUse ? 'Connected' : 'Connect';
+      btn.disabled = inUse;
+      btn.addEventListener('click', async () => {
+        if (!ssid) {
+          await openNoticeModal({
+            kind: 'Info',
+            title: 'Hidden network',
+            message: 'Hidden SSIDs are not supported yet. Add SSID + password support next if needed.',
+          });
+          return;
+        }
+        await openWifiConnectModal(ssid, sec);
+      });
+
+      row.appendChild(left);
+      row.appendChild(btn);
+      return row;
+    };
+
+    for (const net of list.slice(0, 25)) wifiNetworksEl.appendChild(makeRow(net));
+  }
+
+  async function openWifiConnectModal(ssid, security) {
+    const netSsid = String(ssid || '').trim();
+    if (!netSsid) return;
+    const sec = String(security || '').trim();
+
+    modalKindEl.textContent = 'Network';
+    modalTitleEl.textContent = `Join Wi‑Fi`;
+    modalBodyEl.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'grid gap-3';
+
+    const ssidRow = document.createElement('div');
+    ssidRow.className = 'forgeos-mini-card';
+    ssidRow.innerHTML = `<div class="forgeos-mini-card__k">SSID</div><div class="forgeos-mini-card__v"><span class="forgeos-mono">${escapeHtml(netSsid)}</span></div>`;
+    wrap.appendChild(ssidRow);
+
+    const passWrap = document.createElement('div');
+    const passLbl = document.createElement('label');
+    passLbl.className = 'forgeos-label';
+    passLbl.textContent = 'Password';
+    const passInput = document.createElement('input');
+    passInput.className = 'forgeos-input';
+    passInput.type = 'password';
+    passInput.placeholder = sec ? 'Wi‑Fi password' : 'Optional';
+    passWrap.appendChild(passLbl);
+    passWrap.appendChild(passInput);
+    wrap.appendChild(passWrap);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center justify-end gap-2 mt-2';
+
+    const btnCancel = document.createElement('button');
+    btnCancel.type = 'button';
+    btnCancel.className = 'axe-btn';
+    btnCancel.textContent = 'Cancel';
+    btnCancel.addEventListener('click', () => closeModal());
+
+    const btnJoin = document.createElement('button');
+    btnJoin.type = 'button';
+    btnJoin.className = 'axe-btn';
+    btnJoin.textContent = 'Join';
+    btnJoin.addEventListener('click', async () => {
+      btnJoin.disabled = true;
+      const prev = btnJoin.textContent;
+      btnJoin.textContent = 'Joining...';
+      try {
+        const body = { ssid: netSsid, password: String(passInput.value || '') };
+        const res = await apiJsonTimeout('/api/v0/system/wifi/connect', { method: 'POST', body: JSON.stringify(body) }, 60000).catch(() => null);
+        if (!res || res.ok !== true) throw new Error((res && res.error) || 'connect failed');
+        closeModal();
+        showToast('Wi‑Fi connected', null);
+        await refreshWifiStatus();
+      } catch (e) {
+        await openNoticeModal({ kind: 'Error', title: 'Wi‑Fi connect failed', message: e && e.message ? String(e.message) : String(e), danger: true });
+      } finally {
+        btnJoin.disabled = false;
+        btnJoin.textContent = prev;
+      }
+    });
+
+    actions.appendChild(btnCancel);
+    actions.appendChild(btnJoin);
+    wrap.appendChild(actions);
+
+    modalBodyEl.appendChild(wrap);
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    window.setTimeout(() => passInput.focus(), 50);
+  }
+
+  async function refreshWifiStatus() {
+    if (!wifiStatusEl && !wifiDetailEl && !btnWifiToggle) return;
+    const res = await apiJsonTimeout('/api/v0/system/wifi/status', {}, 8000).catch(() => null);
+    if (!res || res.ok !== true) {
+      if (wifiStatusEl) wifiStatusEl.textContent = 'Unavailable';
+      if (wifiDetailEl) wifiDetailEl.textContent = res && res.error ? String(res.error) : '-';
+      if (btnWifiToggle) btnWifiToggle.disabled = true;
+      if (btnWifiScan) btnWifiScan.disabled = true;
+      if (btnWifiDisconnect) btnWifiDisconnect.disabled = true;
+      return;
+    }
+    const enabled = !!res.enabled;
+    const connected = !!res.connected;
+    const ssid = String(res.ssid || '').trim();
+    if (wifiStatusEl) wifiStatusEl.textContent = !enabled ? 'Disabled' : connected ? 'Connected' : 'Enabled';
+    if (wifiDetailEl) wifiDetailEl.textContent = !enabled ? 'Wi‑Fi radio is off.' : connected ? (ssid ? `SSID: ${ssid}` : 'Connected') : 'Not connected.';
+    if (btnWifiToggle) {
+      btnWifiToggle.disabled = false;
+      btnWifiToggle.textContent = enabled ? 'Disable Wi‑Fi' : 'Enable Wi‑Fi';
+    }
+    if (btnWifiScan) btnWifiScan.disabled = !enabled;
+    if (btnWifiDisconnect) btnWifiDisconnect.disabled = !connected;
+  }
+
+  async function scanWifiNetworks() {
+    if (!btnWifiScan) return;
+    btnWifiScan.disabled = true;
+    const prev = btnWifiScan.textContent;
+    btnWifiScan.textContent = 'Scanning...';
+    try {
+      const res = await apiJsonTimeout('/api/v0/system/wifi/scan', {}, 20000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'scan failed');
+      renderWifiNetworks(res.networks);
+    } catch (e) {
+      await openNoticeModal({ kind: 'Error', title: 'Wi‑Fi scan failed', message: e && e.message ? String(e.message) : String(e), danger: true });
+    } finally {
+      btnWifiScan.disabled = false;
+      btnWifiScan.textContent = prev;
+    }
+  }
+
   function openUpdateAvailableModal(tag, notes) {
     if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve(null);
     const version = String(tag || '').trim();
@@ -3405,6 +3578,9 @@
     if (metricNetSub) metricNetSub.textContent = '-';
     if (trustedNetworksEl) trustedNetworksEl.textContent = 'Setup wizard (coming soon)';
     if (tailscaleStatusEl) tailscaleStatusEl.textContent = 'Optional';
+    if (wifiStatusEl) wifiStatusEl.textContent = '-';
+    if (wifiDetailEl) wifiDetailEl.textContent = '-';
+    if (wifiNetworksEl) wifiNetworksEl.innerHTML = '';
   }
 
   function formatBytes(bytes) {

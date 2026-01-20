@@ -135,6 +135,13 @@ def run_cmd(
     )
 
 
+def _which(cmd: str) -> str:
+    try:
+        return shutil.which(cmd) or ""
+    except Exception:
+        return ""
+
+
 def _is_path_under(path: str, root: str) -> bool:
     try:
         p = os.path.realpath(path)
@@ -993,6 +1000,166 @@ def system_storage_status() -> dict:
         mounts_by_mp[str(m.get("mountpoint") or "")] = m
     mounts = sorted(mounts_by_mp.values(), key=lambda it: it.get("mountpoint") or "")
     return {"ok": True, "config": cfg, "mounts": mounts, "devices": devices}
+
+
+def _ensure_network_manager() -> dict:
+    """
+    Ensure NetworkManager + nmcli exist. Returns {ok, installed, error}.
+    """
+    if _which("nmcli"):
+        return {"ok": True, "installed": True}
+    install_cmd = ["/usr/bin/apt-get", "install", "-y", "network-manager"]
+    update_cmd = ["/usr/bin/apt-get", "update"]
+
+    proc = run_cmd(install_cmd, timeout_s=600)
+    if proc.returncode != 0:
+        upd = run_cmd(update_cmd, timeout_s=300)
+        if upd.returncode != 0:
+            return {"ok": False, "installed": False, "error": (upd.stderr or upd.stdout or "apt update failed").strip()}
+        proc = run_cmd(install_cmd, timeout_s=600)
+        if proc.returncode != 0:
+            return {"ok": False, "installed": False, "error": (proc.stderr or proc.stdout or "install failed").strip()}
+
+    run_cmd(["/bin/systemctl", "enable", "--now", "NetworkManager.service"], timeout_s=60)
+    return {"ok": True, "installed": True}
+
+
+def _nmcli(args: list[str], *, timeout_s: int = 20) -> subprocess.CompletedProcess:
+    return run_cmd(["nmcli", *args], timeout_s=timeout_s)
+
+
+def _wifi_device() -> str:
+    proc = _nmcli(["-t", "--separator", "\t", "-f", "DEVICE,TYPE,STATE", "device", "status"], timeout_s=8)
+    if proc.returncode != 0:
+        return ""
+    for ln in (proc.stdout or "").splitlines():
+        parts = ln.split("\t")
+        if len(parts) < 2:
+            continue
+        dev = (parts[0] or "").strip()
+        typ = (parts[1] or "").strip()
+        if typ == "wifi":
+            return dev
+    return ""
+
+
+def system_wifi_status() -> dict:
+    nm = _ensure_network_manager()
+    if not nm.get("ok"):
+        return {"ok": False, "error": nm.get("error") or "NetworkManager not available"}
+
+    enabled = False
+    proc = _nmcli(["-t", "-f", "WIFI", "general"], timeout_s=5)
+    if proc.returncode == 0:
+        enabled = "enabled" in (proc.stdout or "").strip().lower()
+
+    dev = _wifi_device()
+    connected = False
+    ssid = ""
+    if dev:
+        proc = _nmcli(["-t", "--separator", "\t", "-f", "GENERAL.STATE,GENERAL.CONNECTION", "device", "show", dev], timeout_s=6)
+        if proc.returncode == 0:
+            state = ""
+            conn = ""
+            for ln in (proc.stdout or "").splitlines():
+                k, _, v = ln.partition("\t")
+                if k == "GENERAL.STATE":
+                    state = str(v).strip()
+                elif k == "GENERAL.CONNECTION":
+                    conn = str(v).strip()
+            connected = state.startswith("100") or state.lower().startswith("connected")
+            ssid = conn if conn and conn != "--" else ""
+
+    return {"ok": True, "enabled": enabled, "device": dev, "connected": connected, "ssid": ssid}
+
+
+def system_wifi_scan() -> dict:
+    nm = _ensure_network_manager()
+    if not nm.get("ok"):
+        return {"ok": False, "error": nm.get("error") or "NetworkManager not available"}
+
+    dev = _wifi_device()
+    if not dev:
+        return {"ok": False, "error": "no wifi device detected"}
+
+    proc = _nmcli(
+        ["-t", "--separator", "\t", "-f", "IN-USE,SSID,SECURITY,SIGNAL", "device", "wifi", "list", "--rescan", "yes"],
+        timeout_s=20,
+    )
+    if proc.returncode != 0:
+        return {"ok": False, "error": (proc.stderr or proc.stdout or "scan failed").strip()}
+
+    nets: list[dict] = []
+    seen: set[str] = set()
+    for ln in (proc.stdout or "").splitlines():
+        parts = ln.split("\t")
+        if len(parts) < 4:
+            continue
+        in_use, ssid, sec, sig = parts[0], parts[1], parts[2], parts[3]
+        ssid = str(ssid or "").strip()
+        sec = str(sec or "").strip()
+        key = f"{ssid}\n{sec}"
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            signal = int(str(sig or "").strip() or "0")
+        except Exception:
+            signal = 0
+        nets.append({"ssid": ssid, "security": sec, "signal": signal, "in_use": str(in_use or "").strip() == "*"})
+
+    nets.sort(key=lambda x: (0 if x.get("in_use") else 1, -(int(x.get("signal") or 0)), str(x.get("ssid") or "")))
+    return {"ok": True, "device": dev, "networks": nets}
+
+
+def system_wifi_toggle(body: dict) -> dict:
+    nm = _ensure_network_manager()
+    if not nm.get("ok"):
+        return {"ok": False, "error": nm.get("error") or "NetworkManager not available"}
+    enabled = bool(body.get("enabled")) if isinstance(body, dict) else False
+    proc = _nmcli(["radio", "wifi", "on" if enabled else "off"], timeout_s=10)
+    if proc.returncode != 0:
+        return {"ok": False, "error": (proc.stderr or proc.stdout or "toggle failed").strip()}
+    return {"ok": True, "enabled": enabled}
+
+
+def system_wifi_disconnect() -> dict:
+    nm = _ensure_network_manager()
+    if not nm.get("ok"):
+        return {"ok": False, "error": nm.get("error") or "NetworkManager not available"}
+    dev = _wifi_device()
+    if not dev:
+        return {"ok": False, "error": "no wifi device detected"}
+    proc = _nmcli(["device", "disconnect", dev], timeout_s=20)
+    if proc.returncode != 0:
+        return {"ok": False, "error": (proc.stderr or proc.stdout or "disconnect failed").strip()}
+    return {"ok": True}
+
+
+def system_wifi_connect(body: dict) -> dict:
+    nm = _ensure_network_manager()
+    if not nm.get("ok"):
+        return {"ok": False, "error": nm.get("error") or "NetworkManager not available"}
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    ssid = str(body.get("ssid") or "").strip()
+    password = str(body.get("password") or "").strip()
+    hidden = bool(body.get("hidden"))
+    if not ssid:
+        return {"ok": False, "error": "missing ssid"}
+    dev = _wifi_device()
+    if not dev:
+        return {"ok": False, "error": "no wifi device detected"}
+
+    args = ["device", "wifi", "connect", ssid]
+    if password:
+        args += ["password", password]
+    if hidden:
+        args += ["hidden", "yes"]
+    proc = _nmcli(args, timeout_s=60)
+    if proc.returncode != 0:
+        return {"ok": False, "error": (proc.stderr or proc.stdout or "connect failed").strip()}
+    return {"ok": True}
 
 
 _MIGRATE_LOCK = threading.Lock()
@@ -5947,6 +6114,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/system/storage":
             json_response(self, HTTPStatus.OK, system_storage_status())
             return
+
+        if path == "/api/v0/system/wifi/status":
+            json_response(self, HTTPStatus.OK, system_wifi_status())
+            return
+
+        if path == "/api/v0/system/wifi/scan":
+            json_response(self, HTTPStatus.OK, system_wifi_scan())
+            return
         if path == "/api/v0/system/storage/orphans":
             scan_sizes = False
             if "sizes" in qs and qs["sizes"]:
@@ -6318,6 +6493,21 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/storage/config":
             res = storage_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/wifi/toggle":
+            res = system_wifi_toggle(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/wifi/connect":
+            res = system_wifi_connect(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/wifi/disconnect":
+            res = system_wifi_disconnect()
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
