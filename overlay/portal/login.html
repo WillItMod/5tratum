@@ -17,6 +17,18 @@
           <div id="login-subtitle" class="forgeos-login__sub">Sign in to continue.</div>
         </div>
 
+        <div class="forgeos-form mb-4">
+          <label class="forgeos-label" for="keyboard-layout">Keyboard layout</label>
+          <select id="keyboard-layout" class="forgeos-input">
+            <option value="uk">UK (QWERTY)</option>
+            <option value="us">US (QWERTY)</option>
+            <option value="fr">French (AZERTY)</option>
+            <option value="be">Belgian (AZERTY)</option>
+            <option value="de">German (QWERTZ)</option>
+          </select>
+          <div id="keyboard-layout-status" class="mt-2 text-xs text-slate-300"></div>
+        </div>
+
         <form id="auth-form" class="forgeos-form" autocomplete="on">
           <label class="forgeos-label" for="auth-username">Username</label>
           <input
@@ -67,6 +79,8 @@
         const submitBtn = document.getElementById('auth-submit');
         const refreshBtn = document.getElementById('auth-refresh');
         const errEl = document.getElementById('login-error');
+        const keyboardSelect = document.getElementById('keyboard-layout');
+        const keyboardStatus = document.getElementById('keyboard-layout-status');
 
         const params = new URLSearchParams(window.location.search || '');
         const nextRaw = params.get('next') || '/';
@@ -121,9 +135,56 @@
           }
         }
 
+        function setKeyboardStatus(msg) {
+          if (!keyboardStatus) return;
+          keyboardStatus.textContent = String(msg || '').trim();
+        }
+
+        async function loadKeyboardLayout() {
+          if (!keyboardSelect) return;
+          setKeyboardStatus('');
+          try {
+            const res = await fetch('/api/v0/auth/keyboard', { headers: { 'Content-Type': 'application/json' } });
+            const data = await res.json().catch(() => null);
+            if (!res.ok || !data || data.ok !== true) return;
+            const layout = String(data.layout || '').trim().toLowerCase();
+            if (layout) keyboardSelect.value = layout;
+            if (data.needs_setup === true) {
+              setKeyboardStatus('Select your keyboard layout (recommended before setting a password).');
+            }
+          } catch (e) {
+            setKeyboardStatus('');
+          }
+        }
+
+        keyboardSelect &&
+          keyboardSelect.addEventListener('change', async () => {
+            const layout = String(keyboardSelect.value || '').trim();
+            if (!layout) return;
+            setKeyboardStatus('Applying...');
+            try {
+              const res = await fetch('/api/v0/auth/keyboard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layout }),
+              });
+              const data = await res.json().catch(() => null);
+              if (!res.ok || !data || data.ok !== true) {
+                setKeyboardStatus((data && data.error) || `HTTP ${res.status}`);
+                return;
+              }
+              setKeyboardStatus('Applied.');
+            } catch (e) {
+              setKeyboardStatus('Apply failed.');
+            } finally {
+              window.setTimeout(() => setKeyboardStatus(''), 2500);
+            }
+          });
+
         refreshBtn &&
           refreshBtn.addEventListener('click', () => {
             loadStatus();
+            loadKeyboardLayout();
           });
 
         form &&
@@ -177,6 +238,7 @@
           });
 
         loadStatus();
+        loadKeyboardLayout();
         usernameEl && usernameEl.focus();
       })();
     </script>

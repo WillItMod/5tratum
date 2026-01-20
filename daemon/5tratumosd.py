@@ -78,6 +78,7 @@ DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
+KEYBOARD_CONFIG_FILE = str(_env("KEYBOARD_CONFIG_FILE", "/etc/5tratumos/keyboard.json") or "/etc/5tratumos/keyboard.json")
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
 WATCHDOG_CONFIG_FILE = str(_env("WATCHDOG_CONFIG_FILE", "/etc/5tratumos/watchdog.json") or "/etc/5tratumos/watchdog.json")
 UI_CONFIG_FILE = str(_env("UI_CONFIG_FILE", "/etc/5tratumos/ui.json") or "/etc/5tratumos/ui.json")
@@ -237,6 +238,173 @@ def write_console_config(cfg: dict) -> None:
         os.chmod(CONSOLE_CONFIG_FILE, 0o600)
     except Exception:
         pass
+
+
+def _read_keyboard_config() -> dict:
+    cfg = _read_json(KEYBOARD_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_keyboard_config(cfg: dict) -> None:
+    _write_json_atomic(KEYBOARD_CONFIG_FILE, cfg)
+    try:
+        os.chmod(KEYBOARD_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def _parse_shell_kv(path: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        raw = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception:
+        return out
+    for ln in raw:
+        s = ln.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        k, v = s.split("=", 1)
+        k = k.strip()
+        v = v.strip().strip('"').strip("'")
+        if not k:
+            continue
+        out[k] = v
+    return out
+
+
+def keyboard_status() -> dict:
+    kb = _parse_shell_kv("/etc/default/keyboard")
+    layout = (kb.get("XKBLAYOUT") or "").strip() or "uk"
+    variant = (kb.get("XKBVARIANT") or "").strip()
+    options = (kb.get("XKBOPTIONS") or "").strip()
+
+    prompted = bool(_read_keyboard_config().get("prompted"))
+
+    console_failed = False
+    try:
+        proc = subprocess.run(["systemctl", "is-failed", "console-setup.service"], capture_output=True, text=True, timeout=2)
+        console_failed = proc.returncode == 0
+    except Exception:
+        console_failed = False
+
+    vc_keymap = ""
+    try:
+        proc = subprocess.run(["localectl", "status"], capture_output=True, text=True, timeout=3)
+        for ln in (proc.stdout or "").splitlines():
+            if "VC Keymap:" in ln:
+                vc_keymap = ln.split("VC Keymap:", 1)[1].strip()
+                break
+    except Exception:
+        vc_keymap = ""
+
+    needs_setup = console_failed or (vc_keymap.strip() in {"", "(unset)"})
+
+    common = [
+        {"layout": "uk", "label": "UK (QWERTY)"},
+        {"layout": "us", "label": "US (QWERTY)"},
+        {"layout": "fr", "label": "French (AZERTY)"},
+        {"layout": "be", "label": "Belgian (AZERTY)"},
+        {"layout": "de", "label": "German (QWERTZ)"},
+        {"layout": "es", "label": "Spanish"},
+        {"layout": "it", "label": "Italian"},
+        {"layout": "nl", "label": "Dutch"},
+        {"layout": "pt", "label": "Portuguese"},
+        {"layout": "se", "label": "Swedish"},
+        {"layout": "no", "label": "Norwegian"},
+        {"layout": "dk", "label": "Danish"},
+    ]
+
+    return {
+        "ok": True,
+        "layout": layout,
+        "variant": variant,
+        "options": options,
+        "prompted": prompted,
+        "vc_keymap": vc_keymap,
+        "console_setup_failed": console_failed,
+        "needs_setup": bool(needs_setup),
+        "common": common,
+        "default_layout": "uk",
+    }
+
+
+_LAYOUT_RE = re.compile(r"^[a-z0-9]+(?:,[a-z0-9]+)*$")
+
+
+def keyboard_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    cfg = _read_keyboard_config()
+
+    if "prompted" in body and "layout" not in body:
+        cfg["prompted"] = bool(body.get("prompted"))
+        _write_keyboard_config(cfg)
+        st = keyboard_status()
+        st["ok"] = True
+        return st
+
+    layout = str(body.get("layout") or "").strip().lower()
+    if not layout:
+        return {"ok": False, "error": "missing layout"}
+    if not _LAYOUT_RE.match(layout):
+        return {"ok": False, "error": "invalid layout"}
+
+    # Write Debian keyboard defaults (used by setupcon/console-setup).
+    Path("/etc/default").mkdir(parents=True, exist_ok=True)
+    Path("/etc/default/keyboard").write_text(
+        "\n".join(
+            [
+                "# KEYBOARD CONFIGURATION FILE",
+                'XKBMODEL="pc105"',
+                f'XKBLAYOUT="{layout}"',
+                'XKBVARIANT=""',
+                'XKBOPTIONS=""',
+                'BACKSPACE="guess"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    if not Path("/etc/default/console-setup").is_file():
+        Path("/etc/default/console-setup").write_text(
+            "\n".join(
+                [
+                    'ACTIVE_CONSOLES="/dev/tty[1-6]"',
+                    'CHARMAP="UTF-8"',
+                    'CODESET="Lat15"',
+                    'FONTFACE="Fixed"',
+                    'FONTSIZE="16"',
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    # Apply immediately (best effort; don't brick the UI if any step fails).
+    try:
+        subprocess.run(["localectl", "set-keymap", layout], check=False, timeout=8)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["localectl", "set-x11-keymap", layout, "pc105"], check=False, timeout=8)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["setupcon", "--force"], check=False, timeout=25)
+    except Exception:
+        pass
+    try:
+        subprocess.run(["systemctl", "restart", "console-setup.service"], check=False, timeout=10)
+    except Exception:
+        pass
+
+    cfg["prompted"] = True
+    _write_keyboard_config(cfg)
+    st = keyboard_status()
+    st["ok"] = True
+    return st
 
 
 def _console_unit_for_user(user: str) -> str:
@@ -6289,6 +6457,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
                 return
+            if path == "/api/v0/auth/keyboard":
+                json_response(self, HTTPStatus.OK, keyboard_status())
+                return
 
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
@@ -6325,6 +6496,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/console":
             json_response(self, HTTPStatus.OK, console_status())
+            return
+        if path == "/api/v0/system/keyboard":
+            json_response(self, HTTPStatus.OK, keyboard_status())
             return
 
         if path == "/api/v0/system/session":
@@ -6639,6 +6813,11 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, int(status), payload, headers=headers)
             return
 
+        if path == "/api/v0/auth/keyboard":
+            res = keyboard_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         if path.startswith("/api/v0/") and not current_user(self):
             json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
             return
@@ -6712,6 +6891,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             json_response(self, HTTPStatus.OK, console_status())
+            return
+
+        if path == "/api/v0/system/keyboard":
+            res = keyboard_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
         if path == "/api/v0/system/session":

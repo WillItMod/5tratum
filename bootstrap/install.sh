@@ -22,10 +22,14 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends \
   ca-certificates \
+  console-setup \
+  console-setup-linux \
   curl \
   cloud-guest-utils \
   gnupg \
   jq \
+  kbd \
+  keyboard-configuration \
   python3 \
   python3-yaml
 
@@ -35,6 +39,28 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 [Unit]
 ConditionPathExists=/dev/tty0
 EOF
+
+echo "[2.6/7] Setting default console keymap (UK) + UTF-8..."
+if [ ! -f /etc/default/keyboard ]; then
+  cat >/etc/default/keyboard <<'EOF'
+# KEYBOARD CONFIGURATION FILE
+XKBMODEL="pc105"
+XKBLAYOUT="uk"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+EOF
+fi
+if [ ! -f /etc/default/console-setup ]; then
+  cat >/etc/default/console-setup <<'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="Lat15"
+FONTFACE="Fixed"
+FONTSIZE="16"
+EOF
+fi
+setupcon --force >/dev/null 2>&1 || true
 
 if ! have docker; then
   echo "[2/6] Installing Docker Engine + Compose v2..."

@@ -174,6 +174,27 @@ cat >"${TARGET_MNT}/etc/systemd/system/console-setup.service.d/5tratumos.conf" <
 ConditionPathExists=/dev/tty0
 EOF
 
+# Ensure console-setup has noninteractive defaults so it doesn't fail on boot.
+if [ ! -f "${TARGET_MNT}/etc/default/keyboard" ]; then
+  cat >"${TARGET_MNT}/etc/default/keyboard" <<'EOF'
+# KEYBOARD CONFIGURATION FILE
+XKBMODEL="pc105"
+XKBLAYOUT="uk"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+EOF
+fi
+if [ ! -f "${TARGET_MNT}/etc/default/console-setup" ]; then
+  cat >"${TARGET_MNT}/etc/default/console-setup" <<'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="Lat15"
+FONTFACE="Fixed"
+FONTSIZE="16"
+EOF
+fi
+
 systemctl --root "${TARGET_MNT}" enable systemd-networkd systemd-resolved ssh >/dev/null 2>&1 || true
 
 if ! chroot "${TARGET_MNT}" id -u forge >/dev/null 2>&1; then

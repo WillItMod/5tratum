@@ -49,7 +49,19 @@ while :; do
   sleep 3
 done
 
-apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data openssh-server
+apt-get install -y --no-install-recommends \
+  ca-certificates \
+  console-setup \
+  console-setup-linux \
+  curl \
+  gnupg \
+  jq \
+  kbd \
+  keyboard-configuration \
+  openssh-server \
+  python3 \
+  python3-yaml \
+  xkb-data
 
 log "Making console-setup optional on headless/serial systems..."
 # On some VMs/serial-only installs, Debian's console-setup.service can fail noisily because
@@ -60,6 +72,28 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 [Unit]
 ConditionPathExists=/dev/tty0
 EOF
+
+log "Setting default console keymap (UK) + UTF-8..."
+if [ ! -f /etc/default/keyboard ]; then
+  cat >/etc/default/keyboard <<'EOF'
+# KEYBOARD CONFIGURATION FILE
+XKBMODEL="pc105"
+XKBLAYOUT="uk"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+EOF
+fi
+if [ ! -f /etc/default/console-setup ]; then
+  cat >/etc/default/console-setup <<'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="Lat15"
+FONTFACE="Fixed"
+FONTSIZE="16"
+EOF
+fi
+setupcon --force >/dev/null 2>&1 || true
 
 log "Installing kiosk packages (cage + chromium)..."
 apt-get install -y --no-install-recommends cage chromium || true

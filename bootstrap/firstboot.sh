@@ -24,6 +24,36 @@ EOF
   chmod 600 /etc/5tratumos/console.json || true
 fi
 
+# Ensure console keymap/font setup is configured non-interactively so console-setup.service doesn't fail on boot.
+# Default layout: UK (QWERTY). Users can later change this from the UI.
+if [ ! -f /etc/default/keyboard ]; then
+  cat >/etc/default/keyboard <<'EOF'
+# KEYBOARD CONFIGURATION FILE
+XKBMODEL="pc105"
+XKBLAYOUT="uk"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+EOF
+fi
+
+if [ ! -f /etc/default/console-setup ]; then
+  cat >/etc/default/console-setup <<'EOF'
+ACTIVE_CONSOLES="/dev/tty[1-6]"
+CHARMAP="UTF-8"
+CODESET="Lat15"
+FONTFACE="Fixed"
+FONTSIZE="16"
+EOF
+fi
+
+if command -v setupcon >/dev/null 2>&1; then
+  setupcon --force >/dev/null 2>&1 || true
+fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart console-setup.service >/dev/null 2>&1 || true
+fi
+
 # Default: enable kiosk mode (fullscreen local console) on hardware.
 # This is a no-op on headless systems because the service is gated by /dev/dri/card0.
 if [ -e /dev/dri/card0 ] && [ -f /opt/5tratumos/console/install.sh ]; then
