@@ -16,14 +16,15 @@ TTYVTDisallocate=yes
 StandardInput=tty
 StandardOutput=journal
 StandardError=journal
+Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=TRATUMOS_CONSOLE_URL=http://127.0.0.1/login.html
 Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/login.html
 Environment=TRATUMOS_CONSOLE_WAIT_SECS=90
-ExecCondition=/bin/bash -lc 'test -e /dev/dri/card0 -o -e /dev/fb0'
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8
 KillMode=mixed
+ExecCondition=/bin/bash -lc test -e /dev/dri/card0 -o -e /dev/fb0
 ExecStart=/usr/local/bin/5tratumos-console
 
 [Install]

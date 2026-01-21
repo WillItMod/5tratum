@@ -2,17 +2,8 @@
 set -euo pipefail
 
 DONE_FILE="/etc/5tratumos/firstboot.done"
-ISO_MARKER="/etc/5tratumos/installed-from-iso"
 
 mkdir -p /etc/5tratumos
-
-if [ -f "${ISO_MARKER}" ]; then
-  # Ensure fresh installs start with zero apps. (Defensive: the ISO should never ship apps in /opt/5tratumos/apps.)
-  rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
-  rm -f /var/lib/5tratumos/apps_installed.json 2>/dev/null || true
-  rm -f /etc/5tratumos/apps_pages.json /etc/5tratumos/desktop.json 2>/dev/null || true
-  rm -f "${ISO_MARKER}" 2>/dev/null || true
-fi
 
 if [ ! -s /etc/machine-id ]; then
   if command -v systemd-machine-id-setup >/dev/null 2>&1; then
@@ -33,54 +24,9 @@ EOF
   chmod 600 /etc/5tratumos/console.json || true
 fi
 
-# Ensure console keymap/font setup is configured non-interactively so console-setup.service doesn't fail on boot.
-# Default layout: UK (QWERTY). Debian XKB layout name is "gb" (not "uk").
-if [ ! -f /etc/default/keyboard ]; then
-  cat >/etc/default/keyboard <<'EOF'
-# KEYBOARD CONFIGURATION FILE
-XKBMODEL="pc105"
-XKBLAYOUT="gb"
-XKBVARIANT=""
-XKBOPTIONS=""
-BACKSPACE="guess"
-EOF
-fi
-
-if [ ! -f /etc/default/console-setup ]; then
-  cat >/etc/default/console-setup <<'EOF'
-ACTIVE_CONSOLES="/dev/tty[1-6]"
-CHARMAP="UTF-8"
-CODESET="Lat15"
-FONTFACE="Fixed"
-FONTSIZE="16"
-EOF
-fi
-
-if command -v setupcon >/dev/null 2>&1; then
-  setupcon --force >/dev/null 2>&1 || true
-fi
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl restart console-setup.service >/dev/null 2>&1 || true
-fi
-
-# Default: enable kiosk mode (fullscreen local console) when a local display is present.
-# Gate on either DRM (/dev/dri/card0) or framebuffer (/dev/fb0) so VMs without DRM still
-# install the X11 fallback.
-if [ -f /opt/5tratumos/console/install.sh ] && { [ -e /dev/dri/card0 ] || [ -e /dev/fb0 ]; }; then
-  need_console_install=0
-  if ! command -v cage >/dev/null 2>&1 || ! command -v chromium >/dev/null 2>&1; then
-    need_console_install=1
-  fi
-  if command -v systemd-detect-virt >/dev/null 2>&1 && systemd-detect-virt -q; then
-    if [ ! -x /usr/local/lib/5tratumos/5tratumos-x11-session ] || ! command -v xinit >/dev/null 2>&1; then
-      need_console_install=1
-    fi
-  fi
-
-  if [ "${need_console_install}" = "0" ]; then
-    # Deps already installed.
-    :
-  else
+# Default: enable kiosk mode (fullscreen local console) when a local display exists.
+# This is a no-op on headless systems.
+if ( [ -e /dev/dri/card0 ] || [ -e /dev/fb0 ] ) && [ -f /opt/5tratumos/console/install.sh ]; then
   # Bundles built on Windows may land with CRLF and without exec bits; normalize so installs work.
   if command -v sed >/dev/null 2>&1; then
     sed -i 's/\r$//' /opt/5tratumos/console/*.sh >/dev/null 2>&1 || true
@@ -96,7 +42,6 @@ if [ -f /opt/5tratumos/console/install.sh ] && { [ -e /dev/dri/card0 ] || [ -e /
       /bin/bash /opt/5tratumos/console/install.sh >/dev/null 2>&1 || true
   else
     ( /bin/bash /opt/5tratumos/console/install.sh || true ) >/dev/null 2>&1 &
-  fi
   fi
 fi
 

@@ -3,81 +3,27 @@ set -euo pipefail
 
 URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/login.html}"
 
-read_kv() {
-  local file="$1"
-  local key="$2"
-  [ -f "${file}" ] || return 1
-  local line
-  line="$(grep -E "^${key}=" "${file}" 2>/dev/null | head -n 1 || true)"
-  [ -n "${line}" ] || return 1
-  line="${line#${key}=}"
-  line="${line%\"}"
-  line="${line#\"}"
-  printf '%s' "${line}"
-  return 0
-}
-
-lang=""
-if [ -z "${TRATUMOS_CONSOLE_LANG:-}" ] && [ -f /etc/default/locale ]; then
-  lang="$(read_kv /etc/default/locale LANG || true)"
-  lang="${lang%%.*}"
-  lang="${lang/_/-}"
-fi
-if [ -n "${TRATUMOS_CONSOLE_LANG:-}" ]; then
-  lang="${TRATUMOS_CONSOLE_LANG}"
-fi
-if [ "${lang}" = "C" ] || [ "${lang}" = "POSIX" ]; then
-  lang=""
-fi
-
-xset -dpms || true
-xset s off || true
-xset s noblank || true
-
+# Basic X11 kiosk session that is resilient in virtualized environments (Proxmox/noVNC/SPICE).
+# Keep this minimal: avoid Chromium extensions or extra flags that can cause a blank window.
 if command -v matchbox-window-manager >/dev/null 2>&1; then
-  matchbox-window-manager -use_cursor no >/dev/null 2>&1 &
+  matchbox-window-manager -use_titlebar no >/dev/null 2>&1 &
 fi
 
 chromium_args=(
-  "--kiosk"
+  "--app=${URL}"
+  "--ozone-platform=x11"
   "--noerrdialogs"
-  "--disable-translate"
-  "--disable-features=TranslateUI"
-  "--disable-session-crashed-bubble"
-  "--disable-infobars"
   "--no-first-run"
   "--no-default-browser-check"
+  "--disable-session-crashed-bubble"
+  "--disable-infobars"
+  "--disable-features=TranslateUI"
+  "--disable-translate"
   "--autoplay-policy=no-user-gesture-required"
 )
 
-if [ -n "${lang}" ]; then
-  chromium_args+=("--lang=${lang}")
-fi
+# Prefer software rendering for broad compatibility (especially in VMs).
+chromium_args+=("--disable-gpu" "--use-gl=swiftshader")
 
-if [ "${TRATUMOS_CONSOLE_SWGL:-0}" = "1" ]; then
-  chromium_args+=("--disable-gpu" "--use-gl=swiftshader")
-  export LIBGL_ALWAYS_SOFTWARE=1
-fi
+exec /usr/bin/chromium "${chromium_args[@]}"
 
-if [ "${TRATUMOS_CONSOLE_ENABLE_LOGGING:-0}" = "1" ]; then
-  chromium_args+=("--enable-logging=stderr" "--v=1")
-fi
-
-if [ -n "${TRATUMOS_CONSOLE_CHROMIUM_FLAGS:-}" ]; then
-  # shellcheck disable=SC2206
-  chromium_args+=(${TRATUMOS_CONSOLE_CHROMIUM_FLAGS})
-fi
-
-chromium_bin="${TRATUMOS_CONSOLE_CHROMIUM_BIN:-}"
-if [ -z "${chromium_bin}" ]; then
-  chromium_bin="$(command -v chromium 2>/dev/null || true)"
-  if [ -z "${chromium_bin}" ]; then
-    chromium_bin="$(command -v chromium-browser 2>/dev/null || true)"
-  fi
-fi
-if [ -z "${chromium_bin}" ] || [ ! -x "${chromium_bin}" ]; then
-  echo "[5tratumos-x11-session] chromium not found (expected chromium or chromium-browser)" >&2
-  exit 1
-fi
-
-exec "${chromium_bin}" "${chromium_args[@]}" "${URL}"

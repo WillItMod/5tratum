@@ -575,22 +575,14 @@ PY
           sync_one "${slot}" "${url}" "${url_fallback}"
         }
 
-        main_private="${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}"
-        dev_private="${FIVETRATUMOS_DEV_STORE_PRIVATE:-${main_private}}"
-
         if [ "${target}" = "all" ] || [ -z "${target}" ]; then
-          if [ "${main_private}" = "1" ]; then
+          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}" = "1" ]; then
             sync_one_github_private "main" "${main_repo}" "${main_branch}"
-          else
-            sync_one "main" "${main_url}" "${main_url_fallback}"
-          fi
-
-          if [ "${dev_private}" = "1" ]; then
             sync_one_github_private "dev" "${dev_repo}" "${dev_branch}"
           else
+            sync_one "main" "${main_url}" "${main_url_fallback}"
             sync_one "dev" "${dev_url}" "${dev_url_fallback}"
           fi
-
           sync_one "global" "${global_url}" "${global_url_fallback}"
           while IFS= read -r slot; do
             [ -n "${slot}" ] || continue
@@ -603,13 +595,13 @@ PY
           done < <(custom_store_slots)
           sync_global_assets
         elif [ "${target}" = "main" ]; then
-          if [ "${main_private}" = "1" ]; then
+          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}" = "1" ]; then
             sync_one_github_private "main" "${main_repo}" "${main_branch}"
           else
             sync_one "main" "${main_url}" "${main_url_fallback}"
           fi
         elif [ "${target}" = "dev" ]; then
-          if [ "${dev_private}" = "1" ]; then
+          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}" = "1" ]; then
             sync_one_github_private "dev" "${dev_repo}" "${dev_branch}"
           else
             sync_one "dev" "${dev_url}" "${dev_url_fallback}"

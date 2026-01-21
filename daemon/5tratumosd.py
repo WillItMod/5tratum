@@ -78,7 +78,6 @@ DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
-KEYBOARD_CONFIG_FILE = str(_env("KEYBOARD_CONFIG_FILE", "/etc/5tratumos/keyboard.json") or "/etc/5tratumos/keyboard.json")
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
 WATCHDOG_CONFIG_FILE = str(_env("WATCHDOG_CONFIG_FILE", "/etc/5tratumos/watchdog.json") or "/etc/5tratumos/watchdog.json")
 UI_CONFIG_FILE = str(_env("UI_CONFIG_FILE", "/etc/5tratumos/ui.json") or "/etc/5tratumos/ui.json")
@@ -238,176 +237,6 @@ def write_console_config(cfg: dict) -> None:
         os.chmod(CONSOLE_CONFIG_FILE, 0o600)
     except Exception:
         pass
-
-
-def _read_keyboard_config() -> dict:
-    cfg = _read_json(KEYBOARD_CONFIG_FILE)
-    return cfg if isinstance(cfg, dict) else {}
-
-
-def _write_keyboard_config(cfg: dict) -> None:
-    _write_json_atomic(KEYBOARD_CONFIG_FILE, cfg)
-    try:
-        os.chmod(KEYBOARD_CONFIG_FILE, 0o600)
-    except Exception:
-        pass
-
-
-def _parse_shell_kv(path: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    try:
-        raw = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
-    except Exception:
-        return out
-    for ln in raw:
-        s = ln.strip()
-        if not s or s.startswith("#") or "=" not in s:
-            continue
-        k, v = s.split("=", 1)
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-        if not k:
-            continue
-        out[k] = v
-    return out
-
-
-def keyboard_status() -> dict:
-    kb = _parse_shell_kv("/etc/default/keyboard")
-    layout = (kb.get("XKBLAYOUT") or "").strip() or "gb"
-    variant = (kb.get("XKBVARIANT") or "").strip()
-    options = (kb.get("XKBOPTIONS") or "").strip()
-
-    prompted = bool(_read_keyboard_config().get("prompted"))
-
-    console_failed = False
-    try:
-        proc = subprocess.run(["systemctl", "is-failed", "console-setup.service"], capture_output=True, text=True, timeout=2)
-        console_failed = proc.returncode == 0
-    except Exception:
-        console_failed = False
-
-    vc_keymap = ""
-    try:
-        proc = subprocess.run(["localectl", "status"], capture_output=True, text=True, timeout=3)
-        for ln in (proc.stdout or "").splitlines():
-            if "VC Keymap:" in ln:
-                vc_keymap = ln.split("VC Keymap:", 1)[1].strip()
-                break
-    except Exception:
-        vc_keymap = ""
-
-    needs_setup = console_failed or (vc_keymap.strip() in {"", "(unset)"})
-
-    common = [
-        {"layout": "gb", "label": "UK (QWERTY)"},
-        {"layout": "us", "label": "US (QWERTY)"},
-        {"layout": "fr", "label": "French (AZERTY)"},
-        {"layout": "be", "label": "Belgian (AZERTY)"},
-        {"layout": "de", "label": "German (QWERTZ)"},
-        {"layout": "es", "label": "Spanish"},
-        {"layout": "it", "label": "Italian"},
-        {"layout": "nl", "label": "Dutch"},
-        {"layout": "pt", "label": "Portuguese"},
-        {"layout": "se", "label": "Swedish"},
-        {"layout": "no", "label": "Norwegian"},
-        {"layout": "dk", "label": "Danish"},
-    ]
-
-    return {
-        "ok": True,
-        "layout": layout,
-        "variant": variant,
-        "options": options,
-        "prompted": prompted,
-        "vc_keymap": vc_keymap,
-        "console_setup_failed": console_failed,
-        "needs_setup": bool(needs_setup),
-        "common": common,
-        "default_layout": "gb",
-    }
-
-
-_LAYOUT_RE = re.compile(r"^[a-z0-9]+(?:,[a-z0-9]+)*$")
-
-
-def keyboard_set(body: dict) -> dict:
-    if not isinstance(body, dict):
-        return {"ok": False, "error": "invalid body"}
-
-    cfg = _read_keyboard_config()
-
-    if "prompted" in body and "layout" not in body:
-        cfg["prompted"] = bool(body.get("prompted"))
-        _write_keyboard_config(cfg)
-        st = keyboard_status()
-        st["ok"] = True
-        return st
-
-    layout = str(body.get("layout") or "").strip().lower()
-    if not layout:
-        return {"ok": False, "error": "missing layout"}
-    # Friendly alias: people say "uk" but Debian/XKB uses "gb".
-    if layout == "uk":
-        layout = "gb"
-    if not _LAYOUT_RE.match(layout):
-        return {"ok": False, "error": "invalid layout"}
-
-    # Write Debian keyboard defaults (used by setupcon/console-setup).
-    Path("/etc/default").mkdir(parents=True, exist_ok=True)
-    Path("/etc/default/keyboard").write_text(
-        "\n".join(
-            [
-                "# KEYBOARD CONFIGURATION FILE",
-                'XKBMODEL="pc105"',
-                f'XKBLAYOUT="{layout}"',
-                'XKBVARIANT=""',
-                'XKBOPTIONS=""',
-                'BACKSPACE="guess"',
-                "",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    if not Path("/etc/default/console-setup").is_file():
-        Path("/etc/default/console-setup").write_text(
-            "\n".join(
-                [
-                    'ACTIVE_CONSOLES="/dev/tty[1-6]"',
-                    'CHARMAP="UTF-8"',
-                    'CODESET="Lat15"',
-                    'FONTFACE="Fixed"',
-                    'FONTSIZE="16"',
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
-
-    # Apply immediately (best effort; don't brick the UI if any step fails).
-    try:
-        subprocess.run(["localectl", "set-keymap", layout], check=False, timeout=8)
-    except Exception:
-        pass
-    try:
-        subprocess.run(["localectl", "set-x11-keymap", layout, "pc105"], check=False, timeout=8)
-    except Exception:
-        pass
-    try:
-        subprocess.run(["setupcon", "--force"], check=False, timeout=25)
-    except Exception:
-        pass
-    try:
-        subprocess.run(["systemctl", "restart", "console-setup.service"], check=False, timeout=10)
-    except Exception:
-        pass
-
-    cfg["prompted"] = True
-    _write_keyboard_config(cfg)
-    st = keyboard_status()
-    st["ok"] = True
-    return st
 
 
 def _console_unit_for_user(user: str) -> str:
@@ -873,11 +702,6 @@ def store_custom_channels() -> list[str]:
 
 def allowed_store_channels() -> set[str]:
     return {"main", "dev", "global", *store_custom_channels()}
-
-
-def allowed_store_channels_ordered() -> list[str]:
-    # Keep lookups deterministic and prefer built-in channels before custom slots.
-    return ["main", "dev", "global", *store_custom_channels()]
 
 
 def _read_session_config() -> dict:
@@ -3505,7 +3329,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                     # (Updates previously only copied the console files but never ran the installer.)
                     try:
                         console_dir = os.path.join(ROOT_DIR, "console")
-                        for name in ("install.sh", "5tratumos-console.sh"):
+                        for name in ("install.sh", "5tratumos-console.sh", "5tratumos-x11-session.sh"):
                             p = os.path.join(console_dir, name)
                             if os.path.isfile(p):
                                 _normalize_crlf_inplace(p)
@@ -3513,8 +3337,8 @@ def system_update_apply(channel: str | None = None) -> dict:
                                     os.chmod(p, 0o755)
                                 except Exception:
                                     pass
-                        has_local_display = os.path.exists("/dev/dri/card0") or os.path.exists("/dev/fb0")
-                        if has_local_display and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
+                        has_display = os.path.exists("/dev/dri/card0") or os.path.exists("/dev/fb0")
+                        if has_display and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
                             if shutil.which("systemd-run"):
                                 run_cmd(
                                     [
@@ -4575,17 +4399,7 @@ def store_app_by_id(app_id: str) -> dict | None:
     app_id = (app_id or "").strip().lower()
     if not app_id:
         return None
-    # If the app is installed, prefer its recorded channel to avoid scanning every store on disk.
-    try:
-        preferred_ch = str(read_app_install_meta(app_id).get("channel") or "").strip().lower()
-    except Exception:
-        preferred_ch = ""
-    if preferred_ch:
-        found = store_app_by_id_in_channel(app_id, preferred_ch)
-        if found:
-            return found
-
-    for ch in allowed_store_channels_ordered():
+    for ch in allowed_store_channels():
         res = list_store_apps(ch)
         if not res.get("ok"):
             continue
@@ -4762,14 +4576,13 @@ def list_app_widgets() -> dict:
             if not isinstance(widgets, list) or not widgets:
                 continue
 
-            port: int | None = None
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            port = sp or None
+            port = default_ui_ports(app_id)
             if port is None:
-                port = default_ui_ports(app_id)
+                try:
+                    sp = int(str(store_meta.get("port") or "").strip() or "0")
+                except Exception:
+                    sp = 0
+                port = sp or None
 
             project = docker_compose_project(app_id)
             st = summarize_project_status(project)
@@ -4810,23 +4623,21 @@ def list_app_widgets() -> dict:
             apps_out.append(app_entry)
 
         if widget_tasks:
-            fut_to_widget = {t[0]: t[1] for t in widget_tasks}
-            done_futs: set[concurrent.futures.Future] = set()
-            try:
-                for fut in concurrent.futures.as_completed(fut_to_widget, timeout=1.5):
-                    done_futs.add(fut)
-                    widget = fut_to_widget.get(fut) or {}
+            done, pending = concurrent.futures.wait(
+                [t[0] for t in widget_tasks],
+                timeout=1.5,
+                return_when=concurrent.futures.ALL_COMPLETED,
+            )
+            for fut, widget in widget_tasks:
+                if fut in done:
                     try:
                         widget["data"] = fut.result()
                         widget["ok"] = True
                     except Exception as e:
                         widget["error"] = str(e)
-            except concurrent.futures.TimeoutError:
-                pass
-
-            for fut, widget in widget_tasks:
-                if fut not in done_futs and not widget.get("ok"):
+                else:
                     widget["error"] = "timeout"
+                    fut.cancel()
 
     _WIDGET_CACHE["widgets"] = {"time": now, "apps": apps_out}
     return {"ok": True, "time": _now_iso(), "apps": apps_out}
@@ -4856,14 +4667,13 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         if not coin:
             coin = app_id.upper()
 
-        port: int | None = None
-        try:
-            sp = int(str(store_meta.get("port") or "").strip() or "0")
-        except Exception:
-            sp = 0
-        port = sp or None
+        port = default_ui_ports(app_id)
         if port is None:
-            port = default_ui_ports(app_id)
+            try:
+                sp = int(str(store_meta.get("port") or "").strip() or "0")
+            except Exception:
+                sp = 0
+            port = sp or None
 
         project = docker_compose_project(app_id)
         st = summarize_project_status(project)
@@ -5128,15 +4938,15 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 details.append({"app_id": app_id, "coin": coin, **_normalize_worker_fields(w)})
         return entry, details
 
-    app_ids = list_installed_app_ids()
-    max_workers = min(16, max(4, len(app_ids)))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(_fetch_pool, app_id) for app_id in app_ids]
-        for fut in concurrent.futures.as_completed(futures):
-            try:
-                entry, details = fut.result()
-            except Exception:
-                continue
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        futures = [pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
+        done, pending = concurrent.futures.wait(
+            futures,
+            timeout=1.8,
+            return_when=concurrent.futures.ALL_COMPLETED,
+        )
+        for fut in done:
+            entry, details = fut.result()
             if not entry:
                 continue
             pools.append(entry)
@@ -5152,6 +4962,8 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             for w in details:
                 if isinstance(w, dict):
                     workers_out.append(w)
+        for fut in pending:
+            fut.cancel()
 
     def worker_hashrate_key(w: dict) -> float:
         for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
@@ -6522,9 +6334,6 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
                 return
-            if path == "/api/v0/auth/keyboard":
-                json_response(self, HTTPStatus.OK, keyboard_status())
-                return
 
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
@@ -6561,9 +6370,6 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/console":
             json_response(self, HTTPStatus.OK, console_status())
-            return
-        if path == "/api/v0/system/keyboard":
-            json_response(self, HTTPStatus.OK, keyboard_status())
             return
 
         if path == "/api/v0/system/session":
@@ -6878,11 +6684,6 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, int(status), payload, headers=headers)
             return
 
-        if path == "/api/v0/auth/keyboard":
-            res = keyboard_set(body if isinstance(body, dict) else {})
-            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
-            return
-
         if path.startswith("/api/v0/") and not current_user(self):
             json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
             return
@@ -6956,11 +6757,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             json_response(self, HTTPStatus.OK, console_status())
-            return
-
-        if path == "/api/v0/system/keyboard":
-            res = keyboard_set(body if isinstance(body, dict) else {})
-            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
         if path == "/api/v0/system/session":

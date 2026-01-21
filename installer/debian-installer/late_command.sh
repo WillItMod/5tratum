@@ -34,14 +34,6 @@ if [ -f /etc/apt/sources.list ]; then
 fi
 rm -f /etc/apt/sources.list.d/cdrom.list || true
 
-log "Ensuring firmware repos are enabled (non-free-firmware + non-free)..."
-if [ -f /etc/apt/sources.list ]; then
-  # Ensure common components are present so WiFi/Ethernet firmware packages can install.
-  sed -i 's/\bmain\b/main contrib non-free-firmware non-free/g' /etc/apt/sources.list || true
-  # De-duplicate if the line already contained some components.
-  sed -i 's/ contrib contrib/ contrib/g; s/ non-free-firmware non-free-firmware/ non-free-firmware/g; s/ non-free non-free/ non-free/g' /etc/apt/sources.list || true
-fi
-
 log "Installing base packages..."
 export DEBIAN_FRONTEND=noninteractive
 tries=0
@@ -57,60 +49,7 @@ while :; do
   sleep 3
 done
 
-apt-get install -y --no-install-recommends \
-  ca-certificates \
-  cage \
-  chromium \
-  console-setup \
-  console-setup-linux \
-  curl \
-  ethtool \
-  firmware-atheros \
-  firmware-brcm80211 \
-  firmware-iwlwifi \
-  firmware-linux \
-  firmware-linux-nonfree \
-  firmware-misc-nonfree \
-  firmware-realtek \
-  gnupg \
-  iw \
-  jq \
-  kbd \
-  keyboard-configuration \
-  pciutils \
-  matchbox-window-manager \
-  network-manager \
-  openssh-server \
-  python3 \
-  python3-yaml \
-  rfkill \
-  usbutils \
-  x11-xserver-utils \
-  xinit \
-  xkb-data \
-  xserver-xorg-core \
-  xserver-xorg-video-fbdev \
-  xserver-xorg-video-qxl \
-  xserver-xorg-video-vesa
-
-log "Installing extra firmware (best-effort)..."
-# Keep these optional so the installer doesn't fail if Debian renames/splits firmware packages.
-extras=""
-for pkg in \
-  firmware-ath9k-htc \
-  firmware-bnx2 \
-  firmware-bnx2x \
-  firmware-libertas \
-  firmware-ralink \
-  firmware-ti-connectivity \
-  firmware-zd1211; do
-  if apt-cache show "${pkg}" >/dev/null 2>&1; then
-    extras="${extras} ${pkg}"
-  fi
-done
-if [ -n "${extras}" ]; then
-  apt-get install -y --no-install-recommends ${extras} >/dev/null 2>&1 || true
-fi
+apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data openssh-server
 
 log "Making console-setup optional on headless/serial systems..."
 # On some VMs/serial-only installs, Debian's console-setup.service can fail noisily because
@@ -122,46 +61,8 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 ConditionPathExists=/dev/tty0
 EOF
 
-log "Setting default console keymap (UK) + UTF-8..."
-if [ ! -f /etc/default/keyboard ]; then
-  cat >/etc/default/keyboard <<'EOF'
-# KEYBOARD CONFIGURATION FILE
-XKBMODEL="pc105"
-XKBLAYOUT="gb"
-XKBVARIANT=""
-XKBOPTIONS=""
-BACKSPACE="guess"
-EOF
-fi
-if [ ! -f /etc/default/console-setup ]; then
-  cat >/etc/default/console-setup <<'EOF'
-ACTIVE_CONSOLES="/dev/tty[1-6]"
-CHARMAP="UTF-8"
-CODESET="Lat15"
-FONTFACE="Fixed"
-FONTSIZE="16"
-EOF
-fi
-setupcon --force >/dev/null 2>&1 || true
-
-log "Installing kiosk packages (cage + chromium + X11 fallback)..."
-# Wayland (cage) works best on bare metal with DRM.
-# In VMs (Proxmox/qemu), Chromium often needs an X11 fallback via xinit+Xorg.
-apt-get install -y --no-install-recommends \
-  cage \
-  chromium \
-  matchbox-window-manager \
-  x11-xserver-utils \
-  xinit \
-  xserver-xorg-core \
-  xserver-xorg-input-libinput \
-  xserver-xorg-legacy \
-  xserver-xorg-video-fbdev \
-  xserver-xorg-video-vesa \
-  xserver-xorg-video-qxl
-
-log "Enabling NetworkManager (for WiFi + robust DHCP)..."
-SYSTEMD_OFFLINE=1 systemctl enable NetworkManager.service >/dev/null 2>&1 || true
+log "Installing kiosk packages (cage + chromium)..."
+apt-get install -y --no-install-recommends cage chromium || true
 
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.
@@ -206,49 +107,28 @@ fi
 install -d -m 0755 /var/lib/5tratumos/apps
 install -d -m 0755 /etc/5tratumos
 
-# Fresh installs must not ship with any apps pre-installed. (Only app templates live under apps-available.)
-install -d -m 0755 /opt/5tratumos/apps
-rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
-rm -f /var/lib/5tratumos/apps_installed.json 2>/dev/null || true
-
-# Marker for first boot tasks (one-time cleanup + migration helpers).
-date -u +"%Y-%m-%dT%H:%M:%SZ" >/etc/5tratumos/installed-from-iso
-chmod 600 /etc/5tratumos/installed-from-iso >/dev/null 2>&1 || true
-
-# Stamp build info so the UI doesn't show "version unknown" after ISO installs.
-build_tag=""
-build_repo="WillItMod/5tratum"
-build_channel="main"
-if [ -f /cdrom/5tratumos/build.json ] && command -v jq >/dev/null 2>&1; then
-  build_tag="$(jq -r '.tag // empty' /cdrom/5tratumos/build.json 2>/dev/null || true)"
-  build_repo="$(jq -r '.repo // empty' /cdrom/5tratumos/build.json 2>/dev/null || true)"
-  build_channel="$(jq -r '.channel // empty' /cdrom/5tratumos/build.json 2>/dev/null || true)"
-fi
-build_tag="${build_tag:-unknown}"
-build_repo="${build_repo:-WillItMod/5tratum}"
-build_channel="${build_channel:-main}"
-installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-cat >/etc/5tratumos/build.json <<JSON
-{"tag":"${build_tag}","repo":"${build_repo}","channel":"${build_channel}","installed_at":"${installed_at}"}
-JSON
-
 # Optional: install a GitHub token from removable media (for private update repos).
 # Safer than embedding it into update.json because it's stored in a dedicated 0600 file.
-for tok in /cdrom/update.token /cdrom/update_token /cdrom/5tratumos/update.token /cdrom/5tratumos/update_token; do
+for tok in /cdrom/update.token /cdrom/5tratumos/update.token; do
   if [ -f "${tok}" ]; then
     install -m 0600 "${tok}" /etc/5tratumos/update.token || true
     break
   fi
 done
 
+# Embed build metadata if present on install media (prevents "version unknown" on first boot).
+if [ -f /cdrom/5tratumos/build.json ]; then
+  install -m 0644 /cdrom/5tratumos/build.json /etc/5tratumos/build.json || true
+fi
+
 if [ -f "${STAGE_DIR}/bin/5tratumos" ]; then
   install -m 0755 "${STAGE_DIR}/bin/5tratumos" /usr/local/bin/5tratumos
 fi
 
-# Ensure update channel + repo defaults to the ISO's build metadata.
-echo "${build_channel}" >/etc/5tratumos/channel
-cat >/etc/5tratumos/update.json <<JSON
-{"repo":"${build_repo}","token":""}
+# Ensure update channel defaults to main and update repo is public repo.
+echo "main" >/etc/5tratumos/channel
+cat >/etc/5tratumos/update.json <<'JSON'
+{"repo":"WillItMod/5tratum","token":""}
 JSON
 
 # Install/enable systemd units shipped in the bundle.
@@ -263,14 +143,10 @@ fi
 if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
-  install -d -m 0755 /usr/local/lib/5tratumos
   if [ -f "${STAGE_DIR}/console/5tratumos-x11-session.sh" ]; then
+    install -d -m 0755 /usr/local/lib/5tratumos
     install -m 0755 "${STAGE_DIR}/console/5tratumos-x11-session.sh" /usr/local/lib/5tratumos/5tratumos-x11-session
-  elif [ -f /opt/5tratumos/console/5tratumos-x11-session.sh ]; then
-    install -m 0755 /opt/5tratumos/console/5tratumos-x11-session.sh /usr/local/lib/5tratumos/5tratumos-x11-session
   fi
-  # Normalize CRLF line endings in case the bundle was built on Windows.
-  sed -i 's/\r$//' /usr/local/bin/5tratumos-console /etc/systemd/system/5tratumos-console@.service /usr/local/lib/5tratumos/5tratumos-x11-session 2>/dev/null || true
   for grp in video input render; do
     if getent group "${grp}" >/dev/null 2>&1; then
       usermod -aG "${grp}" forge >/dev/null 2>&1 || true
@@ -286,9 +162,7 @@ fi
 
 # systemctl inside installer chroot should run offline (systemd isn't PID1 yet).
 SYSTEMD_OFFLINE=1 systemctl enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service
-if [ -f /etc/systemd/system/5tratumos-firstboot-update.service ]; then
-  SYSTEMD_OFFLINE=1 systemctl enable 5tratumos-firstboot-update.service >/dev/null 2>&1 || true
-fi
+SYSTEMD_OFFLINE=1 systemctl enable 5tratumos-firstboot-update.service >/dev/null 2>&1 || true
 
 log "Applying basic kiosk-friendly defaults (sleep disabled)..."
 install -d -m 0755 /etc/systemd/logind.conf.d
@@ -304,5 +178,6 @@ SYSTEMD_OFFLINE=1 systemctl mask sleep.target suspend.target hibernate.target hy
 
 log "Cleanup..."
 rm -rf "${TMP_DIR}"
+rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
 
 log "5tratumOS installation complete."

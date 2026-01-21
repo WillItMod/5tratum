@@ -22,22 +22,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends \
   ca-certificates \
-  console-setup \
-  console-setup-linux \
   curl \
   cloud-guest-utils \
-  firmware-atheros \
-  firmware-brcm80211 \
-  firmware-iwlwifi \
-  firmware-linux \
-  firmware-linux-nonfree \
-  firmware-misc-nonfree \
-  firmware-realtek \
   gnupg \
   jq \
-  kbd \
-  keyboard-configuration \
-  network-manager \
   python3 \
   python3-yaml
 
@@ -47,31 +35,6 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 [Unit]
 ConditionPathExists=/dev/tty0
 EOF
-
-echo "[2.6/7] Setting default console keymap (UK) + UTF-8..."
-if [ ! -f /etc/default/keyboard ]; then
-  cat >/etc/default/keyboard <<'EOF'
-# KEYBOARD CONFIGURATION FILE
-XKBMODEL="pc105"
-XKBLAYOUT="gb"
-XKBVARIANT=""
-XKBOPTIONS=""
-BACKSPACE="guess"
-EOF
-fi
-if [ ! -f /etc/default/console-setup ]; then
-  cat >/etc/default/console-setup <<'EOF'
-ACTIVE_CONSOLES="/dev/tty[1-6]"
-CHARMAP="UTF-8"
-CODESET="Lat15"
-FONTFACE="Fixed"
-FONTSIZE="16"
-EOF
-fi
-setupcon --force >/dev/null 2>&1 || true
-
-echo "[2.7/7] Enabling NetworkManager..."
-systemctl enable --now NetworkManager.service >/dev/null 2>&1 || true
 
 if ! have docker; then
   echo "[2/6] Installing Docker Engine + Compose v2..."
@@ -132,9 +95,7 @@ fi
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
-if [ -f "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" ]; then
-  install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" /etc/systemd/system/5tratumos-firstboot-update.service
-fi
+install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" /etc/systemd/system/5tratumos-firstboot-update.service
 
 if [ -f "${SRC_ROOT}/console/5tratumos-console.sh" ] && [ -f "${SRC_ROOT}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${SRC_ROOT}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
@@ -151,9 +112,7 @@ systemctl daemon-reload
 systemctl enable --now 5tratumosd.service
 systemctl enable --now 5tratumos-overlay.service
 systemctl enable --now 5tratumos-firstboot.service
-if [ -f /etc/systemd/system/5tratumos-firstboot-update.service ]; then
-  systemctl enable 5tratumos-firstboot-update.service || true
-fi
+systemctl enable 5tratumos-firstboot-update.service >/dev/null 2>&1 || true
 
 echo "[5/7] Disabling sleep/suspend..."
 install -d -m 0755 /etc/systemd/logind.conf.d
