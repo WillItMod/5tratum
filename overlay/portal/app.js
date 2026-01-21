@@ -408,6 +408,7 @@
       id === 'axebch' ||
       id === 'axedgb' ||
       id === 'axebtc' ||
+      id === 'axebsv' ||
       id === 'axebtcf' ||
       id === 'axelive' ||
       id === 'axebench' ||
@@ -2527,6 +2528,11 @@
       refreshDiscordConfig().catch(() => {});
       refreshWatchdogConfig().catch(() => {});
       renderWidgetSettings();
+    }
+
+    if (activeViewKey === 'store') {
+      // Always sync when opening App Store so users don't install stale templates after first boot.
+      syncStoreOnOpen().catch(() => {});
     }
 
     if (activeViewKey === 'dashboard') renderWorkspace();
@@ -7146,6 +7152,38 @@
     }
   }
 
+  let storeOpenSyncInFlight = false;
+  let lastStoreOpenSyncAt = 0;
+  async function syncStoreOnOpen() {
+    const now = Date.now();
+    if (storeOpenSyncInFlight) return;
+    // Avoid thrashing when users click around quickly.
+    if (now - lastStoreOpenSyncAt < 4000) return;
+    lastStoreOpenSyncAt = now;
+    storeOpenSyncInFlight = true;
+    try {
+      // Disable installs while syncing to avoid installing stale templates.
+      const installedSet = new Set((installedAppsCache || []).map((a) => a.id));
+      renderStore(storeAppsCache, installedSet);
+    } catch {}
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const ch = String(activeStoreChannel || 'main').toLowerCase();
+      showToast('Syncing App Store...', null);
+      await apiJsonTimeout('/api/v0/store/sync', { method: 'POST', body: JSON.stringify({ channel: ch }) }, 900000);
+      await refreshStore();
+      showToast('App Store updated', null);
+    } catch (err) {
+      console.warn('Store sync on open failed', err);
+      showToast('App Store sync skipped (offline)', 'warn');
+      // Still refresh local cache so the UI renders consistently.
+      await refreshStore().catch(() => {});
+    } finally {
+      storeOpenSyncInFlight = false;
+    }
+  }
+
   async function syncStoreNow() {
     if (!btnStoreSync) return;
     if (btnStoreSync.disabled) return;
@@ -8595,9 +8633,10 @@
       if (!a || typeof a !== 'object') return false;
       const id = String(a.id || '').trim();
       if (!id) return false;
-      const meta = storeById.get(id);
-      if (!meta || typeof meta !== 'object') return false;
-      const w = meta.widgets;
+      // Prefer the app's resolved store metadata from /api/v0/apps/installed (works even if the
+      // current App Store channel doesn't include this app).
+      const store = a.store && typeof a.store === 'object' ? a.store : null;
+      const w = store ? store.widgets : null;
       return Array.isArray(w) && w.length > 0;
     });
 
@@ -8712,8 +8751,20 @@
           card.appendChild(top);
 
           if (type === 'text-with-progress') {
-            const progress = ok && data && typeof data.progress === 'number' ? data.progress : null;
-            const pct = typeof progress === 'number' && Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : null;
+            const rawProgress = ok && data ? (data.progress != null ? data.progress : data.percent != null ? data.percent : null) : null;
+            let progressNum = null;
+            if (typeof rawProgress === 'number') progressNum = rawProgress;
+            else if (typeof rawProgress === 'string') {
+              const n = Number(rawProgress);
+              if (Number.isFinite(n)) progressNum = n;
+            }
+            // Accept either a fraction (0..1) or a percentage (0..100).
+            let pct = null;
+            if (typeof progressNum === 'number' && Number.isFinite(progressNum)) {
+              if (progressNum > 1 && progressNum <= 100) pct = progressNum / 100;
+              else pct = progressNum;
+              pct = Math.max(0, Math.min(1, pct));
+            }
 
             const value = document.createElement('div');
             value.className = 'forgeos-widget__value';
@@ -9083,6 +9134,10 @@
         btnInstall.textContent = 'Install';
         btnInstall.dataset.defaultLabel = 'Install';
         btnInstall.dataset.progressId = id;
+        if (storeOpenSyncInFlight) {
+          btnInstall.disabled = true;
+          btnInstall.title = 'Syncing App Store...';
+        }
         btnInstall.addEventListener('click', async (e) => {
           e.stopPropagation();
           startProgress(id, 'install');

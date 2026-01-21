@@ -1666,23 +1666,47 @@ def system_storage_orphans(scan_sizes: bool = False) -> dict:
         except Exception:
             continue
 
-    # Orphan containers: 5tratumos-<app>-* where <app> not installed.
+    # Orphan containers: rely on compose project labels instead of parsing container names.
+    # Container names often include the service suffix (e.g. 5tratumos-axebch-app-1) which
+    # would be misidentified as "axebch-app" if we regex it. Use com.docker.compose.project.
     containers: list[dict] = []
-    proc = run_cmd(["docker", "ps", "-a", "--format", "{{.Names}}"], timeout_s=6)
+
+    def _app_id_from_project(project: str) -> str:
+        p = str(project or "").strip()
+        if not p:
+            return ""
+        low = p.lower()
+        for prefix in ("5tratumos-", "forgeos-"):
+            if low.startswith(prefix):
+                return low[len(prefix) :].strip("-")
+        return ""
+
+    proc = run_cmd(
+        ["docker", "ps", "-a", "--format", "{{.Names}}\t{{.Label \"com.docker.compose.project\"}}"],
+        timeout_s=6,
+    )
     if proc.returncode == 0:
         for ln in (proc.stdout or "").splitlines():
-            name = ln.strip()
+            raw = ln.rstrip("\n")
+            if not raw.strip():
+                continue
+            parts = raw.split("\t", 1)
+            name = parts[0].strip()
+            project = parts[1].strip() if len(parts) > 1 else ""
             if not name:
                 continue
-            if name.startswith("5tratumos-overlay-"):
+
+            app_id = _app_id_from_project(project)
+            if app_id == "overlay":
                 continue
-            m = re.match(r"^5tratumos-([a-z0-9][a-z0-9_-]*)-", name)
-            if not m:
+
+            # Only consider 5tratumOS/ForgeOS compose projects as managed.
+            if not app_id:
                 continue
-            aid = m.group(1)
-            if aid in installed:
+
+            if app_id in installed:
                 continue
-            containers.append({"name": name, "app_id": aid, "reason": "app not installed"})
+            containers.append({"name": name, "project": project, "app_id": app_id, "reason": "app not installed"})
 
     # "Safe" means we have some installed-app signal, OR there are no 5tratumos-* app containers
     # at all (so this looks like leftover data from old installs rather than a live system with
