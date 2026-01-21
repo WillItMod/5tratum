@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/}"
-HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/}"
+URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/login.html}"
+HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/login.html}"
 WAIT_SECS="${TRATUMOS_CONSOLE_WAIT_SECS:-90}"
+
+log() {
+  printf '[5tratumos-console] %s\n' "$*" >&2
+}
 
 read_kv() {
   local file="$1"
@@ -28,6 +32,9 @@ if [ -z "${TRATUMOS_CONSOLE_LANG:-}" ] && [ -f /etc/default/locale ]; then
     TRATUMOS_CONSOLE_LANG="${lang}"
   fi
 fi
+if [ "${TRATUMOS_CONSOLE_LANG:-}" = "C" ] || [ "${TRATUMOS_CONSOLE_LANG:-}" = "POSIX" ]; then
+  unset TRATUMOS_CONSOLE_LANG
+fi
 
 # Prefer system keyboard settings if present (Debian: /etc/default/keyboard).
 if [ -f /etc/default/keyboard ]; then
@@ -49,8 +56,66 @@ if command -v curl >/dev/null 2>&1; then
   done
 fi
 
+# Ensure Wayland/Xorg runtime dir is correct (systemd unit should not set it).
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+if [ ! -d "${XDG_RUNTIME_DIR}" ]; then
+  log "XDG_RUNTIME_DIR is missing: ${XDG_RUNTIME_DIR}"
+  exit 1
+fi
+
+detect_backend() {
+  local b="${TRATUMOS_CONSOLE_BACKEND:-}"
+  b="$(printf '%s' "${b}" | tr '[:upper:]' '[:lower:]' | tr -d ' \t\r\n')"
+  if [ -n "${b}" ]; then
+    printf '%s' "${b}"
+    return 0
+  fi
+  if command -v systemd-detect-virt >/dev/null 2>&1; then
+    if systemd-detect-virt -q; then
+      printf '%s' "x11"
+      return 0
+    fi
+  fi
+  if [ ! -e /dev/dri/card0 ]; then
+    printf '%s' "x11"
+    return 0
+  fi
+  printf '%s' "wayland"
+}
+
+backend="$(detect_backend)"
+log "backend=${backend}"
+
+if [ "${backend}" = "x11" ]; then
+  # In VMs, default to software GL to avoid white/blank Chromium windows.
+  if [ -z "${TRATUMOS_CONSOLE_SWGL:-}" ] && command -v systemd-detect-virt >/dev/null 2>&1; then
+    if systemd-detect-virt -q; then
+      export TRATUMOS_CONSOLE_SWGL=1
+    fi
+  fi
+  export XDG_SESSION_TYPE=x11
+  unset MOZ_ENABLE_WAYLAND || true
+  session="/usr/local/lib/5tratumos/5tratumos-x11-session"
+  if [ ! -x "${session}" ]; then
+    log "missing x11 session script: ${session}"
+    exit 1
+  fi
+  exec /usr/bin/xinit "${session}" -- :0 -nolisten tcp vt1 -keeptty
+fi
+
 export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
+
+# wlroots (cage) can fail to render on some virtual GPUs unless software rendering
+# and/or hardware cursors are disabled. Allow safe fallbacks by default.
+if [ "${TRATUMOS_CONSOLE_WLR_ALLOW_SOFTWARE:-1}" = "1" ]; then
+  export WLR_RENDERER_ALLOW_SOFTWARE=1
+fi
+if [ "${TRATUMOS_CONSOLE_WLR_NO_HW_CURSORS:-0}" = "1" ]; then
+  export WLR_NO_HARDWARE_CURSORS=1
+fi
 
 chromium_args=(
   "--app=${URL}"
@@ -71,6 +136,7 @@ fi
 
 if [ "${TRATUMOS_CONSOLE_SWGL:-0}" = "1" ]; then
   chromium_args+=("--disable-gpu" "--use-gl=swiftshader")
+  export LIBGL_ALWAYS_SOFTWARE=1
 fi
 
 if [ "${TRATUMOS_CONSOLE_ENABLE_LOGGING:-0}" = "1" ]; then

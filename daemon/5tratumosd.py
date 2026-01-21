@@ -68,9 +68,9 @@ UPDATE_PUBKEY_FILE = str(_env("UPDATE_PUBKEY_FILE", "/etc/5tratumos/update_signi
 UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
 STORE_TOKEN_FILE = str(_env("STORE_TOKEN_FILE", "/etc/5tratumos/store.token") or "/etc/5tratumos/store.token")
-STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/umbrel-dev-community-store") or "WillItMod/umbrel-dev-community-store").strip()
+STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/umbrel-community-store") or "WillItMod/umbrel-community-store").strip()
 STORE_MAIN_BRANCH = str(_env("MAIN_STORE_BRANCH", "main") or "main").strip()
-STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/umbrel-community-store") or "WillItMod/umbrel-community-store").strip()
+STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/umbrel-dev-community-store") or "WillItMod/umbrel-dev-community-store").strip()
 STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "main") or "main").strip()
 STORE_MAIN_PRIVATE = str(_env("MAIN_STORE_PRIVATE", "0") or "0").strip() == "1"
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
@@ -3329,7 +3329,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                     # (Updates previously only copied the console files but never ran the installer.)
                     try:
                         console_dir = os.path.join(ROOT_DIR, "console")
-                        for name in ("install.sh", "5tratumos-console.sh"):
+                        for name in ("install.sh", "5tratumos-console.sh", "5tratumos-x11-session.sh"):
                             p = os.path.join(console_dir, name)
                             if os.path.isfile(p):
                                 _normalize_crlf_inplace(p)
@@ -3337,7 +3337,8 @@ def system_update_apply(channel: str | None = None) -> dict:
                                     os.chmod(p, 0o755)
                                 except Exception:
                                     pass
-                        if os.path.exists("/dev/dri/card0") and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
+                        has_display = os.path.exists("/dev/dri/card0") or os.path.exists("/dev/fb0")
+                        if has_display and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
                             if shutil.which("systemd-run"):
                                 run_cmd(
                                     [

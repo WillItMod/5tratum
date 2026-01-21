@@ -19,7 +19,7 @@ Note:
 
 ## 2) Bootable installer ISO (USB)
 
-You ship a bootable ISO that runs a guided text installer and writes the 5tratumOS disk image to a selected target disk.
+You ship a bootable ISO that runs an unattended Debian netinst and installs the embedded 5tratumOS bundle.
 
 Pros:
 - guided UX (select disk, confirm)
@@ -29,7 +29,33 @@ Cons:
 - more engineering and testing than Etcher image
 
 Note:
-- this is a guided wrapper around the same disk image; it still erases the selected target disk.
+- the installer erases the selected target disk.
+
+### Building the ISO
+
+The ISO build is driven from `installer/build-debian-preseed-iso.sh` and embeds:
+- `dist/5tratumos-update.tgz` (the OS bundle)
+- `installer/debian-installer/preseed.cfg` + `installer/debian-installer/late_command.sh`
+- `5tratumos/build.json` (so the UI shows the correct version on first boot)
+- optionally: `5tratumos/update.token` (only needed for private update repos)
+
+Build steps (run on a Debian/Ubuntu box â€” e.g. your Proxmox host or a Debian VM):
+
+```bash
+cd /opt/5tratum_Build/5tratumOS
+
+# 1) build the update bundle
+./scripts/build-update-bundle.sh
+
+# 2) build the installer ISO
+OS_TAG="v0.x.y" ./installer/build-debian-preseed-iso.sh
+```
+
+Optional token injection (without committing secrets):
+
+```bash
+OS_TAG="v0.x.y" UPDATE_TOKEN_FILE="/root/update.token" ./installer/build-debian-preseed-iso.sh
+```
 
 ## Proxmox
 

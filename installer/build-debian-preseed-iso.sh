@@ -19,6 +19,9 @@ DEBIAN_ISO_URL="${DEBIAN_ISO_URL:-${DEBIAN_ISO_URL_DEFAULT}}"
 BUNDLE_TGZ="${BUNDLE_TGZ:-${ROOT}/dist/5tratumos-update.tgz}"
 OUT_ISO="${OUT_ISO:-${ROOT}/dist/5tratumos-installer.iso}"
 WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work-preseed}"
+OS_TAG="${OS_TAG:-${TRATUMOS_TAG:-${FIVETRATUMOS_TAG:-}}}"
+OS_CHANNEL="${OS_CHANNEL:-main}"
+UPDATE_TOKEN_FILE="${UPDATE_TOKEN_FILE:-${TRATUMOS_UPDATE_TOKEN_FILE:-${FIVETRATUMOS_UPDATE_TOKEN_FILE:-}}}"
 
 LOGO_SMALL="${LOGO_SMALL:-${ROOT}/overlay/portal/assets/New Logos/5.png}"
 LOGO_WORDMARK="${LOGO_WORDMARK:-${ROOT}/overlay/portal/assets/New Logos/WordOnlyLogo.png}"
@@ -52,6 +55,23 @@ install -d -m 0755 "${WORK_DIR}/iso/5tratumos/branding"
 install -m 0644 "${SCRIPT_DIR}/debian-installer/preseed.cfg" "${WORK_DIR}/iso/preseed.cfg"
 install -m 0755 "${SCRIPT_DIR}/debian-installer/late_command.sh" "${WORK_DIR}/iso/5tratumos/late_command.sh"
 install -m 0644 "${BUNDLE_TGZ}" "${WORK_DIR}/iso/5tratumos/5tratumos-update.tgz"
+
+# Embed build metadata so first boot doesn't show "unknown" until an update is applied.
+if [ -z "${OS_TAG}" ]; then
+  OS_TAG="unknown"
+fi
+cat >"${WORK_DIR}/iso/5tratumos/build.json" <<JSON
+{"tag":"${OS_TAG}","repo":"WillItMod/5tratum","channel":"${OS_CHANNEL}","installed_at":""}
+JSON
+
+# Optional: embed an update token (for private update repos). This file is copied to /etc/5tratumos/update.token by late_command.sh.
+if [ -n "${UPDATE_TOKEN_FILE}" ]; then
+  if [ -f "${UPDATE_TOKEN_FILE}" ]; then
+    install -m 0600 "${UPDATE_TOKEN_FILE}" "${WORK_DIR}/iso/5tratumos/update.token"
+  else
+    die "UPDATE_TOKEN_FILE not found: ${UPDATE_TOKEN_FILE}"
+  fi
+fi
 
 if [ -f "${LOGO_SMALL}" ]; then
   install -m 0644 "${LOGO_SMALL}" "${WORK_DIR}/iso/5tratumos/branding/5.png"

@@ -1,0 +1,14 @@
+[Unit]
+Description=5tratumOS First Boot Auto Update
+After=network-online.target 5tratumosd.service
+Wants=network-online.target
+ConditionPathExists=!/etc/5tratumos/firstboot-update.done
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/5tratumos/bootstrap/firstboot-update.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

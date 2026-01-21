@@ -116,6 +116,11 @@ for tok in /cdrom/update.token /cdrom/5tratumos/update.token; do
   fi
 done
 
+# Embed build metadata if present on install media (prevents "version unknown" on first boot).
+if [ -f /cdrom/5tratumos/build.json ]; then
+  install -m 0644 /cdrom/5tratumos/build.json /etc/5tratumos/build.json || true
+fi
+
 if [ -f "${STAGE_DIR}/bin/5tratumos" ]; then
   install -m 0755 "${STAGE_DIR}/bin/5tratumos" /usr/local/bin/5tratumos
 fi
@@ -130,11 +135,18 @@ JSON
 install -m 0644 "${STAGE_DIR}/systemd/5tratumosd.service" /etc/systemd/system/5tratumosd.service
 install -m 0644 "${STAGE_DIR}/systemd/5tratumos-overlay.service" /etc/systemd/system/5tratumos-overlay.service
 install -m 0644 "${STAGE_DIR}/systemd/5tratumos-firstboot.service" /etc/systemd/system/5tratumos-firstboot.service
+if [ -f "${STAGE_DIR}/systemd/5tratumos-firstboot-update.service" ]; then
+  install -m 0644 "${STAGE_DIR}/systemd/5tratumos-firstboot-update.service" /etc/systemd/system/5tratumos-firstboot-update.service
+fi
 
 # Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
 if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
+  if [ -f "${STAGE_DIR}/console/5tratumos-x11-session.sh" ]; then
+    install -d -m 0755 /usr/local/lib/5tratumos
+    install -m 0755 "${STAGE_DIR}/console/5tratumos-x11-session.sh" /usr/local/lib/5tratumos/5tratumos-x11-session
+  fi
   for grp in video input render; do
     if getent group "${grp}" >/dev/null 2>&1; then
       usermod -aG "${grp}" forge >/dev/null 2>&1 || true
@@ -150,6 +162,7 @@ fi
 
 # systemctl inside installer chroot should run offline (systemd isn't PID1 yet).
 SYSTEMD_OFFLINE=1 systemctl enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service
+SYSTEMD_OFFLINE=1 systemctl enable 5tratumos-firstboot-update.service >/dev/null 2>&1 || true
 
 log "Applying basic kiosk-friendly defaults (sleep disabled)..."
 install -d -m 0755 /etc/systemd/logind.conf.d
@@ -165,5 +178,6 @@ SYSTEMD_OFFLINE=1 systemctl mask sleep.target suspend.target hibernate.target hy
 
 log "Cleanup..."
 rm -rf "${TMP_DIR}"
+rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
 
 log "5tratumOS installation complete."

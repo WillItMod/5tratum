@@ -24,9 +24,9 @@ EOF
   chmod 600 /etc/5tratumos/console.json || true
 fi
 
-# Default: enable kiosk mode (fullscreen local console) on hardware.
-# This is a no-op on headless systems because the service is gated by /dev/dri/card0.
-if [ -e /dev/dri/card0 ] && [ -f /opt/5tratumos/console/install.sh ]; then
+# Default: enable kiosk mode (fullscreen local console) when a local display exists.
+# This is a no-op on headless systems.
+if ( [ -e /dev/dri/card0 ] || [ -e /dev/fb0 ] ) && [ -f /opt/5tratumos/console/install.sh ]; then
   # Bundles built on Windows may land with CRLF and without exec bits; normalize so installs work.
   if command -v sed >/dev/null 2>&1; then
     sed -i 's/\r$//' /opt/5tratumos/console/*.sh >/dev/null 2>&1 || true

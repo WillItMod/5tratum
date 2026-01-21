@@ -106,10 +106,6 @@
   const storeHideInstalledInput = document.getElementById('store-hide-installed');
   const btnStoreClear = document.getElementById('btn-store-clear');
   const settingStoreAutoSync = document.getElementById('setting-store-autosync');
-  const storeTokenInput = document.getElementById('setting-store-token');
-  const btnStoreTokenSave = document.getElementById('btn-store-token-save');
-  const btnStoreTokenClear = document.getElementById('btn-store-token-clear');
-  const storeTokenStatusEl = document.getElementById('store-token-status');
   const btnStoreSync = document.getElementById('btn-store-sync');
   const btnStoreCustom = document.getElementById('btn-store-custom');
   const storeSourceLabel = document.getElementById('store-source-label');
@@ -7335,12 +7331,6 @@
       if (!ok) return;
       const res = await apiJsonTimeout('/api/v0/store/config', {}, 4000).catch(() => null);
       if (!res || res.ok !== true) return;
-      if (storeTokenStatusEl) {
-        const present = !!res.token_present;
-        storeTokenStatusEl.textContent = present ? 'Token saved' : 'No token saved';
-        storeTokenStatusEl.classList.toggle('text-emerald-300', present);
-        storeTokenStatusEl.classList.toggle('text-rose-300', !present);
-      }
       const raw = res.custom && typeof res.custom === 'object' ? res.custom : {};
       const out = [];
       for (const [slotRaw, entry] of Object.entries(raw || {})) {
@@ -7365,74 +7355,6 @@
         applyStoreChannelUi();
       }
     } catch {}
-  }
-
-  async function saveStoreToken() {
-    if (!btnStoreTokenSave || !storeTokenInput) return;
-    const token = String(storeTokenInput.value || '').trim();
-    btnStoreTokenSave.disabled = true;
-    const prev = btnStoreTokenSave.textContent;
-    btnStoreTokenSave.textContent = 'Saving...';
-    try {
-      await ensureHealthy();
-      const res = await apiJsonTimeout(
-        '/api/v0/store/auth',
-        { method: 'POST', body: JSON.stringify({ token }) },
-        8000,
-      );
-      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
-      storeTokenInput.value = '';
-      showToast('Token saved', null);
-      await refreshStoreCustomConfig();
-    } catch (err) {
-      showToast('Save failed', 'error');
-      await openNoticeModal({
-        kind: 'Error',
-        title: 'Save failed',
-        message: err && err.message ? String(err.message) : String(err),
-        danger: true,
-      });
-    } finally {
-      btnStoreTokenSave.disabled = false;
-      btnStoreTokenSave.textContent = prev;
-    }
-  }
-
-  async function clearStoreToken() {
-    if (!btnStoreTokenClear) return;
-    const ok = await openConfirmModal({
-      title: 'Clear GitHub token?',
-      message: 'This disables syncing the private MAIN/DEV store until a new token is saved.',
-      confirmText: 'Clear',
-      cancelText: 'Cancel',
-      danger: true,
-    });
-    if (!ok) return;
-    btnStoreTokenClear.disabled = true;
-    const prev = btnStoreTokenClear.textContent;
-    btnStoreTokenClear.textContent = 'Clearing...';
-    try {
-      await ensureHealthy();
-      const res = await apiJsonTimeout(
-        '/api/v0/store/auth',
-        { method: 'POST', body: JSON.stringify({ token: '' }) },
-        8000,
-      );
-      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'clear failed');
-      showToast('Token cleared', null);
-      await refreshStoreCustomConfig();
-    } catch (err) {
-      showToast('Clear failed', 'error');
-      await openNoticeModal({
-        kind: 'Error',
-        title: 'Clear failed',
-        message: err && err.message ? String(err.message) : String(err),
-        danger: true,
-      });
-    } finally {
-      btnStoreTokenClear.disabled = false;
-      btnStoreTokenClear.textContent = prev;
-    }
   }
 
   async function openCustomStoreModal(existingSlot) {
@@ -10653,14 +10575,6 @@
     storeAutoSyncEnabled = !!settingStoreAutoSync.checked;
     saveStoreAutoSyncEnabled();
     applyStoreAutoSyncUi();
-  });
-
-  btnStoreTokenSave?.addEventListener('click', () => {
-    saveStoreToken().catch(() => {});
-  });
-
-  btnStoreTokenClear?.addEventListener('click', () => {
-    clearStoreToken().catch(() => {});
   });
 
   btnPower?.addEventListener('click', openPowerModal);
