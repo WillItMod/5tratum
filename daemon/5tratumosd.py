@@ -2859,17 +2859,42 @@ def _safe_extract_tar(tar: tarfile.TarFile, dest_dir: str) -> None:
     tar.extractall(dest_dir)
 
 
+class _GitHubAuthRequired(Exception):
+    pass
+
+
+def _github_open(url: str, *, timeout_s: int, headers: dict[str, str], retry_with_token: bool = True):
+    """
+    Open a GitHub URL, trying without auth first. If the repo is private and a token exists, retry with token.
+
+    GitHub returns 404 for private repos without auth, so treat 401/403/404 as potentially auth-related.
+    """
+    base_headers = {str(k): str(v) for k, v in (headers or {}).items()}
+
+    def _req(hdrs: dict[str, str]):
+        req = urllib.request.Request(url, headers=hdrs)
+        return urllib.request.urlopen(req, timeout=timeout_s)  # nosec - expected HTTPS
+
+    try:
+        return _req(base_headers)
+    except urllib.error.HTTPError as e:
+        if e.code not in (401, 403, 404) or not retry_with_token:
+            raise
+        token = update_token()
+        if not token:
+            raise _GitHubAuthRequired("token required") from e
+        auth_headers = dict(base_headers)
+        auth_headers["Authorization"] = f"Bearer {token}"
+        return _req(auth_headers)
+
+
 def _github_json(url: str, *, timeout_s: int = 15) -> dict | list | None:
-    token = update_token()
     headers = {
         "User-Agent": "5tratumOS",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
+    with _github_open(url, timeout_s=timeout_s, headers=headers, retry_with_token=True) as r:
         raw = r.read().decode("utf-8", errors="replace")
     try:
         return json.loads(raw)
@@ -2878,14 +2903,10 @@ def _github_json(url: str, *, timeout_s: int = 15) -> dict | list | None:
 
 
 def _github_bytes(url: str, *, timeout_s: int = 60) -> bytes:
-    token = update_token()
     headers = {"User-Agent": "5tratumOS"}
     if "/releases/assets/" in url:
         headers["Accept"] = "application/octet-stream"
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
+    with _github_open(url, timeout_s=timeout_s, headers=headers, retry_with_token=True) as r:
         return r.read()
 
 
@@ -2896,14 +2917,10 @@ def _github_download_file(
     timeout_s: int = 600,
     progress_cb: Callable[[int, int | None], None] | None = None,
 ) -> None:
-    token = update_token()
     headers = {"User-Agent": "5tratumOS"}
     if "/releases/assets/" in url:
         headers["Accept"] = "application/octet-stream"
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout_s) as r:  # nosec - expected HTTPS
+    with _github_open(url, timeout_s=timeout_s, headers=headers, retry_with_token=True) as r:
         total = None
         try:
             total_raw = str(r.headers.get("Content-Length") or "").strip()
@@ -2936,9 +2953,9 @@ def _select_release(channel: str) -> dict:
         url = f"https://api.github.com/repos/{repo}/releases?per_page=30"
         try:
             data = _github_json(url, timeout_s=15)
+        except _GitHubAuthRequired:
+            return {"ok": False, "error": "token required", "token_required": True}
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403, 404):
-                return {"ok": False, "error": "unauthorized (private repo?) or not found"}
             return {"ok": False, "error": f"github http {e.code}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -3140,6 +3157,7 @@ def system_update_check(channel: str | None = None) -> dict:
             "notify_available": False,
             "dismissed_tag": dismissed_tag,
             "error": sel.get("error") or "",
+            "token_required": bool(sel.get("token_required")),
         }
 
     rel = sel.get("release") or {}
@@ -3292,6 +3310,8 @@ def system_update_apply(channel: str | None = None) -> dict:
         check = system_update_check(ch)
         if not check.get("ok"):
             return {"ok": False, "error": "unable to check updates"}
+        if bool(check.get("token_required")) and not bool(check.get("update_available")):
+            return {"ok": False, "error": check.get("error") or "token required", "token_required": True}
         if not check.get("available"):
             return {"ok": False, "error": check.get("error") or "no updates available"}
         if not check.get("update_available"):
