@@ -28,6 +28,27 @@ LOGO_WORDMARK="${LOGO_WORDMARK:-${ROOT}/overlay/portal/assets/New Logos/WordOnly
 #   UPDATE_TOKEN_FILE=/path/to/update.token ./installer/build-debian-preseed-iso.sh
 UPDATE_TOKEN_FILE="${UPDATE_TOKEN_FILE:-}"
 
+# If no explicit token path was provided, look for common local locations.
+if [ -z "${UPDATE_TOKEN_FILE}" ]; then
+  for candidate in "${ROOT}/update.token" "${SCRIPT_DIR}/update.token" "${HOME:-}/update.token" "/root/update.token"; do
+    if [ -n "${candidate}" ] && [ -f "${candidate}" ]; then
+      UPDATE_TOKEN_FILE="${candidate}"
+      break
+    fi
+  done
+fi
+
+TRATUMOS_UPDATE_REPO="${TRATUMOS_UPDATE_REPO:-WillItMod/5tratum}"
+TRATUMOS_CHANNEL="${TRATUMOS_CHANNEL:-main}"
+TRATUMOS_TAG="${TRATUMOS_TAG:-}"
+if [ -z "${TRATUMOS_TAG}" ] && have git; then
+  TRATUMOS_TAG="$(git -C "${ROOT}" describe --tags --exact-match 2>/dev/null || true)"
+  if [ -z "${TRATUMOS_TAG}" ]; then
+    TRATUMOS_TAG="$(git -C "${ROOT}" describe --tags --always 2>/dev/null || true)"
+  fi
+fi
+TRATUMOS_TAG="${TRATUMOS_TAG:-unknown}"
+
 have bsdtar || die "bsdtar not found"
 have xorriso || die "xorriso not found (apt-get install -y xorriso)"
 
@@ -57,6 +78,9 @@ install -d -m 0755 "${WORK_DIR}/iso/5tratumos/branding"
 install -m 0644 "${SCRIPT_DIR}/debian-installer/preseed.cfg" "${WORK_DIR}/iso/preseed.cfg"
 install -m 0755 "${SCRIPT_DIR}/debian-installer/late_command.sh" "${WORK_DIR}/iso/5tratumos/late_command.sh"
 install -m 0644 "${BUNDLE_TGZ}" "${WORK_DIR}/iso/5tratumos/5tratumos-update.tgz"
+cat >"${WORK_DIR}/iso/5tratumos/build.json" <<JSON
+{"tag":"${TRATUMOS_TAG}","repo":"${TRATUMOS_UPDATE_REPO}","channel":"${TRATUMOS_CHANNEL}","built_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+JSON
 if [ -n "${UPDATE_TOKEN_FILE}" ] && [ -f "${UPDATE_TOKEN_FILE}" ]; then
   install -m 0644 "${UPDATE_TOKEN_FILE}" "${WORK_DIR}/iso/5tratumos/update.token"
 fi

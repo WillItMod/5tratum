@@ -59,6 +59,8 @@ done
 
 apt-get install -y --no-install-recommends \
   ca-certificates \
+  cage \
+  chromium \
   console-setup \
   console-setup-linux \
   curl \
@@ -73,11 +75,18 @@ apt-get install -y --no-install-recommends \
   jq \
   kbd \
   keyboard-configuration \
+  matchbox-window-manager \
   network-manager \
   openssh-server \
   python3 \
   python3-yaml \
-  xkb-data
+  x11-xserver-utils \
+  xinit \
+  xkb-data \
+  xserver-xorg-core \
+  xserver-xorg-video-fbdev \
+  xserver-xorg-video-qxl \
+  xserver-xorg-video-vesa
 
 log "Making console-setup optional on headless/serial systems..."
 # On some VMs/serial-only installs, Debian's console-setup.service can fail noisily because
@@ -173,6 +182,23 @@ fi
 install -d -m 0755 /var/lib/5tratumos/apps
 install -d -m 0755 /etc/5tratumos
 
+# Stamp build info so the UI doesn't show "version unknown" after ISO installs.
+build_tag=""
+build_repo="WillItMod/5tratum"
+build_channel="main"
+if [ -f /cdrom/5tratumos/build.json ] && command -v jq >/dev/null 2>&1; then
+  build_tag="$(jq -r '.tag // empty' /cdrom/5tratumos/build.json 2>/dev/null || true)"
+  build_repo="$(jq -r '.repo // empty' /cdrom/5tratumos/build.json 2>/dev/null || true)"
+  build_channel="$(jq -r '.channel // empty' /cdrom/5tratumos/build.json 2>/dev/null || true)"
+fi
+build_tag="${build_tag:-unknown}"
+build_repo="${build_repo:-WillItMod/5tratum}"
+build_channel="${build_channel:-main}"
+installed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cat >/etc/5tratumos/build.json <<JSON
+{"tag":"${build_tag}","repo":"${build_repo}","channel":"${build_channel}","installed_at":"${installed_at}"}
+JSON
+
 # Optional: install a GitHub token from removable media (for private update repos).
 # Safer than embedding it into update.json because it's stored in a dedicated 0600 file.
 for tok in /cdrom/update.token /cdrom/5tratumos/update.token; do
@@ -186,10 +212,10 @@ if [ -f "${STAGE_DIR}/bin/5tratumos" ]; then
   install -m 0755 "${STAGE_DIR}/bin/5tratumos" /usr/local/bin/5tratumos
 fi
 
-# Ensure update channel defaults to main and update repo is public repo.
-echo "main" >/etc/5tratumos/channel
-cat >/etc/5tratumos/update.json <<'JSON'
-{"repo":"WillItMod/5tratum","token":""}
+# Ensure update channel + repo defaults to the ISO's build metadata.
+echo "${build_channel}" >/etc/5tratumos/channel
+cat >/etc/5tratumos/update.json <<JSON
+{"repo":"${build_repo}","token":""}
 JSON
 
 # Install/enable systemd units shipped in the bundle.
@@ -204,9 +230,11 @@ fi
 if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
+  install -d -m 0755 /usr/local/lib/5tratumos
   if [ -f "${STAGE_DIR}/console/5tratumos-x11-session.sh" ]; then
-    install -d -m 0755 /usr/local/lib/5tratumos
     install -m 0755 "${STAGE_DIR}/console/5tratumos-x11-session.sh" /usr/local/lib/5tratumos/5tratumos-x11-session
+  elif [ -f /opt/5tratumos/console/5tratumos-x11-session.sh ]; then
+    install -m 0755 /opt/5tratumos/console/5tratumos-x11-session.sh /usr/local/lib/5tratumos/5tratumos-x11-session
   fi
   # Normalize CRLF line endings in case the bundle was built on Windows.
   sed -i 's/\r$//' /usr/local/bin/5tratumos-console /etc/systemd/system/5tratumos-console@.service /usr/local/lib/5tratumos/5tratumos-x11-session 2>/dev/null || true

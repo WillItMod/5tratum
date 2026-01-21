@@ -16,19 +16,16 @@ fi
   # "Skip if offline": don't block boot for long.
   if ! command -v curl >/dev/null 2>&1; then
     echo "[firstboot-update] curl not found; skipping"
-    date -u +%Y-%m-%dT%H:%M:%SZ >"${DONE_FILE}"
     exit 0
   fi
 
   if ! curl -fsS --connect-timeout 2 --max-time 5 https://api.github.com/zen >/dev/null 2>&1; then
     echo "[firstboot-update] offline (no GitHub connectivity); skipping"
-    date -u +%Y-%m-%dT%H:%M:%SZ >"${DONE_FILE}"
     exit 0
   fi
 
   if [ ! -f /opt/5tratumos/daemon/5tratumosd.py ]; then
     echo "[firstboot-update] missing /opt/5tratumos/daemon/5tratumosd.py; skipping"
-    date -u +%Y-%m-%dT%H:%M:%SZ >"${DONE_FILE}"
     exit 0
   fi
 
@@ -50,7 +47,11 @@ spec.loader.exec_module(mod)  # type: ignore
 res = mod.system_update_apply("main")
 print(json.dumps(res, separators=(",", ":"), ensure_ascii=False))
 
-if not isinstance(res, dict) or not res.get("ok") or not res.get("started"):
+if not isinstance(res, dict) or not res.get("ok"):
+    print("OUTCOME=START_FAILED")
+    raise SystemExit(0)
+
+if not res.get("started"):
     print("OUTCOME=NO_UPDATE")
     raise SystemExit(0)
 
@@ -77,15 +78,18 @@ PY
     exit 0
   fi
 
-  if echo "${outcome}" | grep -q "OUTCOME=ERROR"; then
-    echo "[firstboot-update] update failed; continuing boot"
-  elif echo "${outcome}" | grep -q "OUTCOME=TIMEOUT"; then
-    echo "[firstboot-update] update timed out; continuing boot"
-  else
+  if echo "${outcome}" | grep -q "OUTCOME=NO_UPDATE"; then
     echo "[firstboot-update] no update; continuing boot"
+    date -u +%Y-%m-%dT%H:%M:%SZ >"${DONE_FILE}"
+  elif echo "${outcome}" | grep -q "OUTCOME=START_FAILED"; then
+    echo "[firstboot-update] update could not start; will retry on next boot"
+  elif echo "${outcome}" | grep -q "OUTCOME=ERROR"; then
+    echo "[firstboot-update] update failed; will retry on next boot"
+  elif echo "${outcome}" | grep -q "OUTCOME=TIMEOUT"; then
+    echo "[firstboot-update] update timed out; will retry on next boot"
+  else
+    echo "[firstboot-update] update status unknown; will retry on next boot"
   fi
 
-  date -u +%Y-%m-%dT%H:%M:%SZ >"${DONE_FILE}"
   echo "[firstboot-update] done at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-} | tee -a "${LOG_FILE}" >/dev/null
-
+} | tee -a "${LOG_FILE}"
