@@ -26,11 +26,20 @@ LOGO_WORDMARK="${LOGO_WORDMARK:-${ROOT}/overlay/portal/assets/New Logos/WordOnly
 # Optional: embed an update token on the ISO for private update repos.
 # Provide a filepath at build time (do not commit secrets to git):
 #   UPDATE_TOKEN_FILE=/path/to/update.token ./installer/build-debian-preseed-iso.sh
+# (For convenience, the auto-detect also accepts `update_token` as a source filename.)
 UPDATE_TOKEN_FILE="${UPDATE_TOKEN_FILE:-}"
 
 # If no explicit token path was provided, look for common local locations.
 if [ -z "${UPDATE_TOKEN_FILE}" ]; then
-  for candidate in "${ROOT}/update.token" "${SCRIPT_DIR}/update.token" "${HOME:-}/update.token" "/root/update.token"; do
+  for candidate in \
+    "${ROOT}/update.token" \
+    "${ROOT}/update_token" \
+    "${SCRIPT_DIR}/update.token" \
+    "${SCRIPT_DIR}/update_token" \
+    "${HOME:-}/update.token" \
+    "${HOME:-}/update_token" \
+    "/root/update.token" \
+    "/root/update_token"; do
     if [ -n "${candidate}" ] && [ -f "${candidate}" ]; then
       UPDATE_TOKEN_FILE="${candidate}"
       break
@@ -249,3 +258,13 @@ xorriso -as mkisofs \
 
 echo "Wrote:"
 echo "  ${OUT_ISO}"
+
+# Write a sidecar SHA256 for convenience (do not include any secrets).
+if command -v sha256sum >/dev/null 2>&1; then
+  sha_file="${OUT_ISO}.sha256"
+  (
+    cd -- "$(dirname -- "${OUT_ISO}")"
+    sha256sum "$(basename -- "${OUT_ISO}")" >"$(basename -- "${sha_file}")"
+  )
+  echo "  ${sha_file}"
+fi

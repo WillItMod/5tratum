@@ -25,7 +25,7 @@ Embedded files:
 - `/5tratumos/5tratumos-update.tgz` from `dist/5tratumos-update.tgz`
 
 Optional provisioning files:
-- `/update.token` or `/5tratumos/update.token` (on the install media) to seed `/etc/5tratumos/update.token` for private GitHub repos.
+- `/update.token` (preferred) or `/update_token` (legacy) at the ISO root (or under `/5tratumos/`) to seed `/etc/5tratumos/update.token` for private GitHub repos.
 
 ## Legacy: live-build TUI installer
 

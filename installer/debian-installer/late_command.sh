@@ -201,7 +201,7 @@ JSON
 
 # Optional: install a GitHub token from removable media (for private update repos).
 # Safer than embedding it into update.json because it's stored in a dedicated 0600 file.
-for tok in /cdrom/update.token /cdrom/5tratumos/update.token; do
+for tok in /cdrom/update.token /cdrom/update_token /cdrom/5tratumos/update.token /cdrom/5tratumos/update_token; do
   if [ -f "${tok}" ]; then
     install -m 0600 "${tok}" /etc/5tratumos/update.token || true
     cp -f /etc/5tratumos/update.token /etc/5tratumos/store.token 2>/dev/null || true
