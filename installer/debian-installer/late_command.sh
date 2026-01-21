@@ -64,6 +64,7 @@ apt-get install -y --no-install-recommends \
   console-setup \
   console-setup-linux \
   curl \
+  ethtool \
   firmware-atheros \
   firmware-brcm80211 \
   firmware-iwlwifi \
@@ -72,14 +73,18 @@ apt-get install -y --no-install-recommends \
   firmware-misc-nonfree \
   firmware-realtek \
   gnupg \
+  iw \
   jq \
   kbd \
   keyboard-configuration \
+  pciutils \
   matchbox-window-manager \
   network-manager \
   openssh-server \
   python3 \
   python3-yaml \
+  rfkill \
+  usbutils \
   x11-xserver-utils \
   xinit \
   xkb-data \
@@ -87,6 +92,25 @@ apt-get install -y --no-install-recommends \
   xserver-xorg-video-fbdev \
   xserver-xorg-video-qxl \
   xserver-xorg-video-vesa
+
+log "Installing extra firmware (best-effort)..."
+# Keep these optional so the installer doesn't fail if Debian renames/splits firmware packages.
+extras=""
+for pkg in \
+  firmware-ath9k-htc \
+  firmware-bnx2 \
+  firmware-bnx2x \
+  firmware-libertas \
+  firmware-ralink \
+  firmware-ti-connectivity \
+  firmware-zd1211; do
+  if apt-cache show "${pkg}" >/dev/null 2>&1; then
+    extras="${extras} ${pkg}"
+  fi
+done
+if [ -n "${extras}" ]; then
+  apt-get install -y --no-install-recommends ${extras} >/dev/null 2>&1 || true
+fi
 
 log "Making console-setup optional on headless/serial systems..."
 # On some VMs/serial-only installs, Debian's console-setup.service can fail noisily because
@@ -181,6 +205,15 @@ fi
 
 install -d -m 0755 /var/lib/5tratumos/apps
 install -d -m 0755 /etc/5tratumos
+
+# Fresh installs must not ship with any apps pre-installed. (Only app templates live under apps-available.)
+install -d -m 0755 /opt/5tratumos/apps
+rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
+rm -f /var/lib/5tratumos/apps_installed.json 2>/dev/null || true
+
+# Marker for first boot tasks (one-time cleanup + migration helpers).
+date -u +"%Y-%m-%dT%H:%M:%SZ" >/etc/5tratumos/installed-from-iso
+chmod 600 /etc/5tratumos/installed-from-iso >/dev/null 2>&1 || true
 
 # Stamp build info so the UI doesn't show "version unknown" after ISO installs.
 build_tag=""

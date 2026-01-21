@@ -1,7 +1,7 @@
 [Unit]
 Description=5tratumOS First Boot Auto Update
-After=network.target
-Wants=network.target
+After=network.target NetworkManager.service
+Wants=network.target NetworkManager.service
 Before=5tratumos-firstboot.service
 Before=5tratumosd.service
 Before=5tratumos-overlay.service

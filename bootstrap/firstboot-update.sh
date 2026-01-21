@@ -3,6 +3,7 @@ set -euo pipefail
 
 LOG_FILE="/var/log/5tratumos-firstboot-update.log"
 DONE_FILE="/etc/5tratumos/firstboot-update.done"
+NET_WAIT_SECS="${TRATUMOS_FIRSTBOOT_UPDATE_NET_WAIT_SECS:-30}"
 
 mkdir -p /etc/5tratumos
 
@@ -19,8 +20,16 @@ fi
     exit 0
   fi
 
-  if ! curl -fsS --connect-timeout 2 --max-time 5 https://api.github.com/zen >/dev/null 2>&1; then
-    echo "[firstboot-update] offline (no GitHub connectivity); skipping"
+  online=0
+  for _ in $(seq 1 "${NET_WAIT_SECS}"); do
+    if curl -fsS --connect-timeout 2 --max-time 5 https://api.github.com/zen >/dev/null 2>&1; then
+      online=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "${online}" != "1" ]; then
+    echo "[firstboot-update] offline (no GitHub connectivity after ${NET_WAIT_SECS}s); skipping"
     exit 0
   fi
 
@@ -44,15 +53,26 @@ mod = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
 spec.loader.exec_module(mod)  # type: ignore
 
+check = mod.system_update_check("main")
+print(json.dumps(check, separators=(",", ":"), ensure_ascii=False))
+
+if not isinstance(check, dict) or not check.get("ok"):
+    print("OUTCOME=CHECK_FAILED")
+    raise SystemExit(0)
+
+if not check.get("update_available"):
+    print("OUTCOME=NO_UPDATE")
+    raise SystemExit(0)
+
 res = mod.system_update_apply("main")
 print(json.dumps(res, separators=(",", ":"), ensure_ascii=False))
 
 if not isinstance(res, dict) or not res.get("ok"):
-    print("OUTCOME=START_FAILED")
-    raise SystemExit(0)
-
-if not res.get("started"):
-    print("OUTCOME=NO_UPDATE")
+    err = str(res.get("error") if isinstance(res, dict) else "") if res else ""
+    if "no updates" in err.lower():
+        print("OUTCOME=NO_UPDATE")
+    else:
+        print("OUTCOME=START_FAILED")
     raise SystemExit(0)
 
 deadline = time.time() + 60 * 20
@@ -81,6 +101,8 @@ PY
   if echo "${outcome}" | grep -q "OUTCOME=NO_UPDATE"; then
     echo "[firstboot-update] no update; continuing boot"
     date -u +%Y-%m-%dT%H:%M:%SZ >"${DONE_FILE}"
+  elif echo "${outcome}" | grep -q "OUTCOME=CHECK_FAILED"; then
+    echo "[firstboot-update] update check failed; will retry on next boot"
   elif echo "${outcome}" | grep -q "OUTCOME=START_FAILED"; then
     echo "[firstboot-update] update could not start; will retry on next boot"
   elif echo "${outcome}" | grep -q "OUTCOME=ERROR"; then

@@ -21,15 +21,6 @@ if [ -z "${chromium_bin}" ] || [ ! -x "${chromium_bin}" ]; then
   exit 1
 fi
 
-cage_bin="${TRATUMOS_CONSOLE_CAGE_BIN:-}"
-if [ -z "${cage_bin}" ]; then
-  cage_bin="$(command -v cage 2>/dev/null || true)"
-fi
-if [ -z "${cage_bin}" ] || [ ! -x "${cage_bin}" ]; then
-  log "cage not found"
-  exit 1
-fi
-
 read_kv() {
   local file="$1"
   local key="$2"
@@ -77,15 +68,6 @@ if command -v curl >/dev/null 2>&1; then
   done
 fi
 
-# Ensure Wayland/Xorg runtime dir is correct (systemd unit should not set it).
-if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
-  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-fi
-if [ ! -d "${XDG_RUNTIME_DIR}" ]; then
-  log "XDG_RUNTIME_DIR is missing: ${XDG_RUNTIME_DIR}"
-  exit 1
-fi
-
 detect_backend() {
   local b="${TRATUMOS_CONSOLE_BACKEND:-}"
   b="$(printf '%s' "${b}" | tr '[:upper:]' '[:lower:]' | tr -d ' \t\r\n')"
@@ -109,7 +91,38 @@ detect_backend() {
 backend="$(detect_backend)"
 log "backend=${backend}"
 
+ensure_runtime_dir() {
+  local uid
+  uid="$(id -u)"
+
+  if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -d "${XDG_RUNTIME_DIR}" ] && [ -w "${XDG_RUNTIME_DIR}" ]; then
+    return 0
+  fi
+
+  local preferred="/run/user/${uid}"
+  if [ -d "${preferred}" ] && [ -w "${preferred}" ]; then
+    export XDG_RUNTIME_DIR="${preferred}"
+    return 0
+  fi
+
+  # Fall back to a private directory in /tmp if PAM/systemd didn't create /run/user/<uid>.
+  local fallback="/tmp/5tratumos-runtime-${uid}"
+  mkdir -p "${fallback}" >/dev/null 2>&1 || true
+  chmod 700 "${fallback}" >/dev/null 2>&1 || true
+  export XDG_RUNTIME_DIR="${fallback}"
+
+  if [ -d "${XDG_RUNTIME_DIR}" ] && [ -w "${XDG_RUNTIME_DIR}" ]; then
+    return 0
+  fi
+
+  log "XDG_RUNTIME_DIR is missing or not writable: ${XDG_RUNTIME_DIR:-}"
+  return 1
+}
+
 if [ "${backend}" = "x11" ]; then
+  # Not strictly required for X11, but avoids noisy warnings and helps Chromium.
+  ensure_runtime_dir >/dev/null 2>&1 || true
+
   # In VMs, default to software GL to avoid white/blank Chromium windows.
   if [ -z "${TRATUMOS_CONSOLE_SWGL:-}" ] && command -v systemd-detect-virt >/dev/null 2>&1; then
     if systemd-detect-virt -q; then
@@ -128,6 +141,17 @@ fi
 
 export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
+
+cage_bin="${TRATUMOS_CONSOLE_CAGE_BIN:-}"
+if [ -z "${cage_bin}" ]; then
+  cage_bin="$(command -v cage 2>/dev/null || true)"
+fi
+if [ -z "${cage_bin}" ] || [ ! -x "${cage_bin}" ]; then
+  log "cage not found"
+  exit 1
+fi
+
+ensure_runtime_dir || exit 1
 
 # wlroots (cage) can fail to render on some virtual GPUs unless software rendering
 # and/or hardware cursors are disabled. Allow safe fallbacks by default.

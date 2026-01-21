@@ -2,8 +2,17 @@
 set -euo pipefail
 
 DONE_FILE="/etc/5tratumos/firstboot.done"
+ISO_MARKER="/etc/5tratumos/installed-from-iso"
 
 mkdir -p /etc/5tratumos
+
+if [ -f "${ISO_MARKER}" ]; then
+  # Ensure fresh installs start with zero apps. (Defensive: the ISO should never ship apps in /opt/5tratumos/apps.)
+  rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
+  rm -f /var/lib/5tratumos/apps_installed.json 2>/dev/null || true
+  rm -f /etc/5tratumos/apps_pages.json /etc/5tratumos/desktop.json 2>/dev/null || true
+  rm -f "${ISO_MARKER}" 2>/dev/null || true
+fi
 
 if [ ! -s /etc/machine-id ]; then
   if command -v systemd-machine-id-setup >/dev/null 2>&1; then

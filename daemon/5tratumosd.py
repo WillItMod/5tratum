@@ -875,6 +875,11 @@ def allowed_store_channels() -> set[str]:
     return {"main", "dev", "global", *store_custom_channels()}
 
 
+def allowed_store_channels_ordered() -> list[str]:
+    # Keep lookups deterministic and prefer built-in channels before custom slots.
+    return ["main", "dev", "global", *store_custom_channels()]
+
+
 def _read_session_config() -> dict:
     cfg = _read_json(SESSION_CONFIG_FILE)
     return cfg if isinstance(cfg, dict) else {}
@@ -3464,7 +3469,8 @@ def system_update_apply(channel: str | None = None) -> dict:
                                     os.chmod(p, 0o755)
                                 except Exception:
                                     pass
-                        if os.path.exists("/dev/dri/card0") and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
+                        has_local_display = os.path.exists("/dev/dri/card0") or os.path.exists("/dev/fb0")
+                        if has_local_display and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
                             if shutil.which("systemd-run"):
                                 run_cmd(
                                     [
@@ -4525,7 +4531,17 @@ def store_app_by_id(app_id: str) -> dict | None:
     app_id = (app_id or "").strip().lower()
     if not app_id:
         return None
-    for ch in allowed_store_channels():
+    # If the app is installed, prefer its recorded channel to avoid scanning every store on disk.
+    try:
+        preferred_ch = str(read_app_install_meta(app_id).get("channel") or "").strip().lower()
+    except Exception:
+        preferred_ch = ""
+    if preferred_ch:
+        found = store_app_by_id_in_channel(app_id, preferred_ch)
+        if found:
+            return found
+
+    for ch in allowed_store_channels_ordered():
         res = list_store_apps(ch)
         if not res.get("ok"):
             continue
@@ -4702,13 +4718,14 @@ def list_app_widgets() -> dict:
             if not isinstance(widgets, list) or not widgets:
                 continue
 
-            port = default_ui_ports(app_id)
+            port: int | None = None
+            try:
+                sp = int(str(store_meta.get("port") or "").strip() or "0")
+            except Exception:
+                sp = 0
+            port = sp or None
             if port is None:
-                try:
-                    sp = int(str(store_meta.get("port") or "").strip() or "0")
-                except Exception:
-                    sp = 0
-                port = sp or None
+                port = default_ui_ports(app_id)
 
             project = docker_compose_project(app_id)
             st = summarize_project_status(project)
@@ -4749,21 +4766,23 @@ def list_app_widgets() -> dict:
             apps_out.append(app_entry)
 
         if widget_tasks:
-            done, pending = concurrent.futures.wait(
-                [t[0] for t in widget_tasks],
-                timeout=1.5,
-                return_when=concurrent.futures.ALL_COMPLETED,
-            )
-            for fut, widget in widget_tasks:
-                if fut in done:
+            fut_to_widget = {t[0]: t[1] for t in widget_tasks}
+            done_futs: set[concurrent.futures.Future] = set()
+            try:
+                for fut in concurrent.futures.as_completed(fut_to_widget, timeout=1.5):
+                    done_futs.add(fut)
+                    widget = fut_to_widget.get(fut) or {}
                     try:
                         widget["data"] = fut.result()
                         widget["ok"] = True
                     except Exception as e:
                         widget["error"] = str(e)
-                else:
+            except concurrent.futures.TimeoutError:
+                pass
+
+            for fut, widget in widget_tasks:
+                if fut not in done_futs and not widget.get("ok"):
                     widget["error"] = "timeout"
-                    fut.cancel()
 
     _WIDGET_CACHE["widgets"] = {"time": now, "apps": apps_out}
     return {"ok": True, "time": _now_iso(), "apps": apps_out}
@@ -4793,13 +4812,14 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         if not coin:
             coin = app_id.upper()
 
-        port = default_ui_ports(app_id)
+        port: int | None = None
+        try:
+            sp = int(str(store_meta.get("port") or "").strip() or "0")
+        except Exception:
+            sp = 0
+        port = sp or None
         if port is None:
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            port = sp or None
+            port = default_ui_ports(app_id)
 
         project = docker_compose_project(app_id)
         st = summarize_project_status(project)
@@ -5064,15 +5084,15 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 details.append({"app_id": app_id, "coin": coin, **_normalize_worker_fields(w)})
         return entry, details
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
-        done, pending = concurrent.futures.wait(
-            futures,
-            timeout=1.8,
-            return_when=concurrent.futures.ALL_COMPLETED,
-        )
-        for fut in done:
-            entry, details = fut.result()
+    app_ids = list_installed_app_ids()
+    max_workers = min(16, max(4, len(app_ids)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_fetch_pool, app_id) for app_id in app_ids]
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                entry, details = fut.result()
+            except Exception:
+                continue
             if not entry:
                 continue
             pools.append(entry)
@@ -5088,8 +5108,6 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             for w in details:
                 if isinstance(w, dict):
                     workers_out.append(w)
-        for fut in pending:
-            fut.cancel()
 
     def worker_hashrate_key(w: dict) -> float:
         for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
