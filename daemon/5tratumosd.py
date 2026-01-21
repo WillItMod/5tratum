@@ -2166,7 +2166,7 @@ def _pool_block_signature(pool: dict | None) -> str:
 def _pool_hashrate_ths(pool: dict | None) -> float:
     if not isinstance(pool, dict):
         return 0.0
-    for key in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
+    for key in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths"):
         try:
             val = pool.get(key)
             if isinstance(val, (int, float)):
@@ -2175,6 +2175,32 @@ def _pool_hashrate_ths(pool: dict | None) -> float:
                 return float(val.strip())
         except Exception:
             continue
+
+    # Some apps/pools expose hashrate in H/s; convert to TH/s.
+    for key in ("hashrate_hs", "hashrate_1m_hs", "hashrate_5m_hs"):
+        try:
+            val = pool.get(key)
+            if isinstance(val, (int, float)):
+                return float(val) / 1e12
+            if isinstance(val, str) and val.strip():
+                return float(val.strip()) / 1e12
+        except Exception:
+            continue
+
+    # Back-compat: if an app returns a bare "hashrate" field, assume TH/s unless it looks like H/s.
+    try:
+        val = pool.get("hashrate")
+        if isinstance(val, (int, float)):
+            v = float(val)
+        elif isinstance(val, str) and val.strip():
+            v = float(val.strip())
+        else:
+            v = None
+        if v is not None:
+            # Heuristic: absurdly large values are almost certainly H/s.
+            return v / 1e12 if v > 1e6 else v
+    except Exception:
+        pass
     return 0.0
 
 
@@ -4616,7 +4642,8 @@ def list_app_widgets() -> dict:
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
                 # Keep widget aggregation snappy; use short timeouts and return partial results.
-                fut = pool.submit(_fetch_json, url, timeout_s=1, headers=_internal_auth_headers())
+                # Keep widget aggregation snappy; use short timeouts and return partial results.
+                fut = pool.submit(_fetch_json, url, timeout_s=2, headers=_internal_auth_headers())
                 widget_tasks.append((fut, w))
                 app_entry["widgets"].append(w)
 
@@ -4625,7 +4652,7 @@ def list_app_widgets() -> dict:
         if widget_tasks:
             done, pending = concurrent.futures.wait(
                 [t[0] for t in widget_tasks],
-                timeout=1.5,
+                timeout=2.7,
                 return_when=concurrent.futures.ALL_COMPLETED,
             )
             for fut, widget in widget_tasks:
@@ -4656,6 +4683,10 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
     workers_out: list[dict] = []
     total_hashrate_ths = 0.0
     total_workers = 0
+
+    last_good: dict | None = None
+    if isinstance(cache.get("data"), dict) and (cache.get("data") or {}).get("ok") is True:
+        last_good = cache.get("data")  # type: ignore[assignment]
 
     def _fetch_pool(app_id: str) -> tuple[dict, list[dict]]:
         store_meta = store_app_by_id(app_id) or {}
@@ -4700,7 +4731,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         workers_data: dict | None = None
 
         try:
-            pool_raw = _fetch_json(pool_url, timeout_s=1, headers=_internal_auth_headers())
+            pool_raw = _fetch_json(pool_url, timeout_s=2, headers=_internal_auth_headers())
             if isinstance(pool_raw, dict):
                 pool_data = pool_raw
             else:
@@ -4709,7 +4740,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             entry["pool_error"] = str(e)
 
         try:
-            workers_raw = _fetch_json(workers_url, timeout_s=1, headers=_internal_auth_headers())
+            workers_raw = _fetch_json(workers_url, timeout_s=2, headers=_internal_auth_headers())
             if isinstance(workers_raw, dict):
                 workers_data = workers_raw
             else:
@@ -4938,25 +4969,30 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 details.append({"app_id": app_id, "coin": coin, **_normalize_worker_fields(w)})
         return entry, details
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
+    exec_pool = concurrent.futures.ThreadPoolExecutor(max_workers=6)
+    try:
+        futures = [exec_pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
         done, pending = concurrent.futures.wait(
             futures,
-            timeout=1.8,
+            timeout=2.8,
             return_when=concurrent.futures.ALL_COMPLETED,
         )
         for fut in done:
-            entry, details = fut.result()
+            try:
+                entry, details = fut.result()
+            except Exception:
+                continue
             if not entry:
                 continue
             pools.append(entry)
-            if "pool" in entry:
+            if "pool" in entry and isinstance(entry.get("pool"), dict):
+                pool_obj = entry["pool"]
                 try:
-                    total_hashrate_ths += float(entry["pool"].get("hashrate_ths") or 0.0)
+                    total_hashrate_ths += _pool_hashrate_ths(pool_obj)
                 except Exception:
                     pass
                 try:
-                    total_workers += int(entry["pool"].get("workers") or 0)
+                    total_workers += _pool_workers(pool_obj)
                 except Exception:
                     pass
             for w in details:
@@ -4964,6 +5000,24 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                     workers_out.append(w)
         for fut in pending:
             fut.cancel()
+    finally:
+        # Do not block request handling on slow/hung pool endpoints.
+        try:
+            exec_pool.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            exec_pool.shutdown(wait=False)
+
+    # If nothing completed (or the store is still warming up), do not emit a fake 0 dip.
+    if not pools:
+        if last_good is not None:
+            try:
+                out = dict(last_good)
+                out["time"] = _now_iso()
+                out["_stale"] = True
+                return out
+            except Exception:
+                pass
+        return {"ok": False, "error": "fleet poll timeout", "time": _now_iso()}
 
     def worker_hashrate_key(w: dict) -> float:
         for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):

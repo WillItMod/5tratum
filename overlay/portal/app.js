@@ -5650,7 +5650,8 @@
   function formatHashrateThs(value) {
     const v = Number(value);
     if (!Number.isFinite(v) || v < 0) return '-';
-    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : v >= 1 ? 2 : 3;
+    // Cap display precision to 2 decimals (avoid noisy/ugly long floats).
+    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : 2;
     return v.toFixed(decimals);
   }
 
