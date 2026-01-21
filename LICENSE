@@ -1,34 +1,52 @@
 Business Source License 1.1
 
 License text copyright (c) 2017 MariaDB Corporation Ab.
-“Business Source License” is a trademark of MariaDB Corporation Ab.
+"Business Source License" is a trademark of MariaDB Corporation Ab.
+
+-----------------------------------------------------------------------------
+IMPORTANT: COMMERCIAL USE & REDISTRIBUTION (SUMMARY)
+-----------------------------------------------------------------------------
+
+YOU MAY NOT (without a separate commercial license from the Licensor):
+- Sell, offer for sale, rent, lease, or otherwise distribute the Licensed Work as a product
+  or offering, including by flashing/writing images onto devices for sale.
+- Ship, bundle, or pre-install 5tratumOS on any hardware (nodes/appliances/servers/PCs) for
+  anyone else, whether paid or unpaid.
+
+If you want to build/provision nodes for others (clients, friends, customers, resellers),
+you need a separate commercial license from the Licensor.
+See `COMMERCIAL_LICENSE.md`.
 
 -----------------------------------------------------------------------------
 Parameters
 -----------------------------------------------------------------------------
 
-Licensor: WillItMod
+Licensor: Hurricane Cloud Solutions LTD (trading as "5tratum")
+Project/maintainer: WillItMod
 
-Licensed Work: 5tratumOS (including this repository’s source code and related
-materials, excluding third‑party components under their own licenses)
+Licensed Work: 5tratumOS (including this repository's source code and related
+materials, excluding third-party components under their own licenses)
 
-The Licensed Work is (c) WillItMod and other contributors.
+The Licensed Work is (c) Hurricane Cloud Solutions LTD and other contributors.
 
 Additional Use Grant:
   You may use, copy, modify, and run the Licensed Work for personal,
   noncommercial, internal business use (including use on your own hardware),
-  provided you do not violate the “Restrictions” below.
+  provided you do not violate the "Restrictions" below.
 
   You may redistribute unmodified copies of the Licensed Work for the sole
-  purpose of evaluation, provided you retain all notices and do not use
-  WillItMod/5tratumOS trademarks or branding except as permitted by
-  `TRADEMARK.md`.
+  purpose of noncommercial evaluation, provided you retain all notices, do not
+  bundle it with hardware/devices, do not use it for resale, and do not use
+  5tratum/5tratumOS trademarks or branding except as permitted by `TRADEMARK.md`.
 
 Restrictions:
   The following are not permitted without a separate commercial license from
   the Licensor:
   - Rebranding, representing as your own, or distributing a fork/derivative
     product under the 5tratumOS name or confusingly similar branding.
+  - Flashing, writing, cloning, or pre-installing the Licensed Work onto any
+    device, disk, USB drive, SSD/HDD, SD card, or other media for distribution
+    or sale (including "built nodes" for other people or businesses).
   - Distributing the Licensed Work (modified or unmodified) as a product
     offering (commercial or noncommercial), including preinstalled images,
     appliances, or bundles, except as explicitly allowed in the Additional Use
@@ -45,7 +63,7 @@ Change License: Apache License, Version 2.0
 Terms
 -----------------------------------------------------------------------------
 
-The Business Source License (this document, or the “License”) is not an Open
+The Business Source License (this document, or the "License") is not an Open
 Source license. However, the Licensed Work will eventually be made available
 under an Open Source License, as stated in the Change License, on the Change
 Date.
@@ -68,17 +86,17 @@ also receives a copy of this License.
 
 Trademarks
 
-This License does not grant any rights to use the Licensor’s trademarks,
+This License does not grant any rights to use the Licensor's trademarks,
 service marks, or logos. See `TRADEMARK.md`.
 
-Third‑party components
+Third-party components
 
-Third‑party components (including dependencies, libraries, and tools) are not
+Third-party components (including dependencies, libraries, and tools) are not
 covered by this License and remain under their respective licenses.
 
 Disclaimer of warranty
 
-THE LICENSED WORK IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+THE LICENSED WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
@@ -92,4 +110,3 @@ Full license text
 This repository uses the Business Source License 1.1. The full text of BSL 1.1
 is available at:
   https://mariadb.com/bsl11/
-
