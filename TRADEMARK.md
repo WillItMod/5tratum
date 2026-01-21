@@ -28,13 +28,12 @@ Official project sites and stores may be hosted under (including regional TLDs):
 - Registering domains, social handles, or product names that are confusingly similar to `5tratum` / `5tratumOS`.
 - Using our logos or screenshots as your own product marketing materials for a fork/derivative.
 
-## Forks
-Forks are welcome, but must:
-- Use a different project name and different logos.
-- Remove/replace `5tratum` / `5tratumOS` branding from UI, documentation, and assets.
+## Forks / derivatives
+Forks/derivatives are NOT welcome for redistribution.
 
-## Attribution
-If your fork is based on this project, clearly state that it is an independent fork and not affiliated with the official 5tratumOS project.
+Do not create or publish forks/mirrors of this repo (or derivative distributions) without explicit written permission from the Licensor.
+
+If you need a commercial agreement for system-builder/reseller use, see `COMMERCIAL_LICENSE.md`.
 
 ## App names
 App names in the AxeSuite family (e.g. `AxeBCH`, `AxeDGB`, `AxeBTCF`, `AxeLive`, `AxeBench`, etc.) are treated as product names/marks for branding purposes.

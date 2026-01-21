@@ -7,6 +7,7 @@
 This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It is **NOT** an open source license.
 
 - **No resale / no preinstalled devices / no "built nodes" without a commercial license:** `COMMERCIAL_LICENSE.md`
+- **Forks/derivatives are NOT welcome for redistribution:** see `LICENSE_POLICY.md`
 - License: `LICENSE`
 - Licensing policy summary: `LICENSE_POLICY.md`
 - Trademark/branding policy: `TRADEMARK.md`

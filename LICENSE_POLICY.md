@@ -1,6 +1,6 @@
 # Licensing Policy (Open-Core)
 
-This project is intended to be transparent, but not fork-friendly for
+This project is intended to be transparent, but forks/derivatives are NOT welcome for
 redistribution/rebranding.
 
 Licensor: Hurricane Cloud Solutions LTD (trading as "5tratum")
@@ -15,6 +15,7 @@ Maintainer: WillItMod
 - Rebrand and redistribute it as your own OS/appliance.
 - Ship images/appliances/bundles that include 5tratumOS (modified or not).
 - Flash/write the installer or OS image onto hardware/media for sale or distribution (e.g. "built nodes").
+- Create or publish forks/mirrors of this repository or derivative distributions.
 - Offer it as a hosted/managed service or use it to provide a competing product.
 
 If you're a system builder/reseller/integrator and you want to provision devices for others,
