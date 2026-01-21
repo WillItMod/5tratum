@@ -1,5 +1,7 @@
 # 5tratumOS (Installer & Releases)
 
+[![License: BUSL 1.1](https://img.shields.io/badge/license-BUSL%201.1-orange)](LICENSE)
+
 ## License (READ THIS FIRST)
 
 This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It is **NOT** an open source license.
