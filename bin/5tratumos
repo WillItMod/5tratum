@@ -459,9 +459,9 @@ PY
           mv "${tmp}" "${dest}"
         }
 
-        main_repo="${FIVETRATUMOS_MAIN_STORE_REPO:-WillItMod/umbrel-dev-community-store}"
+        main_repo="${FIVETRATUMOS_MAIN_STORE_REPO:-WillItMod/umbrel-community-store}"
         main_branch="${FIVETRATUMOS_MAIN_STORE_BRANCH:-main}"
-        dev_repo="${FIVETRATUMOS_DEV_STORE_REPO:-WillItMod/umbrel-community-store}"
+        dev_repo="${FIVETRATUMOS_DEV_STORE_REPO:-WillItMod/umbrel-dev-community-store}"
         dev_branch="${FIVETRATUMOS_DEV_STORE_BRANCH:-main}"
         # Fallback to public tarball URLs if the repos are public.
         main_url="https://github.com/${main_repo}/archive/refs/heads/${main_branch}.tar.gz"
