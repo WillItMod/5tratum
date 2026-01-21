@@ -68,4 +68,16 @@ if [ -n "${TRATUMOS_CONSOLE_CHROMIUM_FLAGS:-}" ]; then
   chromium_args+=(${TRATUMOS_CONSOLE_CHROMIUM_FLAGS})
 fi
 
-exec /usr/bin/chromium "${chromium_args[@]}" "${URL}"
+chromium_bin="${TRATUMOS_CONSOLE_CHROMIUM_BIN:-}"
+if [ -z "${chromium_bin}" ]; then
+  chromium_bin="$(command -v chromium 2>/dev/null || true)"
+  if [ -z "${chromium_bin}" ]; then
+    chromium_bin="$(command -v chromium-browser 2>/dev/null || true)"
+  fi
+fi
+if [ -z "${chromium_bin}" ] || [ ! -x "${chromium_bin}" ]; then
+  echo "[5tratumos-x11-session] chromium not found (expected chromium or chromium-browser)" >&2
+  exit 1
+fi
+
+exec "${chromium_bin}" "${chromium_args[@]}" "${URL}"

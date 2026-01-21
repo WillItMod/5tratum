@@ -16,18 +16,46 @@ CONSOLE_USER="${FIVETRATUMOS_CONSOLE_USER:-${TRATUMOS_CONSOLE_USER:-forge}}"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y --no-install-recommends \
-  cage \
-  chromium \
-  curl \
-  kbd \
-  matchbox-window-manager \
-  x11-xserver-utils \
-  xinit \
-  xserver-xorg-core \
-  xserver-xorg-video-fbdev \
-  xserver-xorg-video-vesa \
-  xserver-xorg-video-qxl
+
+pkg_available() {
+  apt-cache show "$1" 2>/dev/null | grep -qE '^Package: ' || return 1
+  return 0
+}
+
+pick_one() {
+  for p in "$@"; do
+    if pkg_available "${p}"; then
+      echo "${p}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+pkgs=(
+  cage
+  curl
+  kbd
+  matchbox-window-manager
+  x11-xserver-utils
+  xinit
+  xserver-xorg-core
+)
+
+chromium_pkg="$(pick_one chromium chromium-browser || true)"
+if [ -z "${chromium_pkg}" ]; then
+  die "chromium package not available (expected chromium or chromium-browser)"
+fi
+pkgs+=("${chromium_pkg}")
+
+# Optional Xorg drivers (may be arch-specific).
+for opt in xserver-xorg-video-fbdev xserver-xorg-video-vesa xserver-xorg-video-qxl; do
+  if pkg_available "${opt}"; then
+    pkgs+=("${opt}")
+  fi
+done
+
+apt-get install -y --no-install-recommends "${pkgs[@]}"
 
 if ! id -u "${CONSOLE_USER}" >/dev/null 2>&1; then
   useradd -m -s /bin/bash "${CONSOLE_USER}"

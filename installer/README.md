@@ -27,6 +27,14 @@ Embedded files:
 Optional provisioning files:
 - `/update.token` (preferred) or `/update_token` (legacy) at the ISO root (or under `/5tratumos/`) to seed `/etc/5tratumos/update.token` for private GitHub repos.
 
+## Raspberry Pi OS Lite image (arm64)
+
+If you want a Raspberry Pi Imager-friendly `.img.xz` that keeps Imager Wi‑Fi/SSH customization working, use:
+
+- `installer/build-raspios-image.sh`
+
+It embeds `dist/5tratumos-update.tgz` onto the boot partition and installs 5tratumOS + kiosk on first boot.
+
 ## Legacy: live-build TUI installer
 
 The older live-build based installer remains in `installer/build-installer-iso.sh` but is not the recommended path.

@@ -9,6 +9,27 @@ log() {
   printf '[5tratumos-console] %s\n' "$*" >&2
 }
 
+chromium_bin="${TRATUMOS_CONSOLE_CHROMIUM_BIN:-}"
+if [ -z "${chromium_bin}" ]; then
+  chromium_bin="$(command -v chromium 2>/dev/null || true)"
+  if [ -z "${chromium_bin}" ]; then
+    chromium_bin="$(command -v chromium-browser 2>/dev/null || true)"
+  fi
+fi
+if [ -z "${chromium_bin}" ] || [ ! -x "${chromium_bin}" ]; then
+  log "chromium not found (expected chromium or chromium-browser)"
+  exit 1
+fi
+
+cage_bin="${TRATUMOS_CONSOLE_CAGE_BIN:-}"
+if [ -z "${cage_bin}" ]; then
+  cage_bin="$(command -v cage 2>/dev/null || true)"
+fi
+if [ -z "${cage_bin}" ] || [ ! -x "${cage_bin}" ]; then
+  log "cage not found"
+  exit 1
+fi
+
 read_kv() {
   local file="$1"
   local key="$2"
@@ -148,4 +169,4 @@ if [ -n "${TRATUMOS_CONSOLE_CHROMIUM_FLAGS:-}" ]; then
   chromium_args+=(${TRATUMOS_CONSOLE_CHROMIUM_FLAGS})
 fi
 
-exec /usr/bin/cage -- /usr/bin/chromium "${chromium_args[@]}"
+exec "${cage_bin}" -- "${chromium_bin}" "${chromium_args[@]}"
