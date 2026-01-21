@@ -6869,6 +6869,14 @@
       const res = await apiJsonTimeout('/api/v0/system/update/check', {}, 20000);
       if (res && typeof res === 'object') systemUpdateCheckCache = res;
 
+      if (userInitiated && res && typeof res === 'object' && res.token_required === true) {
+        const didSave = await promptForUpdateToken({ reason: 'Updates require an access key.' });
+        if (didSave) {
+          await refreshSystemUpdateCheck({ force: true, user: true });
+        }
+        return;
+      }
+
       if (userInitiated && res && typeof res === 'object' && res.update_available === true) {
         const tag =
           res.available && typeof res.available === 'object' && res.available.tag ? String(res.available.tag).trim() : '';
@@ -7051,15 +7059,23 @@
   }
 
   async function applySystemUpdate() {
+    return applySystemUpdateInternal({ confirm: true });
+  }
+
+  async function applySystemUpdateInternal(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const confirm = options.confirm !== false;
     if (btnUpdateApply && btnUpdateApply.disabled) return;
-    const okConfirm = await openConfirmModal({
-      title: 'Apply system update now?',
-      message: 'This restarts portal services during deployment.',
-      confirmText: 'Update',
-      cancelText: 'Cancel',
-      danger: true,
-    });
-    if (!okConfirm) return;
+    if (confirm) {
+      const okConfirm = await openConfirmModal({
+        title: 'Apply system update now?',
+        message: 'This restarts portal services during deployment.',
+        confirmText: 'Update',
+        cancelText: 'Cancel',
+        danger: true,
+      });
+      if (!okConfirm) return;
+    }
 
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
@@ -7082,6 +7098,13 @@
         { method: 'POST', body: JSON.stringify({ channel: ch }) },
         60000,
       );
+      if (res && typeof res === 'object' && res.token_required === true) {
+        const didSave = await promptForUpdateToken({ reason: 'Updates require an access key.' });
+        if (didSave) {
+          await applySystemUpdateInternal({ confirm: false });
+        }
+        return;
+      }
       if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Update did not start');
       showToast('Update started', null);
       await refreshSystemUpdateStatus();
@@ -7110,6 +7133,96 @@
     } finally {
       renderSystemUpdatePanel();
     }
+  }
+
+  async function promptForUpdateToken(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const reason = String(options.reason || '').trim() || 'Updates require an access key.';
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return false;
+
+    return new Promise((resolve) => {
+      let settled = false;
+      modalOnClose = () => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      };
+
+      if (modalKindEl) modalKindEl.textContent = 'Updates';
+      modalTitleEl.textContent = 'GitHub access key required';
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const p = document.createElement('div');
+      p.className = 'text-sm text-slate-300 whitespace-pre-wrap';
+      p.textContent = `${reason}\n\nIf you don’t have a key, contact 5tratum to request one.`;
+      wrap.appendChild(p);
+
+      const input = document.createElement('input');
+      input.type = 'password';
+      input.className = 'forgeos-input';
+      input.placeholder = 'Paste GitHub token…';
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      wrap.appendChild(input);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2';
+
+      const btnCancel = document.createElement('button');
+      btnCancel.type = 'button';
+      btnCancel.className = 'axe-btn';
+      btnCancel.textContent = 'Cancel';
+      btnCancel.addEventListener('click', () => closeModal());
+
+      const btnSave = document.createElement('button');
+      btnSave.type = 'button';
+      btnSave.className = 'axe-btn';
+      btnSave.textContent = 'Save & retry';
+      btnSave.addEventListener('click', async () => {
+        const token = String(input.value || '').trim();
+        if (!token) return;
+        btnSave.disabled = true;
+        btnCancel.disabled = true;
+        btnSave.textContent = 'Saving...';
+        try {
+          const res = await apiJsonTimeout(
+            '/api/v0/system/update/config',
+            { method: 'POST', body: JSON.stringify({ token }) },
+            8000,
+          );
+          if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
+          systemUpdateConfigCache = res;
+          showToast('Token saved', null);
+          settled = true;
+          closeModal();
+          resolve(true);
+        } catch (e) {
+          btnSave.disabled = false;
+          btnCancel.disabled = false;
+          btnSave.textContent = 'Save & retry';
+          showToast('Save failed', 'error');
+          await openNoticeModal({
+            kind: 'Error',
+            title: 'Save failed',
+            message: e && e.message ? String(e.message) : String(e),
+            danger: true,
+          });
+        }
+      });
+
+      actions.appendChild(btnCancel);
+      actions.appendChild(btnSave);
+      wrap.appendChild(actions);
+
+      modalBodyEl.appendChild(wrap);
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      window.setTimeout(() => input.focus(), 50);
+    });
   }
 
   async function refreshStore() {
