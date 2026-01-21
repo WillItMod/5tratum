@@ -6,18 +6,18 @@
 
 This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It is **NOT** an open source license.
 
-- **No resale / no preinstalled devices / no "built nodes" without a commercial license:** `COMMERCIAL_LICENSE.md`
-- **Forks/derivatives are NOT welcome for redistribution:** see `LICENSE_POLICY.md`
-- License: `LICENSE`
-- Licensing policy summary: `LICENSE_POLICY.md`
-- Trademark/branding policy: `TRADEMARK.md`
+- **No resale / no preinstalled devices / no "built nodes" without a commercial license:** [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)
+- **Forks/derivatives are NOT welcome for redistribution:** see [LICENSE_POLICY.md](LICENSE_POLICY.md)
+- License: [LICENSE](LICENSE)
+- Licensing policy summary: [LICENSE_POLICY.md](LICENSE_POLICY.md)
+- Trademark/branding policy: [TRADEMARK.md](TRADEMARK.md)
 
 ## Downloads (v0.3.89)
 
 **AMD/INTEL only (x86_64 / amd64).** No ARM/Raspberry Pi builds in this release.
 
-- Installer ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso`
-- Installer ISO checksum: `https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso.sha256`
+- [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso)
+- [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso.sha256)
 
 ## Requirements
 
@@ -28,8 +28,8 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 
 ## Flashing / Install
 
-- Full install guide: `docs/install/README.md`
-- Verify downloads: `docs/install/VERIFY.md`
+- Full install guide: [docs/install/README.md](docs/install/README.md)
+- Verify downloads: [docs/install/VERIFY.md](docs/install/VERIFY.md)
 
 ### Windows (Balena Etcher)
 
