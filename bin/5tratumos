@@ -25,6 +25,82 @@ die() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+compose_project_containers() {
+  local project="$1"
+  docker ps -a --filter "label=com.docker.compose.project=${project}" --format '{{.ID}}' 2>/dev/null || true
+}
+
+compose_project_networks() {
+  local project="$1"
+  docker network ls --filter "label=com.docker.compose.project=${project}" --format '{{.ID}}' 2>/dev/null || true
+}
+
+compose_project_volumes() {
+  local project="$1"
+  docker volume ls --filter "label=com.docker.compose.project=${project}" --format '{{.Name}}' 2>/dev/null || true
+}
+
+force_stop_project() {
+  local project="$1"
+  local ids
+  ids="$(compose_project_containers "${project}" | tr '\n' ' ' | xargs || true)"
+  [ -n "${ids}" ] || return 0
+  echo "warn: forcing containers down for project ${project}" >&2
+  docker rm -f ${ids} >/dev/null 2>&1 || true
+}
+
+cleanup_project_artifacts() {
+  local project="$1"
+  local remove_volumes="${2:-false}"
+
+  # Networks may be left behind if docker compose is interrupted.
+  local nets
+  nets="$(compose_project_networks "${project}" | tr '\n' ' ' | xargs || true)"
+  if [ -n "${nets}" ]; then
+    docker network rm ${nets} >/dev/null 2>&1 || true
+  fi
+
+  if [ "${remove_volumes}" = "true" ]; then
+    local vols
+    vols="$(compose_project_volumes "${project}" | tr '\n' ' ' | xargs || true)"
+    if [ -n "${vols}" ]; then
+      docker volume rm ${vols} >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+compose_down_safe() {
+  local project="$1"
+  local workdir="$2"
+  local remove_volumes="${3:-false}"
+  local args
+  args=(down --remove-orphans)
+  if [ "${remove_volumes}" = "true" ]; then
+    args+=(--volumes)
+  fi
+
+  local rc=0
+  if have timeout; then
+    set +e
+    (cd "${workdir}" && timeout 120s docker compose --project-name "${project}" "${args[@]}")
+    rc=$?
+    set -e
+  else
+    set +e
+    (cd "${workdir}" && docker compose --project-name "${project}" "${args[@]}")
+    rc=$?
+    set -e
+  fi
+
+  # If compose failed or timed out, force stop remaining containers then clean up networks (and volumes if asked).
+  if [ "${rc}" -ne 0 ]; then
+    force_stop_project "${project}"
+    cleanup_project_artifacts "${project}" "${remove_volumes}"
+    return 0
+  fi
+  return 0
+}
+
 current_channel() {
   if [ -n "${FIVETRATUMOS_CHANNEL:-}" ]; then
     echo "${FIVETRATUMOS_CHANNEL}"
@@ -1801,7 +1877,7 @@ PY
         ensure_app_env "${app_id}" "${app_dir}"
 
         project="$(app_project_name "${app_id}")"
-        (cd "${app_dir}" && docker compose --project-name "${project}" down --remove-orphans) || true
+        compose_down_safe "${project}" "${app_dir}" "${purge}"
 
         rm -rf "${app_dir}"
         if [ "${purge}" = "true" ]; then
@@ -1824,7 +1900,7 @@ PY
             compose_up_app "${project}" "${app_dir}" up -d
             ;;
           down)
-            compose_up "${project}" "${app_dir}" down
+            compose_down_safe "${project}" "${app_dir}" "false"
             ;;
           pull)
             compose_up "${project}" "${app_dir}" pull
