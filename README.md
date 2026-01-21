@@ -7,9 +7,9 @@ This folder is a first-pass "appliance OS" foundation for running AxeSuite apps:
 - Overlay: a small landing page on port `80`
 - Apps: templated Docker Compose stacks (currently `axelive`, `axebench`)
 
-License: see `LICENSE` (BUSL-1.1).
+License: see `LICENSE` (BUSL-1.1). No resale / no "built nodes" without a commercial license: `COMMERCIAL_LICENSE.md`.
 Branding: see `TRADEMARK.md`.
-Policy: see `LICENSE_POLICY.md`.
+Policy: see `LICENSE_POLICY.md` (forks/derivatives not welcome for redistribution).
 
 ## Proxmox approach (recommended)
 
