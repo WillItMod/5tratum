@@ -107,17 +107,21 @@ fi
 install -d -m 0755 /var/lib/5tratumos/apps
 install -d -m 0755 /etc/5tratumos
 
-# Optional: install a GitHub token from removable media (for private update repos).
-# Safer than embedding it into update.json because it's stored in a dedicated 0600 file.
-for tok in /cdrom/update.token /cdrom/5tratumos/update.token; do
+# Optional: install a GitHub token from install media (for private update repos).
+# In preseed installs, /cdrom is not always mounted inside the target chroot, so we
+# also accept a staged copy in /root/update.token (copied by preseed.cfg).
+for tok in /root/update.token /cdrom/update.token /cdrom/5tratumos/update.token; do
   if [ -f "${tok}" ]; then
     install -m 0600 "${tok}" /etc/5tratumos/update.token || true
     break
   fi
 done
 
-# Embed build metadata if present on install media (prevents "version unknown" on first boot).
-if [ -f /cdrom/5tratumos/build.json ]; then
+# Embed build metadata if present (prevents "version unknown" on first boot).
+# As with update.token, accept a staged copy in /root/build.json.
+if [ -f /root/build.json ]; then
+  install -m 0644 /root/build.json /etc/5tratumos/build.json || true
+elif [ -f /cdrom/5tratumos/build.json ]; then
   install -m 0644 /cdrom/5tratumos/build.json /etc/5tratumos/build.json || true
 fi
 
