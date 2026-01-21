@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/}"
-HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/}"
+URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/login.html}"
+HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/login.html}"
 WAIT_SECS="${TRATUMOS_CONSOLE_WAIT_SECS:-90}"
 
 log() {
@@ -56,6 +56,15 @@ if command -v curl >/dev/null 2>&1; then
   done
 fi
 
+# Ensure Wayland/Xorg runtime dir is correct (systemd unit should not set it).
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+if [ ! -d "${XDG_RUNTIME_DIR}" ]; then
+  log "XDG_RUNTIME_DIR is missing: ${XDG_RUNTIME_DIR}"
+  exit 1
+fi
+
 detect_backend() {
   local b="${TRATUMOS_CONSOLE_BACKEND:-}"
   b="$(printf '%s' "${b}" | tr '[:upper:]' '[:lower:]' | tr -d ' \t\r\n')"
@@ -93,20 +102,11 @@ if [ "${backend}" = "x11" ]; then
     log "missing x11 session script: ${session}"
     exit 1
   fi
-  exec /usr/bin/xinit "${session}" -- :0 -nolisten tcp
+  exec /usr/bin/xinit "${session}" -- :0 -nolisten tcp vt1 -keeptty
 fi
 
 export XDG_SESSION_TYPE=wayland
 export MOZ_ENABLE_WAYLAND=1
-
-# Ensure Wayland runtime dir is correct (systemd unit should not set it).
-if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
-  export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-fi
-if [ ! -d "${XDG_RUNTIME_DIR}" ]; then
-  log "XDG_RUNTIME_DIR is missing: ${XDG_RUNTIME_DIR}"
-  exit 1
-fi
 
 # wlroots (cage) can fail to render on some virtual GPUs unless software rendering
 # and/or hardware cursors are disabled. Allow safe fallbacks by default.

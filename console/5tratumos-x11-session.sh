@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/}"
+URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/login.html}"
 
 read_kv() {
   local file="$1"
