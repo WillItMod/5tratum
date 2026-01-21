@@ -24,7 +24,7 @@ Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8
 KillMode=mixed
-ExecCondition=/bin/bash -lc test -e /dev/dri/card0 -o -e /dev/fb0
+ExecCondition=/bin/bash -lc 'test -e /dev/dri/card0 || test -e /dev/fb0'
 ExecStart=/usr/local/bin/5tratumos-console
 
 [Install]

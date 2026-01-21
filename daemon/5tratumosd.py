@@ -166,6 +166,14 @@ def _write_json_atomic(path: str, obj: dict) -> None:
     os.replace(tmp, path)
 
 
+def _write_text_atomic(path: str, value: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(str(value))
+    os.replace(tmp, path)
+
+
 def _read_json(path: str) -> dict:
     if not os.path.isfile(path):
         return {}
@@ -3677,6 +3685,74 @@ def auth_status(handler: BaseHTTPRequestHandler) -> dict:
     return {"ok": True, "authed": bool(user), "user": user, "needs_setup": needs_setup, "time": _now_iso()}
 
 
+_KEYBOARD_LAYOUTS_ALLOWED = {"gb", "us", "fr", "be", "de"}
+
+
+def _read_kbd_kv(path: str, key: str) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                raw = line.strip()
+                if not raw or raw.startswith("#"):
+                    continue
+                if not raw.startswith(f"{key}="):
+                    continue
+                val = raw.split("=", 1)[1].strip()
+                if val.startswith('"') and val.endswith('"') and len(val) >= 2:
+                    val = val[1:-1]
+                return str(val).strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def keyboard_layout_get(handler: BaseHTTPRequestHandler) -> dict:
+    layout = _read_kbd_kv("/etc/default/keyboard", "XKBLAYOUT") or ""
+    layout = layout.strip().lower()
+    if layout == "uk":
+        layout = "gb"
+    if layout not in _KEYBOARD_LAYOUTS_ALLOWED:
+        layout = "us"
+    status = auth_status(handler)
+    return {"ok": True, "layout": layout, "needs_setup": bool(status.get("needs_setup")), "time": _now_iso()}
+
+
+def keyboard_layout_set(handler: BaseHTTPRequestHandler, body: dict) -> dict:
+    raw = str(body.get("layout") or "").strip().lower()
+    if raw == "uk":
+        raw = "gb"
+    if raw not in _KEYBOARD_LAYOUTS_ALLOWED:
+        return {"ok": False, "error": "invalid layout"}
+
+    model = _read_kbd_kv("/etc/default/keyboard", "XKBMODEL") or "pc105"
+    variant = _read_kbd_kv("/etc/default/keyboard", "XKBVARIANT") or ""
+    options = _read_kbd_kv("/etc/default/keyboard", "XKBOPTIONS") or ""
+
+    try:
+        os.makedirs("/etc/default", exist_ok=True)
+        content = (
+            "# KEYBOARD CONFIGURATION FILE\n\n"
+            "# Consult the keyboard(5) manual page.\n\n"
+            f'XKBMODEL="{model}"\n'
+            f'XKBLAYOUT="{raw}"\n'
+            f'XKBVARIANT="{variant}"\n'
+            f'XKBOPTIONS="{options}"\n\n'
+            'BACKSPACE="guess"\n'
+        )
+        _write_text_atomic("/etc/default/keyboard", content)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    # Best-effort apply to console + X11.
+    if os.path.isfile("/usr/bin/setupcon") or os.path.isfile("/bin/setupcon"):
+        run_cmd(["setupcon", "-f", "--force"], timeout_s=15)
+    if os.path.isfile("/usr/bin/localectl"):
+        run_cmd(["localectl", "set-x11-keymap", raw, model], timeout_s=10)
+
+    status = auth_status(handler)
+    return {"ok": True, "layout": raw, "needs_setup": bool(status.get("needs_setup")), "time": _now_iso()}
+
+
 def _make_session(username: str) -> tuple[str, float]:
     sid = secrets.token_urlsafe(32)
     exp = time.time() + float(SESSION_TTL_S)
@@ -6388,6 +6464,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
                 return
+            if path == "/api/v0/auth/keyboard":
+                json_response(self, HTTPStatus.OK, keyboard_layout_get(self))
+                return
 
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
@@ -6736,6 +6815,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             status, payload, headers = handle_update_credentials(self, body if isinstance(body, dict) else {})
             json_response(self, int(status), payload, headers=headers)
+            return
+
+        if path == "/api/v0/auth/keyboard":
+            if not isinstance(body, dict):
+                json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "invalid body"})
+                return
+            res = keyboard_layout_set(self, body)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
         if path.startswith("/api/v0/") and not current_user(self):
