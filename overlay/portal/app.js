@@ -2589,6 +2589,65 @@
     return `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
   }
 
+  async function httpStatus(url, timeoutMs) {
+    const t = Math.max(500, Number(timeoutMs) || 1500);
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), t);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: ctl.signal,
+      });
+      return res && typeof res.status === 'number' ? res.status : 0;
+    } catch {
+      return 0;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  function isAppHttpReady(status) {
+    const s = Number(status) || 0;
+    if (!s) return false;
+    if (s === 404) return false;
+    if (s >= 500) return false;
+    if (s === 501) return false;
+    return true;
+  }
+
+  async function waitForAppReady(appId, url, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 90000);
+    const pollMs = Math.max(750, Number(options.pollMs) || 1500);
+    const startedAt = Date.now();
+    let lastStatus = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+      lastStatus = await httpStatus(url, 1800);
+      if (isAppHttpReady(lastStatus)) return { ok: true, status: lastStatus, waitedMs: Date.now() - startedAt };
+      await sleep(pollMs);
+    }
+    return { ok: false, status: lastStatus, waitedMs: Date.now() - startedAt };
+  }
+
+  async function runRepairWithoutPrompt(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return { ok: false, error: 'missing app id' };
+    const label = metaFor(id).name || id;
+    const splashToken = showGlobalSplash({ title: `Fixing ${label}`, sub: 'Rebuilding app from template...' });
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout('/api/v0/apps/repair', { method: 'POST', body: JSON.stringify({ id }) }, 900000);
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Fix failed');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? String(e.message) : String(e) };
+    } finally {
+      hideGlobalSplash(splashToken);
+    }
+  }
+
   let toastTimer = null;
   function showToast(message, kind) {
     if (!toastEl) return;
@@ -3450,7 +3509,8 @@
     const iframe = document.createElement('iframe');
     iframe.className = 'forgeos-window__frame';
     iframe.title = name;
-    iframe.src = appLaunchUrl(id);
+    const targetUrl = appLaunchUrl(id);
+    iframe.src = 'about:blank';
     const launchOverlay = document.createElement('div');
     launchOverlay.className = 'forgeos-app-launch';
     launchOverlay.setAttribute('aria-hidden', 'false');
@@ -3469,8 +3529,41 @@
       launchOverlay.classList.add('forgeos-app-launch--hidden');
       launchOverlay.setAttribute('aria-hidden', 'true');
     };
-    iframe.addEventListener('load', hideLaunch, { once: true });
-    window.setTimeout(hideLaunch, 12000);
+
+    (async () => {
+      // For same-origin apps, wait until the app endpoint is ready before loading the iframe
+      // to avoid showing transient 5xx/501 "not ready" pages.
+      if (targetUrl.startsWith(window.location.origin)) {
+        const ready = await waitForAppReady(id, targetUrl, { timeoutMs: 90000 }).catch(() => ({ ok: false, status: 0 }));
+        if (!ready.ok) {
+          const label = metaFor(id).name || id;
+          const okFix = await openConfirmModal({
+            kind: 'App launch',
+            title: `${label} is still starting`,
+            message:
+              `The app UI is not responding yet (HTTP ${ready.status || 0}).\n\n` +
+              'You can keep waiting, or run Fix App to repair the deployment.',
+            confirmText: 'Run Fix',
+            cancelText: 'Keep waiting',
+          });
+          if (okFix) {
+            const res = await runRepairWithoutPrompt(id);
+            if (!res.ok) {
+              await openNoticeModal({
+                kind: 'Error',
+                title: 'Fix failed',
+                message: res.error || 'Fix failed.',
+                danger: true,
+              });
+            }
+          }
+        }
+      }
+      iframe.src = targetUrl;
+      iframe.addEventListener('load', hideLaunch, { once: true });
+      // Safety: don't trap the overlay forever if an app never fully loads.
+      window.setTimeout(hideLaunch, 180000);
+    })();
 
     const resize = document.createElement('div');
     resize.className = 'forgeos-window__resize';
@@ -4273,7 +4366,7 @@
     iframe.loading = 'lazy';
     iframe.addEventListener('focus', noteUserActivity);
     iframe.addEventListener('pointerdown', noteUserActivity, { passive: true });
-    iframe.src = pathUrl;
+    iframe.src = 'about:blank';
     let launchHidden = false;
     const hideLaunch = () => {
       if (launchHidden) return;
@@ -4305,7 +4398,36 @@
       } catch {}
       hideLaunch();
     });
-    window.setTimeout(hideLaunch, 12000);
+    (async () => {
+      if (pathUrl.startsWith(window.location.origin)) {
+        const ready = await waitForAppReady(id, pathUrl, { timeoutMs: 90000 }).catch(() => ({ ok: false, status: 0 }));
+        if (!ready.ok) {
+          const label = metaFor(id).name || id;
+          const okFix = await openConfirmModal({
+            kind: 'App launch',
+            title: `${label} is still starting`,
+            message:
+              `The app UI is not responding yet (HTTP ${ready.status || 0}).\n\n` +
+              'You can keep waiting, or run Fix App to repair the deployment.',
+            confirmText: 'Run Fix',
+            cancelText: 'Keep waiting',
+          });
+          if (okFix) {
+            const res = await runRepairWithoutPrompt(id);
+            if (!res.ok) {
+              await openNoticeModal({
+                kind: 'Error',
+                title: 'Fix failed',
+                message: res.error || 'Fix failed.',
+                danger: true,
+              });
+            }
+          }
+        }
+      }
+      iframe.src = pathUrl;
+      window.setTimeout(hideLaunch, 180000);
+    })();
 
     const ui = installed && installed.ui && typeof installed.ui === 'object' ? installed.ui : null;
     const port = ui && ui.port ? Number(ui.port) : 0;

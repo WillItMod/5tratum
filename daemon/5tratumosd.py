@@ -2035,6 +2035,55 @@ def _ensure_mosquitto_clients() -> dict:
     return {"ok": True, "installed": _mosquitto_pub_present()}
 
 
+def _looks_like_already_installed(res: dict) -> bool:
+    if not isinstance(res, dict):
+        return False
+    msg = " ".join([str(res.get("error") or ""), str(res.get("stderr") or ""), str(res.get("stdout") or "")]).lower()
+    return ("already installed" in msg) or ("app already installed" in msg) or ("is already installed" in msg)
+
+
+def _app_compose_present(app_id: str) -> bool:
+    app_id = str(app_id or "").strip()
+    if not app_id:
+        return False
+    try:
+        compose_path = os.path.join(APPS_DIR, app_id, "docker-compose.yml")
+        return os.path.isfile(compose_path)
+    except Exception:
+        return False
+
+
+def _docker_project_container_count(project: str) -> int | None:
+    proj = str(project or "").strip()
+    if not proj:
+        return None
+    proc = run_cmd(
+        ["docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={proj}", "--format", "{{.ID}}"],
+        timeout_s=10,
+    )
+    if proc.returncode != 0:
+        return None
+    lines = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
+    return len(lines)
+
+
+def _wait_for_app_removed(app_id: str, *, timeout_s: int = 90) -> dict:
+    app = str(app_id or "").strip().lower()
+    if not app:
+        return {"ok": False, "error": "missing app id"}
+    project = docker_compose_project(app)
+    started = time.time()
+    last = {"compose_present": _app_compose_present(app), "containers": _docker_project_container_count(project)}
+    while time.time() - started < max(1, int(timeout_s)):
+        compose_present = _app_compose_present(app)
+        containers = _docker_project_container_count(project)
+        last = {"compose_present": compose_present, "containers": containers}
+        if not compose_present and (containers == 0):
+            return {"ok": True, "time_s": int(time.time() - started), **last}
+        time.sleep(1.5)
+    return {"ok": False, "error": "timeout", "time_s": int(time.time() - started), **last}
+
+
 def mqtt_config_get() -> dict:
     cfg = _normalize_notify_config(_read_notify_config())
     available = _mosquitto_available()
@@ -7425,6 +7474,14 @@ class Handler(BaseHTTPRequestHandler):
                     res = stratumos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=600)
                 else:
                     res = stratumos_cmd(["app", "install", app_id], timeout_s=600)
+                if (not res.get("ok")) and _looks_like_already_installed(res):
+                    wait = _wait_for_app_removed(app_id, timeout_s=90)
+                    res["removal_wait"] = wait
+                    if wait.get("ok"):
+                        if channel:
+                            res = stratumos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=600)
+                        else:
+                            res = stratumos_cmd(["app", "install", app_id], timeout_s=600)
                 if res.get("ok"):
                     _installed_registry_set(app_id, True)
                     if channel:
@@ -7444,6 +7501,8 @@ class Handler(BaseHTTPRequestHandler):
                 res = stratumos_cmd(args, timeout_s=600)
                 if res.get("ok"):
                     _installed_registry_set(app_id, False)
+                    wait = _wait_for_app_removed(app_id, timeout_s=90)
+                    res["removal_wait"] = wait
                     proxy_res = system_proxy_repair()
                     res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
