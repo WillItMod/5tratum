@@ -4013,6 +4013,26 @@
 
     if (globalSplashEl && !globalSplashEl.classList.contains('hidden')) {
       updateGlobalSplashProgress(pct);
+      try {
+        const kind = String(st.kind || '').trim().toLowerCase();
+        const startedAt = Number(st.startedAt) || 0;
+        const ageMs = startedAt ? Date.now() - startedAt : 0;
+        const ageS = ageMs > 0 ? Math.max(0, Math.round(ageMs / 1000)) : 0;
+        const ageLabel = ageS ? `Elapsed ${ageS}s.` : '';
+
+        let hint = '';
+        if (kind === 'update' && pct >= 94 && pct < 100) {
+          hint = 'Finalizing update… waiting for containers to stop / services to restart (this can take a few minutes).';
+        } else if (pct >= 90 && pct < 100) {
+          hint = 'Finalizing… this step can take a moment.';
+        }
+
+        if (hint) {
+          updateGlobalSplash(null, `${hint}${ageLabel ? ` ${ageLabel}` : ''}`);
+          if (globalSplashSubEl) globalSplashSubEl.title = hint;
+          if (globalSplashProgressLabelEl) globalSplashProgressLabelEl.title = hint;
+        }
+      } catch {}
     }
 
     renderTopbarActivity();
