@@ -6827,7 +6827,7 @@ def _nginx_proxy_block(app_id: str, port: int) -> str:
 """.rstrip("\n")
 
 
-def system_proxy_repair() -> dict:
+def system_proxy_repair(*, restart_portal: bool = False) -> dict:
     overlay_dir = Path(ROOT_DIR) / "overlay"
     conf_path = overlay_dir / "nginx" / "default.conf"
     if not conf_path.is_file():
@@ -6974,18 +6974,75 @@ def system_proxy_repair() -> dict:
         except Exception as e:
             return {"ok": False, "error": f"failed to write nginx config: {e}"}
 
-    proc = run_cmd(
-        ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
-        cwd=str(overlay_dir),
-        timeout_s=180,
-    )
-    ok = proc.returncode == 0
+    reload_res: dict | None = None
+    restart_res: dict | None = None
+
+    # IMPORTANT:
+    # Restarting the portal container can drop active HTTP connections (the UI then shows "Failed to fetch"
+    # even when the underlying install/uninstall succeeded). Prefer a graceful nginx reload.
+    if changed:
+        test_proc = run_cmd(
+            ["docker", "compose", "--project-name", "5tratumos-overlay", "exec", "-T", "portal", "nginx", "-t"],
+            cwd=str(overlay_dir),
+            timeout_s=30,
+        )
+        if test_proc.returncode == 0:
+            proc = run_cmd(
+                [
+                    "docker",
+                    "compose",
+                    "--project-name",
+                    "5tratumos-overlay",
+                    "exec",
+                    "-T",
+                    "portal",
+                    "nginx",
+                    "-s",
+                    "reload",
+                ],
+                cwd=str(overlay_dir),
+                timeout_s=30,
+            )
+            reload_res = {
+                "ok": proc.returncode == 0,
+                "code": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+            }
+        else:
+            reload_res = {
+                "ok": False,
+                "code": test_proc.returncode,
+                "stdout": test_proc.stdout,
+                "stderr": test_proc.stderr or "nginx -t failed",
+            }
+
+        if (not reload_res.get("ok")) and restart_portal:
+            proc = run_cmd(
+                ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
+                cwd=str(overlay_dir),
+                timeout_s=180,
+            )
+            restart_res = {
+                "ok": proc.returncode == 0,
+                "code": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+            }
+
+    ok = True
+    if changed:
+        ok = bool(reload_res and reload_res.get("ok"))
+        if restart_portal and restart_res is not None:
+            ok = ok and bool(restart_res.get("ok"))
+
     return {
-        "ok": ok,
+        "ok": bool(ok),
         "changed": bool(changed),
         "updated": updated,
         "added": added,
-        "restart": {"ok": ok, "code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr},
+        "reload": reload_res,
+        "restart": restart_res,
     }
 
 
@@ -7681,7 +7738,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/v0/system/proxy/repair":
-            res = system_proxy_repair()
+            res = system_proxy_repair(restart_portal=True)
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 

@@ -5,6 +5,7 @@ Last updated: 2026-01-18
 ## P0 - Reliability / Breakages
 - App updates UX: after update completes, tiles/cards must refresh version/state and remove update badge immediately (also hard-refresh any open Workbench iframe for that app).
 - Fleet/widgets continuity: ensure cached data persists across sessions so Fleet doesn't "drop to zero" on cold load.
+- App actions intermittently show "Failed to fetch": proxy repair was restarting the portal container (drops active HTTP connections) during install/uninstall/update. Fix: prefer `nginx -s reload` and only restart portal on explicit proxy repair.
 
 ## P1 - Navigation / Layout
 - App Store nav: custom stores should be dynamic (no fixed "Custom1/Custom2"), show store name, and allow removing custom stores.

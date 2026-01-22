@@ -1,21 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-legacy_brand() { printf '%s' f o r g e o s; }
-legacy_upper() { printf '%s' F O R G E O S; }
-legacy_env() {
-  local suffix="$1"
-  local k
-  k="$(legacy_upper)_${suffix}"
-  printf '%s' "${!k-}"
-}
-
-ROOT_DIR="${FIVETRATUMOS_ROOT:-$(legacy_env ROOT)}"
-ROOT_DIR="${ROOT_DIR:-/opt/5tratumos}"
-STATE_DIR="${FIVETRATUMOS_STATE_DIR:-$(legacy_env STATE_DIR)}"
-STATE_DIR="${STATE_DIR:-/var/lib/5tratumos}"
-CHANNEL_FILE="${FIVETRATUMOS_CHANNEL_FILE:-$(legacy_env CHANNEL_FILE)}"
-CHANNEL_FILE="${CHANNEL_FILE:-/etc/5tratumos/channel}"
+# Backwards-compatibility: older installs used FORGEOS_* environment variables.
+ROOT_DIR="${FIVETRATUMOS_ROOT:-${FORGEOS_ROOT:-/opt/5tratumos}}"
+STATE_DIR="${FIVETRATUMOS_STATE_DIR:-${FORGEOS_STATE_DIR:-/var/lib/5tratumos}}"
+CHANNEL_FILE="${FIVETRATUMOS_CHANNEL_FILE:-${FORGEOS_CHANNEL_FILE:-/etc/5tratumos/channel}}"
 STORE_CONFIG_FILE="${FIVETRATUMOS_STORE_CONFIG_FILE:-/etc/5tratumos/store.json}"
 
 die() {
