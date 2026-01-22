@@ -1,7 +1,8 @@
 Param(
   [string]$BundleName = "5tratumos-update.tgz",
   [string]$DistDir = "",
-  [string]$SigningKey = ""
+  [string]$SigningKey = "",
+  [string]$BuildChannel = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +48,25 @@ try {
   if (Test-Path (Join-Path $root "console")) {
     Copy-Item -Recurse -Force -Path (Join-Path $root "console\\*") -Destination $stageConsole
   }
+
+  # Embed build metadata inside the bundle so fresh installs can show a real version
+  # even if the installer fails to write /etc/5tratumos/build.json.
+  $channel = $BuildChannel
+  if ([string]::IsNullOrWhiteSpace($channel)) { $channel = "main" }
+  $tag = ""
+  try { $tag = (& git -C $root describe --tags --abbrev=0 2>$null).Trim() } catch {}
+  if ([string]::IsNullOrWhiteSpace($tag)) {
+    try { $tag = ("rev-" + (& git -C $root rev-parse --short HEAD 2>$null).Trim()) } catch {}
+  }
+  if ([string]::IsNullOrWhiteSpace($tag)) { $tag = "unknown" }
+  $buildObj = @{
+    tag      = $tag
+    repo     = "WillItMod/5tratum"
+    channel  = $channel
+    built_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  }
+  $buildPath = Join-Path $stageBootstrap "build.json"
+  ($buildObj | ConvertTo-Json -Compress) | Set-Content -Encoding UTF8 -NoNewline -Path $buildPath
 
   $bundlePath = Join-Path $DistDir $BundleName
   $shaPath = "$bundlePath.sha256"

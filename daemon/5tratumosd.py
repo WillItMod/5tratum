@@ -425,6 +425,33 @@ def write_build_info(info: dict) -> None:
         _write_json_atomic(os.path.join(STATE_DIR, "build.json"), info)
 
 
+def _read_bundled_build_info() -> dict:
+    """
+    Best-effort read of build metadata that can be shipped inside the bundle.
+
+    This exists to cover installer edge cases where /etc/5tratumos/build.json was
+    not created (or was created as "unknown"). Update applies always write the
+    real tag, but a fresh install should still display the correct version from
+    the embedded bundle if available.
+    """
+    try:
+        candidates = [
+            Path(ROOT_DIR) / "bootstrap" / "build.json",
+            Path(ROOT_DIR) / "build.json",
+        ]
+        for p in candidates:
+            if p.is_file():
+                try:
+                    obj = json.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if isinstance(obj, dict):
+                    return obj
+    except Exception:
+        pass
+    return {}
+
+
 def _ensure_build_info() -> dict:
     """
     Ensure /etc/5tratumos/build.json exists and has basic fields.
@@ -440,6 +467,11 @@ def _ensure_build_info() -> dict:
             info = {}
 
         tag = str(info.get("tag") or info.get("version") or "").strip() or "unknown"
+        if tag in {"unknown", "missing"}:
+            bundled = _read_bundled_build_info()
+            bundled_tag = str(bundled.get("tag") or bundled.get("version") or "").strip()
+            if bundled_tag:
+                tag = bundled_tag
         channel = str(info.get("channel") or read_default_channel() or "main").strip().lower() or "main"
         installed_at = str(info.get("installed_at") or "").strip() or now
         repo = str(info.get("repo") or "WillItMod/5tratum").strip() or "WillItMod/5tratum"

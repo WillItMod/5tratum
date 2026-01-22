@@ -22,6 +22,11 @@ fi
 if [ -f /etc/default/keyboard ]; then
   if grep -Eq '^XKBLAYOUT="uk"$' /etc/default/keyboard 2>/dev/null; then
     sed -i 's/^XKBLAYOUT="uk"$/XKBLAYOUT="gb"/' /etc/default/keyboard 2>/dev/null || true
+    # Best-effort: immediately apply so the local console isn't stuck without a keymap.
+    if command -v setupcon >/dev/null 2>&1; then
+      setupcon -f --force >/dev/null 2>&1 || true
+    fi
+    systemctl restart console-setup.service >/dev/null 2>&1 || true
   fi
 fi
 

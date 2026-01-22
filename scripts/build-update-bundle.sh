@@ -6,6 +6,7 @@ DIST_DIR="${ROOT_DIR}/dist"
 
 BUNDLE_NAME="${BUNDLE_NAME:-5tratumos-update.tgz}"
 SIGNING_KEY="${SIGNING_KEY:-}"
+BUILD_CHANNEL="${BUILD_CHANNEL:-main}"
 
 mkdir -p "${DIST_DIR}"
 
@@ -27,6 +28,18 @@ cp -a "${ROOT_DIR}/bin/5tratumos" "${tmp}/bin/5tratumos"
 if [ -d "${ROOT_DIR}/console" ]; then
   cp -a "${ROOT_DIR}/console/." "${tmp}/console/"
 fi
+
+# Embed build metadata inside the bundle so fresh installs can show a real version
+# even if the installer fails to write /etc/5tratumos/build.json.
+tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+if [ -z "${tag}" ]; then
+  sha="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  tag="${sha:+rev-${sha}}"
+fi
+tag="${tag:-unknown}"
+now="$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")"
+printf '{"tag":"%s","repo":"WillItMod/5tratum","channel":"%s","built_at":"%s"}\n' \
+  "${tag}" "${BUILD_CHANNEL}" "${now}" >"${tmp}/bootstrap/build.json"
 
 # Windows filesystems do not preserve executable bits reliably. Normalize script perms
 # in the staging dir so installs don't fail at first boot.
