@@ -4097,6 +4097,17 @@ def firstboot_store_sync_status() -> dict:
     if os.path.exists(FIRSTBOOT_STORE_SYNC_DONE):
         return {"ok": True, "state": "done", "message": "completed", "time": _now_iso()}
 
+    # Safety valve: never hard-lock login forever if the service didn't start.
+    # If we have no status file after a short boot window, allow login with a warning.
+    try:
+        uptime_raw = Path("/proc/uptime").read_text(encoding="utf-8", errors="ignore").strip().split()
+        uptime_s = float(uptime_raw[0]) if uptime_raw else 0.0
+    except Exception:
+        uptime_s = 0.0
+
+    if uptime_s >= 180:
+        return {"ok": True, "state": "skipped", "message": "store sync not started (timeout), continue", "time": _now_iso()}
+
     return {"ok": True, "state": "pending", "message": "Syncing App Store...", "time": _now_iso()}
 
 
