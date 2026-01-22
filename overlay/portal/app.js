@@ -4158,7 +4158,18 @@
         const startedAt = Number(st.startedAt) || 0;
         const ageMs = startedAt ? Date.now() - startedAt : 0;
         const ageS = ageMs > 0 ? Math.max(0, Math.round(ageMs / 1000)) : 0;
-        const ageLabel = ageS ? `Elapsed ${ageS}s.` : '';
+        const ageLabel = (() => {
+          if (!ageS) return '';
+          // Avoid flashing a noisy timer for quick operations.
+          if (ageS < 30) return '';
+          const s = Math.max(0, Math.round(ageS));
+          const h = Math.floor(s / 3600);
+          const m = Math.floor((s % 3600) / 60);
+          const r = s % 60;
+          if (h > 0) return `Elapsed ${h}h ${m}m.`;
+          if (m > 0) return `Elapsed ${m}m ${r}s.`;
+          return `Elapsed ${r}s.`;
+        })();
 
         let hint = '';
         if (kind === 'update' && pct >= 94 && pct < 100) {
