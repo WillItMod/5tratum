@@ -294,6 +294,7 @@
     let systemUpdatePollInFlight = false;
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
+    let systemUpdateHoldSplash = false;
     let uiConfigCache = null;
     let topbarTempOpen = false;
     let topbarHoverOpen = false;
@@ -2408,7 +2409,7 @@
       name: 'Doom',
       desc: 'Play Doom in your browser (Freedoom). Optional install.',
       tag: 'Fun',
-      logo: '/assets/doom.webp',
+      logo: '/assets/doom_original.png',
       screenshots: [makeShot('Doom', 'Freedoom + Chocolate Doom (noVNC)')],
     },
   };
@@ -2427,7 +2428,7 @@
       const category = sanitizeStoreText(String(store.category || '')).trim();
       let logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
       if (id === 'axedoom') name = 'Doom';
-      if (id === 'axedoom') logo = '/assets/doom.webp';
+      if (id === 'axedoom') logo = '/assets/doom_original.png';
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
       const depsRaw = Array.isArray(store.dependencies)
@@ -6780,9 +6781,12 @@
         updateGlobalSplash('Updating 5tratumOS', label);
         updateGlobalSplashProgress(pct);
       }
-    } else if (systemUpdateSplashToken) {
+    } else if (systemUpdateSplashToken && !systemUpdateHoldSplash) {
       hideGlobalSplash(systemUpdateSplashToken);
       systemUpdateSplashToken = null;
+    } else if (systemUpdateSplashToken && systemUpdateHoldSplash) {
+      updateGlobalSplash('Updating 5tratumOS', 'Restarting services...');
+      updateGlobalSplashProgress(100);
     }
 
     if (btnUpdateCheck) btnUpdateCheck.disabled = busy;
@@ -6853,6 +6857,21 @@
       if (systemUpdateIsBusy(state)) {
         scheduleSystemUpdatePoll(1400);
       } else {
+        if (state === 'error') {
+          systemUpdateHoldSplash = false;
+          stopSystemUpdatePoll();
+          renderSystemUpdatePanel();
+          return;
+        }
+
+        // Keep the splash up until we've reconnected and confirmed the new version.
+        if (systemUpdateHoldSplash) {
+          scheduleSystemUpdatePoll(2500);
+          const ok = await finalizeSystemUpdateUi().catch(() => false);
+          if (ok) stopSystemUpdatePoll();
+          return;
+        }
+
         stopSystemUpdatePoll();
         if (state === 'done') refreshSystemUpdateCheck({ force: true }).catch(() => {});
       }
@@ -6862,6 +6881,32 @@
     } finally {
       systemUpdatePollInFlight = false;
     }
+  }
+
+  async function finalizeSystemUpdateUi() {
+    // Wait until the portal is reachable again and the update check confirms we're up-to-date.
+    const startedAt = Date.now();
+    const timeoutMs = 3 * 60 * 1000;
+    while (Date.now() - startedAt < timeoutMs) {
+      const ok = await ensureHealthy();
+      if (ok) {
+        await refreshSystemUpdateCheck({ force: true }).catch(() => {});
+        const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
+        const installedTag =
+          check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '';
+        const updateAvailable = !!(check && check.update_available === true);
+        if (installedTag && installedTag.toLowerCase() !== 'unknown' && !updateAvailable) {
+          systemUpdateHoldSplash = false;
+          renderSystemUpdatePanel();
+          return true;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    // Don't trap the UI forever if something goes wrong; leave the panel updated.
+    systemUpdateHoldSplash = false;
+    renderSystemUpdatePanel();
+    return false;
   }
 
   async function refreshSystemUpdateStatus() {
@@ -7105,6 +7150,7 @@
 
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
+    systemUpdateHoldSplash = true;
     if (!systemUpdateSplashToken) {
       systemUpdateSplashToken = showGlobalSplash({
         title: 'Updating 5tratumOS',
