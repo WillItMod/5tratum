@@ -3730,6 +3730,7 @@
     const cpu = metrics.cpu || {};
     const cores = Number(cpu.cores) || 1;
     const load1 = Number(cpu.load1) || 0;
+    const tempC = Number(cpu.temp_c);
     const cpuTotal = Number.isFinite(Number(cpu.total_perc)) ? Number(cpu.total_perc) : NaN;
     const cpuPct = Number.isFinite(cpuTotal) ? Math.max(0, Math.round(cpuTotal)) : Math.max(0, Math.round((load1 / cores) * 100));
     if (metricCpu) {
@@ -3737,7 +3738,12 @@
       metricCpu.title = `cores=${cores} load1=${load1.toFixed(2)}`;
     }
     if (metricCpuSub) {
-      metricCpuSub.textContent = `${cores} cores \u2022 load1 ${load1.toFixed(2)}`;
+      const parts = [`${cores} cores`, `load1 ${load1.toFixed(2)}`];
+      if (Number.isFinite(tempC) && tempC > -10 && tempC < 130) {
+        const t = Math.round(tempC);
+        parts.push(`${t}\u00b0C`);
+      }
+      metricCpuSub.textContent = parts.join(' \u2022 ');
     }
     if (metricCpuBar) setMaskedGradientBar(metricCpuBar, cpuPct);
 

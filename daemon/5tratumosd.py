@@ -5522,6 +5522,87 @@ def cpu_utilization_perc() -> tuple[list[float], float | None]:
     return per_core, total
 
 
+def read_cpu_temp_c() -> float | None:
+    """
+    Best-effort CPU temperature reading (degC) across common Linux sources.
+
+    Returns None when unavailable (e.g. no thermal sensors exposed in a VM).
+    """
+
+    def _read_millideg(path: str) -> float | None:
+        try:
+            raw = Path(path).read_text(encoding="utf-8", errors="ignore").strip()
+            if not raw:
+                return None
+            v = float(raw)
+        except Exception:
+            return None
+        # Most sysfs temps are millidegC.
+        if v > 1000:
+            return v / 1000.0
+        # Some drivers expose degC already.
+        return v
+
+    # Prefer thermal zones when present (common on SBCs / some platforms).
+    try:
+        zones = sorted(Path("/sys/class/thermal").glob("thermal_zone*"))
+    except Exception:
+        zones = []
+
+    preferred_zone_types = (
+        "x86_pkg_temp",
+        "cpu-thermal",
+        "cpu_thermal",
+        "soc",
+        "soc-thermal",
+    )
+
+    temps: list[float] = []
+
+    for z in zones:
+        try:
+            ztype = (z / "type").read_text(encoding="utf-8", errors="ignore").strip().lower()
+        except Exception:
+            ztype = ""
+        t = _read_millideg(str(z / "temp"))
+        if t is None:
+            continue
+        # Filter clearly bogus values.
+        if t < -10 or t > 130:
+            continue
+        # Keep preferred sensors earlier; we may return the max anyway.
+        if any(k in ztype for k in preferred_zone_types):
+            temps.append(t)
+        else:
+            temps.append(t)
+
+    # Fallback to hwmon inputs (common on x86: coretemp/k10temp).
+    try:
+        hwmons = sorted(Path("/sys/class/hwmon").glob("hwmon*"))
+    except Exception:
+        hwmons = []
+
+    for h in hwmons:
+        try:
+            name = (h / "name").read_text(encoding="utf-8", errors="ignore").strip().lower()
+        except Exception:
+            name = ""
+        if name and name not in {"coretemp", "k10temp"}:
+            continue
+        for inp in sorted(h.glob("temp*_input")):
+            t = _read_millideg(str(inp))
+            if t is None:
+                continue
+            if t < -10 or t > 130:
+                continue
+            temps.append(t)
+
+    if not temps:
+        return None
+    # Use the hottest reading as a simple "CPU temp" signal.
+    return round(float(max(temps)), 1)
+
+
 def system_metrics() -> dict:
     try:
         load1, load5, load15 = os.getloadavg()
@@ -5529,6 +5610,7 @@ def system_metrics() -> dict:
         load1, load5, load15 = 0.0, 0.0, 0.0
 
     per_core, total_perc = cpu_utilization_perc()
+    temp_c = read_cpu_temp_c()
 
     meminfo = read_meminfo_bytes()
     total = int(meminfo.get("MemTotal", 0))
@@ -5559,6 +5641,7 @@ def system_metrics() -> dict:
             "load15": float(load15),
             "total_perc": round(float(total_perc), 3) if total_perc is not None else None,
             "per_core_perc": [round(float(v), 3) for v in per_core],
+            "temp_c": temp_c,
         },
         "memory": {
             "total_bytes": total,
