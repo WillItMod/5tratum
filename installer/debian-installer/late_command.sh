@@ -177,6 +177,8 @@ IdleActionSec=0
 HandleLidSwitch=ignore
 HandleLidSwitchExternalPower=ignore
 HandleLidSwitchDocked=ignore
+HandlePowerKey=poweroff
+HandlePowerKeyLongPress=poweroff
 EOF
 SYSTEMD_OFFLINE=1 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
 

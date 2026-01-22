@@ -24,6 +24,7 @@ apt-get install -y --no-install-recommends \
   matchbox-window-manager \
   x11-xserver-utils \
   xinit \
+  xserver-xorg-input-libinput \
   xserver-xorg-core \
   xserver-xorg-video-fbdev \
   xserver-xorg-video-vesa \
@@ -50,6 +51,7 @@ fi
 
 systemctl daemon-reload
 systemctl enable --now "5tratumos-console@${CONSOLE_USER}.service"
+systemctl restart "5tratumos-console@${CONSOLE_USER}.service" >/dev/null 2>&1 || true
 
 echo "5tratumOS Console enabled for user: ${CONSOLE_USER}"
 echo "If you don't see a display, ensure the machine has a DRM GPU (/dev/dri/card0)."

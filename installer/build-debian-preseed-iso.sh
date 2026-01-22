@@ -137,6 +137,16 @@ if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
   sed -i 's/Debian installer/5tratumOS installer/g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
 fi
 
+# Some firmware/USB creation flows expect a GRUB config at /EFI/BOOT/grub.cfg on the media
+# (e.g. when the ISO is unpacked to a FAT32 USB instead of being written as a hybrid image).
+# Mirror the config there to improve compatibility.
+if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
+  for efi_dir in "${WORK_DIR}/iso/EFI/BOOT" "${WORK_DIR}/iso/EFI/boot"; do
+    mkdir -p "${efi_dir}" >/dev/null 2>&1 || true
+    cp -f "${WORK_DIR}/iso/boot/grub/grub.cfg" "${efi_dir}/grub.cfg" >/dev/null 2>&1 || true
+  done
+fi
+
 # Optional: Grub background (requires ImageMagick's `convert`).
 if have_imagemagick_convert; then
   if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
@@ -170,6 +180,18 @@ elif [ -f "${WORK_DIR}/iso/efi.img" ]; then
   efi_img="efi.img"
 else
   die "Unable to find efi.img in extracted ISO"
+fi
+
+# Etcher-style raw writes boot the embedded EFI System Partition image (efi.img),
+# not the ISO filesystem path. Some firmware expects a grub.cfg under EFI/BOOT
+# *inside the EFI image* (FAT). If mtools is available, mirror grub.cfg there too.
+if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ] && have mcopy && have mmd; then
+  efi_path="${WORK_DIR}/iso/${efi_img}"
+  if [ -f "${efi_path}" ]; then
+    mmd -i "${efi_path}" ::/EFI >/dev/null 2>&1 || true
+    mmd -i "${efi_path}" ::/EFI/BOOT >/dev/null 2>&1 || true
+    mcopy -o -i "${efi_path}" "${WORK_DIR}/iso/boot/grub/grub.cfg" ::/EFI/BOOT/grub.cfg >/dev/null 2>&1 || true
+  fi
 fi
 
 mbr=""

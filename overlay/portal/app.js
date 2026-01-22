@@ -3784,6 +3784,7 @@
       const net = metrics.network || {};
       const rx = Number(net.rx_bytes) || 0;
       const tx = Number(net.tx_bytes) || 0;
+      const linkMbps = Number(net.link_mbps) || 0;
       const now = Date.now();
       let rateRx = 0;
       let rateTx = 0;
@@ -3794,7 +3795,7 @@
       }
       lastNetSample = { time: now, rx, tx };
       const totalRate = rateRx + rateTx;
-      const maxRate = 50 * 1024 * 1024;
+      const maxRate = linkMbps > 0 ? (linkMbps * 1000 * 1000) / 8 : 50 * 1024 * 1024;
       const pct = maxRate > 0 ? Math.max(0, Math.min(100, (totalRate / maxRate) * 100)) : 0;
       if (metricNetBar) setMaskedGradientBar(metricNetBar, pct);
       if (metricNetSub) metricNetSub.textContent = `Up ${formatBytesPerSec(rateTx)} \u2022 Down ${formatBytesPerSec(rateRx)}`;

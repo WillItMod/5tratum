@@ -2308,6 +2308,12 @@ def _publish_mqtt_metrics(
 
 
 def _notify_loop() -> None:
+    # Debounce/cooldown to avoid spam from transient polling errors or brief dips.
+    # - require N consecutive validated samples before alerting
+    # - rate-limit the same alert per app
+    DROP_DEBOUNCE_N = 2
+    WORKER_DEBOUNCE_N = 2
+    ALERT_COOLDOWN_S = 10 * 60
     while True:
         try:
             cfg = _normalize_notify_config(_read_notify_config())
@@ -2345,22 +2351,58 @@ def _notify_loop() -> None:
                 workers = _pool_workers(pool)
                 block_sig = _pool_block_signature(pool if isinstance(pool, dict) else None)
 
-                metrics = {"status": status, "hashrate_ths": hashrate, "workers": workers}
-                _publish_mqtt_metrics(app_id=app_id, app_name=app_name, metrics=metrics, mqtt_cfg=mqtt_cfg, mqtt_apps=mqtt_apps)
-
+                metrics_to_publish: dict | None = None
                 with _NOTIFY_LOCK:
                     prev = _NOTIFY_STATE["apps"].get(app_id, {})
+                    # Keep last known-good hashrate/workers across transient poll failures.
+                    prev_hashrate_good = prev.get("hashrate_ths")
+                    prev_workers_good = prev.get("workers")
+                    prev_drop_n = int(prev.get("drop_n") or 0)
+                    prev_worker_n = int(prev.get("worker_n") or 0)
+                    prev_last_alert = float(prev.get("last_alert_ts") or 0.0)
+
+                    now_ts = time.time()
+                    pool_ok = bool(pool_entry.get("ok")) if isinstance(pool_entry, dict) else False
+                    sample_valid = pool_ok and hashrate is not None and workers is not None
+
+                    if sample_valid:
+                        hashrate_good = float(hashrate)
+                        workers_good = int(workers)
+                    else:
+                        hashrate_good = float(prev_hashrate_good) if isinstance(prev_hashrate_good, (int, float)) else None
+                        workers_good = int(prev_workers_good) if isinstance(prev_workers_good, int) else None
+
+                    metrics_to_publish = {
+                        "status": status,
+                        "hashrate_ths": hashrate_good,
+                        "workers": workers_good,
+                        "sample_ok": bool(sample_valid),
+                    }
+
                     _NOTIFY_STATE["apps"][app_id] = {
                         "status": status,
-                        "hashrate_ths": hashrate,
-                        "workers": workers,
+                        "hashrate_ths": hashrate_good,
+                        "workers": workers_good,
                         "block_sig": block_sig,
+                        "drop_n": prev_drop_n,
+                        "worker_n": prev_worker_n,
+                        "last_alert_ts": prev_last_alert,
+                        "sample_ok": bool(sample_valid),
+                        "sample_ts": now_ts,
                     }
+
+                if metrics_to_publish is not None:
+                    _publish_mqtt_metrics(app_id=app_id, app_name=app_name, metrics=metrics_to_publish, mqtt_cfg=mqtt_cfg, mqtt_apps=mqtt_apps)
 
                 prev_status = str(prev.get("status") or "")
                 prev_hashrate = float(prev.get("hashrate_ths") or 0.0)
                 prev_workers = int(prev.get("workers") or 0)
                 prev_block = str(prev.get("block_sig") or "")
+                prev_drop_n = int(prev.get("drop_n") or 0)
+                prev_worker_n = int(prev.get("worker_n") or 0)
+                prev_last_alert = float(prev.get("last_alert_ts") or 0.0)
+                sample_ok = bool(_NOTIFY_STATE["apps"].get(app_id, {}).get("sample_ok"))
+                now_ts = float(_NOTIFY_STATE["apps"].get(app_id, {}).get("sample_ts") or time.time())
 
                 if status and status != prev_status and (events_mqtt.get("status_change") or events_discord.get("status_change")):
                     detail = f"status changed to {status}"
@@ -2390,38 +2432,59 @@ def _notify_loop() -> None:
                         discord_apps=discord_apps,
                     )
 
-                if (
-                    prev_hashrate > 0
-                    and hashrate >= 0
-                    and hashrate <= prev_hashrate * (1 - (drop_pct / 100.0))
-                    and (events_mqtt.get("hashrate_drop") or events_discord.get("hashrate_drop"))
-                ):
-                    detail = f"hashrate dropped to {hashrate:.2f} TH/s (was {prev_hashrate:.2f})"
-                    _emit_notify_event(
-                        app_id=app_id,
-                        app_name=app_name,
-                        event="hashrate_drop",
-                        detail=detail,
-                        extra={"hashrate_ths": hashrate, "prev_hashrate_ths": prev_hashrate},
-                        mqtt_cfg=mqtt_cfg,
-                        discord_cfg=discord_cfg,
-                        mqtt_apps=mqtt_apps,
-                        discord_apps=discord_apps,
-                    )
+                # Debounced alerts: only evaluate when the current sample is validated OK.
+                if sample_ok and (events_mqtt.get("hashrate_drop") or events_discord.get("hashrate_drop")):
+                    cur_hashrate = float(_NOTIFY_STATE["apps"][app_id].get("hashrate_ths") or 0.0)
+                    threshold = prev_hashrate * (1 - (drop_pct / 100.0)) if prev_hashrate > 0 else 0.0
+                    drop_now = prev_hashrate > 0 and cur_hashrate >= 0 and cur_hashrate <= threshold
+                    with _NOTIFY_LOCK:
+                        if drop_now:
+                            _NOTIFY_STATE["apps"][app_id]["drop_n"] = int(_NOTIFY_STATE["apps"][app_id].get("drop_n") or 0) + 1
+                        else:
+                            _NOTIFY_STATE["apps"][app_id]["drop_n"] = 0
+                        drop_n = int(_NOTIFY_STATE["apps"][app_id].get("drop_n") or 0)
+                    if drop_now and drop_n >= DROP_DEBOUNCE_N and (now_ts - prev_last_alert) >= ALERT_COOLDOWN_S:
+                        detail = f"hashrate dropped to {cur_hashrate:.2f} TH/s (was {prev_hashrate:.2f})"
+                        _emit_notify_event(
+                            app_id=app_id,
+                            app_name=app_name,
+                            event="hashrate_drop",
+                            detail=detail,
+                            extra={"hashrate_ths": cur_hashrate, "prev_hashrate_ths": prev_hashrate},
+                            mqtt_cfg=mqtt_cfg,
+                            discord_cfg=discord_cfg,
+                            mqtt_apps=mqtt_apps,
+                            discord_apps=discord_apps,
+                        )
+                        with _NOTIFY_LOCK:
+                            _NOTIFY_STATE["apps"][app_id]["last_alert_ts"] = time.time()
+                            _NOTIFY_STATE["apps"][app_id]["drop_n"] = 0
 
-                if prev_workers > 0 and workers < prev_workers and (events_mqtt.get("worker_offline") or events_discord.get("worker_offline")):
-                    detail = f"workers dropped to {workers} (was {prev_workers})"
-                    _emit_notify_event(
-                        app_id=app_id,
-                        app_name=app_name,
-                        event="worker_offline",
-                        detail=detail,
-                        extra={"workers": workers, "prev_workers": prev_workers},
-                        mqtt_cfg=mqtt_cfg,
-                        discord_cfg=discord_cfg,
-                        mqtt_apps=mqtt_apps,
-                        discord_apps=discord_apps,
-                    )
+                if sample_ok and prev_workers > 0 and (events_mqtt.get("worker_offline") or events_discord.get("worker_offline")):
+                    cur_workers = int(_NOTIFY_STATE["apps"][app_id].get("workers") or 0)
+                    worker_drop_now = cur_workers < prev_workers
+                    with _NOTIFY_LOCK:
+                        if worker_drop_now:
+                            _NOTIFY_STATE["apps"][app_id]["worker_n"] = int(_NOTIFY_STATE["apps"][app_id].get("worker_n") or 0) + 1
+                        else:
+                            _NOTIFY_STATE["apps"][app_id]["worker_n"] = 0
+                        worker_n = int(_NOTIFY_STATE["apps"][app_id].get("worker_n") or 0)
+                    if worker_drop_now and worker_n >= WORKER_DEBOUNCE_N and (now_ts - prev_last_alert) >= ALERT_COOLDOWN_S:
+                        detail = f"workers dropped to {cur_workers} (was {prev_workers})"
+                        _emit_notify_event(
+                            app_id=app_id,
+                            app_name=app_name,
+                            event="worker_offline",
+                            detail=detail,
+                            extra={"workers": cur_workers, "prev_workers": prev_workers},
+                            mqtt_cfg=mqtt_cfg,
+                            discord_cfg=discord_cfg,
+                            mqtt_apps=mqtt_apps,
+                            discord_apps=discord_apps,
+                        )
+                        with _NOTIFY_LOCK:
+                            _NOTIFY_STATE["apps"][app_id]["last_alert_ts"] = time.time()
+                            _NOTIFY_STATE["apps"][app_id]["worker_n"] = 0
 
                 if block_sig and prev_block and block_sig != prev_block and (
                     events_mqtt.get("block_found") or events_discord.get("block_found")
@@ -4468,6 +4531,12 @@ def list_store_apps(channel: str | None) -> dict:
 
     if ch in {"main", "dev"}:
         if not any(str(a.get("id") or "").strip().lower() == "axedoom" for a in apps):
+            portal_assets = Path(ROOT_DIR) / "overlay" / "portal" / "assets"
+            doom_icon = ""
+            if (portal_assets / "doom_original.png").is_file():
+                doom_icon = "/assets/doom_original.png"
+            elif (portal_assets / "doom.webp").is_file():
+                doom_icon = "/assets/doom.webp"
             apps.append(
                 {
                     "id": "axedoom",
@@ -4483,7 +4552,7 @@ def list_store_apps(channel: str | None) -> dict:
                     "website": "https://freedoom.github.io/",
                     "repo": "",
                     "support": "",
-                    "icon": "",
+                    "icon": doom_icon,
                     "gallery": [],
                     "port": 5300,
                     "path": "",
@@ -4678,13 +4747,7 @@ def list_app_widgets() -> dict:
             if not isinstance(widgets, list) or not widgets:
                 continue
 
-            port = default_ui_ports(app_id)
-            if port is None:
-                try:
-                    sp = int(str(store_meta.get("port") or "").strip() or "0")
-                except Exception:
-                    sp = 0
-                port = sp or None
+            port = _store_port(store_meta)
 
             project = docker_compose_project(app_id)
             st = summarize_project_status(project)
@@ -4774,13 +4837,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         if not coin:
             coin = app_id.upper()
 
-        port = default_ui_ports(app_id)
-        if port is None:
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            port = sp or None
+        port = _store_port(store_meta)
 
         project = docker_compose_project(app_id)
         st = summarize_project_status(project)
@@ -5197,7 +5254,36 @@ def read_meminfo_bytes() -> dict[str, int]:
     return info
 
 
-def read_netdev_bytes() -> tuple[int, int]:
+def _detect_primary_net_iface() -> str:
+    # Prefer the default route interface (e.g. eth0/enp3s0/wlan0).
+    proc = run_cmd(["ip", "-o", "route", "show", "default"], timeout_s=3)
+    if proc.returncode == 0:
+        m = re.search(r"\bdev\s+([a-zA-Z0-9._:-]+)\b", proc.stdout or "")
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _read_link_speed_mbps(iface: str) -> int | None:
+    # Linux exposes negotiated speed in sysfs for many drivers.
+    # -1 / 0 usually means unknown.
+    name = (iface or "").strip()
+    if not name:
+        return None
+    try:
+        raw = Path("/sys/class/net") / name / "speed"
+        if not raw.is_file():
+            return None
+        val = int(str(raw.read_text(encoding="utf-8") or "").strip())
+        if val <= 0:
+            return None
+        return val
+    except Exception:
+        return None
+
+
+def read_netdev_bytes(ifaces: list[str] | None = None) -> tuple[int, int]:
+    include = {str(i).strip() for i in (ifaces or []) if str(i).strip()}
     rx_total = 0
     tx_total = 0
     try:
@@ -5209,6 +5295,14 @@ def read_netdev_bytes() -> tuple[int, int]:
                 name = iface.strip()
                 if not name or name == "lo":
                     continue
+                if include and name not in include:
+                    continue
+                # Exclude virtual/docker plumbing by default unless explicitly requested.
+                if not include:
+                    if name.startswith(("veth", "br-", "docker", "virbr", "tap", "tun", "wg", "zt")):
+                        continue
+                    if name == "docker0":
+                        continue
                 parts = data.strip().split()
                 if len(parts) < 16:
                     continue
@@ -5320,7 +5414,9 @@ def system_metrics() -> dict:
     avail = int(meminfo.get("MemAvailable", 0))
     used = max(0, total - avail) if total and avail else 0
 
-    rx_bytes, tx_bytes = read_netdev_bytes()
+    primary_iface = _detect_primary_net_iface()
+    rx_bytes, tx_bytes = read_netdev_bytes([primary_iface] if primary_iface else None)
+    link_mbps = _read_link_speed_mbps(primary_iface) if primary_iface else None
 
     disks: list[dict] = []
     for p in ["/", DATA_DIR]:
@@ -5349,6 +5445,8 @@ def system_metrics() -> dict:
             "used_bytes": used,
         },
         "network": {
+            "iface": primary_iface or None,
+            "link_mbps": link_mbps,
             "rx_bytes": rx_bytes,
             "tx_bytes": tx_bytes,
         },
@@ -5364,6 +5462,7 @@ def system_processes(sort: str | None = None, limit: int | None = None) -> dict:
     n = 5 if n < 5 else 200 if n > 200 else n
 
     sort_flag = "-pcpu" if s == "cpu" else "-pmem" if s == "mem" else "-rss"
+    cores = os.cpu_count() or 1
     proc = run_cmd(
         ["ps", "-eo", "pid,user,comm,pcpu,pmem,rss", f"--sort={sort_flag}"],
         timeout_s=3,
@@ -5385,9 +5484,9 @@ def system_processes(sort: str | None = None, limit: int | None = None) -> dict:
         except Exception:
             continue
         try:
-            cpu = float(cpu_s)
+            cpu_raw = float(cpu_s)
         except Exception:
-            cpu = None
+            cpu_raw = None
         try:
             mem = float(mem_s)
         except Exception:
@@ -5396,12 +5495,16 @@ def system_processes(sort: str | None = None, limit: int | None = None) -> dict:
             rss_kb = int(float(rss_s))
         except Exception:
             rss_kb = None
+        cpu = (cpu_raw / cores) if isinstance(cpu_raw, (int, float)) else None
         out.append(
             {
                 "pid": pid,
                 "user": user,
                 "command": comm,
+                # Normalize to 0..100 based on core count so UI doesn't show >100%
+                # for multi-threaded processes.
                 "cpu_perc": cpu,
+                "cpu_perc_raw": cpu_raw,
                 "mem_perc": mem,
                 "rss_bytes": (rss_kb * 1024) if rss_kb is not None else None,
             }
@@ -6031,6 +6134,12 @@ def _autoheal_degraded_projects_once() -> None:
 def _boot_reconcile_loop() -> None:
     # Give docker a moment on fresh boots.
     time.sleep(8)
+    # Ensure nginx /apps routes reflect currently installed apps and their live ports.
+    # This also repairs routes after an OS update that replaces the base nginx config.
+    try:
+        system_proxy_repair()
+    except Exception:
+        pass
     while True:
         try:
             _reconcile_container_restart_policies_once()
@@ -6041,21 +6150,46 @@ def _boot_reconcile_loop() -> None:
         time.sleep(10 * 60)
 
 
-def default_ui_ports(app_id: str) -> int | None:
-    # Transitional: until apps are proxied via internal networks, we map known UIs.
-    return {
-        "axelive": 5210,
-        "axebench": 5000,
-        "axedoom": 5300,
-        "axebtc": 21214,
-        "axebtcf": 21214,
-        "axedgb": 21213,
-    }.get(app_id)
+def _store_port(store_meta: dict) -> int | None:
+    if not isinstance(store_meta, dict):
+        return None
+    try:
+        p = int(str(store_meta.get("port") or "").strip() or "0")
+    except Exception:
+        p = 0
+    return p or None
 
 
 def _nginx_proxy_block(app_id: str, port: int) -> str:
     aid = str(app_id or "").strip()
     p = int(port)
+    if aid.lower() == "axedoom":
+        # noVNC's bundled web server doesn't always serve a landing page at "/".
+        # Send users directly to the lite client with the correct websocket path.
+        return f"""
+
+  location = /apps/{aid} {{
+    return 301 /apps/{aid}/;
+  }}
+
+  location = /apps/{aid}/ {{
+    return 302 /apps/{aid}/vnc_lite.html?scale=1&path=apps/{aid}/websockify;
+  }}
+
+  location /apps/{aid}/ {{
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_hide_header X-Frame-Options;
+    proxy_hide_header Content-Security-Policy;
+    proxy_hide_header Content-Security-Policy-Report-Only;
+    proxy_pass http://127.0.0.1:{p}/;
+  }}
+""".rstrip("\n")
     return f"""
 
   location = /apps/{aid} {{
@@ -6140,10 +6274,6 @@ def system_proxy_repair() -> dict:
             candidates.append(int(store_port))
         # Prefer actual published host ports when they exist.
         candidates.extend(docker_project_published_ports(app_id))
-        if not store_port:
-            dp = default_ui_ports(app_id)
-            if dp:
-                candidates.insert(0, int(dp))
 
         seen: set[int] = set()
         uniq: list[int] = []
@@ -6189,13 +6319,7 @@ def system_proxy_repair() -> dict:
                 store_meta = m
                 break
 
-        store_port: int | None = default_ui_ports(app_id)
-        if store_port is None:
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            store_port = sp or None
+        store_port = _store_port(store_meta)
 
         port = detect_ui_port(app_id, store_port)
         if not port:
@@ -6641,13 +6765,7 @@ class Handler(BaseHTTPRequestHandler):
                 containers = containers_by_app.get(app_id, [])
                 st = summarize_project_status_from_containers(containers)
                 resources = summarize_resources_from_stats(containers, stats_by_name)
-                port = default_ui_ports(app_id)
-                if port is None:
-                    try:
-                        sp = int(str(store_meta.get("port") or "").strip() or "0")
-                    except Exception:
-                        sp = 0
-                    port = sp or None
+                port = _store_port(store_meta)
 
                 installed_version = str(install_meta.get("installed_version") or "").strip()
                 if not installed_version:
