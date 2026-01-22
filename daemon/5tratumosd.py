@@ -5035,19 +5035,26 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             coin = app_id.upper()
 
         install_meta = read_app_install_meta(app_id)
-        port = None
-        try:
-            ui = install_meta.get("ui") if isinstance(install_meta, dict) else None
-            if isinstance(ui, dict):
-                p = ui.get("port")
-                if isinstance(p, int):
-                    port = int(p)
-                elif isinstance(p, str) and p.strip().isdigit():
-                    port = int(p.strip())
-        except Exception:
-            port = None
-        if port is None:
-            port = _store_port(store_meta)
+
+        def _read_ui_port(meta: dict) -> int | None:
+            try:
+                ui = meta.get("ui") if isinstance(meta, dict) else None
+                if isinstance(ui, dict):
+                    p = ui.get("port")
+                    if isinstance(p, int):
+                        return int(p)
+                    if isinstance(p, str) and p.strip().isdigit():
+                        return int(p.strip())
+            except Exception:
+                return None
+            return None
+
+        install_port = _read_ui_port(install_meta)
+        store_port = _store_port(store_meta)
+        candidates = []
+        for p in (install_port, store_port):
+            if isinstance(p, int) and p > 0 and p not in candidates:
+                candidates.append(p)
 
         project = docker_compose_project(app_id)
         st = summarize_project_status(project)
@@ -5058,38 +5065,63 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             "name": name,
             "coin": coin,
             "status": status,
-            "port": port,
+            "port": candidates[0] if candidates else None,
             "ok": False,
         }
 
-        if status != "running" or port is None:
+        if status != "running" or not candidates:
             entry["pool_error"] = "not running"
             entry["workers_error"] = "not running"
             return entry, []
 
-        pool_url = f"http://127.0.0.1:{port}/api/pool"
-        workers_url = f"http://127.0.0.1:{port}/api/pool/workers"
-
         pool_data: dict | None = None
         workers_data: dict | None = None
+        pool_err: str | None = None
+        workers_err: str | None = None
 
-        try:
-            pool_raw = _fetch_json(pool_url, timeout_s=2, headers=_internal_auth_headers())
-            if isinstance(pool_raw, dict):
-                pool_data = pool_raw
-            else:
-                entry["pool_error"] = "invalid pool response"
-        except Exception as e:
-            entry["pool_error"] = str(e)
+        # AxeBTCF can be slower to respond while syncing; give it a bit more time.
+        timeout_s = 4 if app_id == "axebtc" else 2
 
-        try:
-            workers_raw = _fetch_json(workers_url, timeout_s=2, headers=_internal_auth_headers())
-            if isinstance(workers_raw, dict):
-                workers_data = workers_raw
-            else:
-                entry["workers_error"] = "invalid workers response"
-        except Exception as e:
-            entry["workers_error"] = str(e)
+        def _try_port(port: int) -> bool:
+            nonlocal pool_data, workers_data, pool_err, workers_err
+            pool_url = f"http://127.0.0.1:{port}/api/pool"
+            workers_url = f"http://127.0.0.1:{port}/api/pool/workers"
+            pool_data = None
+            workers_data = None
+            pool_err = None
+            workers_err = None
+
+            try:
+                pool_raw = _fetch_json(pool_url, timeout_s=timeout_s, headers=_internal_auth_headers())
+                if isinstance(pool_raw, dict):
+                    pool_data = pool_raw
+                else:
+                    pool_err = "invalid pool response"
+            except Exception as e:
+                pool_err = str(e)
+
+            try:
+                workers_raw = _fetch_json(workers_url, timeout_s=timeout_s, headers=_internal_auth_headers())
+                if isinstance(workers_raw, dict):
+                    workers_data = workers_raw
+                else:
+                    workers_err = "invalid workers response"
+            except Exception as e:
+                workers_err = str(e)
+
+            return pool_data is not None
+
+        chosen = None
+        for p in candidates:
+            if _try_port(p):
+                chosen = p
+                break
+
+        entry["port"] = chosen if chosen is not None else (candidates[0] if candidates else None)
+        if pool_err:
+            entry["pool_error"] = pool_err
+        if workers_err:
+            entry["workers_error"] = workers_err
 
         if pool_data is not None:
             entry["pool"] = pool_data
