@@ -2532,9 +2532,12 @@
   function setHostIp() {
     try {
       const h = window.location.hostname || '';
-      if (hostIp) hostIp.textContent = h || '-';
-      if (metricNetHost) metricNetHost.textContent = h || '-';
-      if (metricNetIp) metricNetIp.textContent = h || '-';
+      const m = lastMetrics && typeof lastMetrics === 'object' ? lastMetrics : null;
+      const ip4 = m && m.network && typeof m.network.ip4 === 'string' ? m.network.ip4 : '';
+      const display = ip4 || h || '-';
+      if (hostIp) hostIp.textContent = display;
+      if (metricNetHost) metricNetHost.textContent = display;
+      if (metricNetIp) metricNetIp.textContent = display;
     } catch {
       if (hostIp) hostIp.textContent = '-';
       if (metricNetHost) metricNetHost.textContent = '-';
@@ -6244,6 +6247,7 @@
       if (!metrics || metrics.ok !== true) return;
       lastMetrics = metrics;
       applyMetrics(metrics);
+      setHostIp();
     } finally {
       refreshMetricsInFlight = false;
     }
@@ -9215,7 +9219,7 @@
       return;
     }
 
-    if (!hasStoreApps && channel === 'global' && hasLoadedStore && !storeLastOk) {
+    if (!hasStoreApps && hasLoadedStore && !storeLastOk) {
       const empty = document.createElement('div');
       empty.className = 'forgeos-store-item';
       empty.style.gridColumn = '1 / -1';
@@ -9223,11 +9227,15 @@
 
       const title = document.createElement('div');
       title.className = 'text-lg font-extrabold tracking-tight';
-      title.textContent = 'Global store not synced';
+      title.textContent = channel === 'global' ? 'Global store not synced' : 'App Store not synced';
 
       const sub = document.createElement('div');
       sub.className = 'mt-2 text-sm text-slate-300';
-      sub.textContent = storeLastError ? `Error: ${storeLastError}` : 'Click Sync to download the global store index.';
+      sub.textContent = storeLastError
+        ? `Error: ${storeLastError}`
+        : channel === 'global'
+          ? 'Click Sync to download the global store index.'
+          : 'Click Sync to download the App Store index.';
 
       const actions = document.createElement('div');
       actions.className = 'forgeos-store-item__actions';
@@ -9235,7 +9243,7 @@
       const btn = document.createElement('button');
       btn.className = 'axe-btn';
       btn.type = 'button';
-      btn.textContent = 'Sync global store';
+      btn.textContent = channel === 'global' ? 'Sync global store' : 'Sync App Store';
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         syncStoreNow().catch(() => {});
@@ -9253,25 +9261,15 @@
       ? storeApps
           .map((a) => (a && typeof a === 'object' ? String(a.id || '').trim() : String(a || '').trim()))
           .filter(Boolean)
-      : channel !== 'global'
-        ? Object.keys(APP_CATALOG)
-        : [];
+      : [];
 
     if (!entries.length) {
       const empty = document.createElement('div');
       empty.className = 'forgeos-muted';
       empty.style.gridColumn = '1 / -1';
-      empty.textContent = 'No apps found.';
+      empty.textContent = refreshStoreInFlight || storeOpenSyncInFlight ? 'Syncing App Store...' : 'No apps found.';
       storeEl.appendChild(empty);
       return;
-    }
-
-    if (hasLoadedStore && !storeLastOk && storeLastError && channel !== 'global') {
-      const notice = document.createElement('div');
-      notice.className = 'forgeos-muted';
-      notice.style.gridColumn = '1 / -1';
-      notice.textContent = `Store not synced (${storeLastError}). Showing built-in catalog.`;
-      storeEl.appendChild(notice);
     }
 
     const ids = entries.slice().sort((a, b) => {

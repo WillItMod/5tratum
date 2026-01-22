@@ -81,6 +81,7 @@
         const errEl = document.getElementById('login-error');
         const keyboardSelect = document.getElementById('keyboard-layout');
         const keyboardStatus = document.getElementById('keyboard-layout-status');
+        let storeSyncBlocking = false;
 
         const params = new URLSearchParams(window.location.search || '');
         const nextRaw = params.get('next') || '/';
@@ -133,6 +134,41 @@
           } catch (e) {
             showError('Unable to reach 5tratumOS auth service.');
           }
+        }
+
+        function setFormEnabled(enabled) {
+          const ok = !!enabled;
+          if (usernameEl) usernameEl.disabled = !ok;
+          if (passwordEl) passwordEl.disabled = !ok;
+          if (password2El) password2El.disabled = !ok;
+          if (submitBtn) submitBtn.disabled = !ok;
+          if (refreshBtn) refreshBtn.disabled = !ok;
+          if (keyboardSelect) keyboardSelect.disabled = !ok;
+        }
+
+        async function pollStoreSync() {
+          try {
+            const res = await fetch('/api/v0/auth/store-sync/status', { headers: { 'Content-Type': 'application/json' } });
+            const data = await res.json().catch(() => null);
+            if (!data || data.ok !== true) return;
+            const state = String(data.state || '').trim().toLowerCase();
+            const msg = String(data.message || '').trim();
+            if (state === 'running' || state === 'pending') {
+              storeSyncBlocking = true;
+              setMode('login');
+              if (subtitle) subtitle.textContent = msg ? msg : 'Syncing App Store...';
+              setFormEnabled(false);
+              window.setTimeout(pollStoreSync, 2500);
+              return;
+            }
+
+            if (storeSyncBlocking) {
+              storeSyncBlocking = false;
+              setFormEnabled(true);
+              loadStatus();
+              loadKeyboardLayout();
+            }
+          } catch (e) {}
         }
 
         function setKeyboardStatus(msg) {
@@ -239,6 +275,7 @@
 
         loadStatus();
         loadKeyboardLayout();
+        pollStoreSync();
         usernameEl && usernameEl.focus();
       })();
     </script>

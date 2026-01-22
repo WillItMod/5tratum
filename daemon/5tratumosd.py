@@ -71,6 +71,9 @@ STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") o
 STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/umbrel-community-store") or "WillItMod/umbrel-community-store").strip()
 STORE_MAIN_BRANCH = str(_env("MAIN_STORE_BRANCH", "main") or "main").strip()
 STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/umbrel-dev-community-store") or "WillItMod/umbrel-dev-community-store").strip()
+
+FIRSTBOOT_STORE_SYNC_STATUS = "/etc/5tratumos/firstboot-store-sync.status"
+FIRSTBOOT_STORE_SYNC_DONE = "/etc/5tratumos/firstboot-store-sync.done"
 STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "main") or "main").strip()
 HTTPS_CONFIG_FILE = str(_env("HTTPS_CONFIG_FILE", "/etc/5tratumos/https.json") or "/etc/5tratumos/https.json")
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
@@ -4080,6 +4083,23 @@ def auth_status(handler: BaseHTTPRequestHandler) -> dict:
     return {"ok": True, "authed": bool(user), "user": user, "needs_setup": needs_setup, "time": _now_iso()}
 
 
+def firstboot_store_sync_status() -> dict:
+    try:
+        if os.path.exists(FIRSTBOOT_STORE_SYNC_STATUS):
+            raw = Path(FIRSTBOOT_STORE_SYNC_STATUS).read_text(encoding="utf-8", errors="ignore").strip()
+            if raw.startswith("{") and raw.endswith("}"):
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return {"ok": True, **data}
+    except Exception:
+        pass
+
+    if os.path.exists(FIRSTBOOT_STORE_SYNC_DONE):
+        return {"ok": True, "state": "done", "message": "completed", "time": _now_iso()}
+
+    return {"ok": True, "state": "pending", "message": "Syncing App Store...", "time": _now_iso()}
+
+
 _KEYBOARD_LAYOUTS_ALLOWED = {"gb", "us", "fr", "be", "de"}
 
 
@@ -5768,6 +5788,20 @@ def _read_link_speed_mbps(iface: str) -> int | None:
         return None
 
 
+def _read_iface_ipv4(iface: str | None) -> str | None:
+    name = str(iface or "").strip()
+    if not name:
+        return None
+    proc = run_cmd(["ip", "-br", "-4", "addr", "show", "dev", name], timeout_s=2)
+    if proc.returncode != 0:
+        return None
+    # Example: "eth0             UP             10.10.10.91/24 ..."
+    for tok in (proc.stdout or "").split():
+        if "/" in tok and tok.count(".") == 3:
+            return tok.split("/", 1)[0]
+    return None
+
+
 def read_netdev_bytes(ifaces: list[str] | None = None) -> tuple[int, int]:
     include = {str(i).strip() for i in (ifaces or []) if str(i).strip()}
     rx_total = 0
@@ -5985,6 +6019,7 @@ def system_metrics() -> dict:
     primary_iface = _detect_primary_net_iface()
     rx_bytes, tx_bytes = read_netdev_bytes([primary_iface] if primary_iface else None)
     link_mbps = _read_link_speed_mbps(primary_iface) if primary_iface else None
+    ip4 = _read_iface_ipv4(primary_iface) if primary_iface else None
 
     disks: list[dict] = []
     for p in ["/", DATA_DIR]:
@@ -6018,6 +6053,7 @@ def system_metrics() -> dict:
             "link_mbps": link_mbps,
             "rx_bytes": rx_bytes,
             "tx_bytes": tx_bytes,
+            "ip4": ip4,
         },
         "disks": disks,
     }
@@ -7167,6 +7203,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/v0/auth/keyboard":
                 json_response(self, HTTPStatus.OK, keyboard_layout_get(self))
+                return
+            if path == "/api/v0/auth/store-sync/status":
+                json_response(self, HTTPStatus.OK, firstboot_store_sync_status())
                 return
 
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})

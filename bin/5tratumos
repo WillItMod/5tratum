@@ -59,7 +59,9 @@ acquire_app_lock() {
   if mkdir "${lock_dir}" 2>/dev/null; then
     printf '%s\n' "$$" >"${lock_dir}/pid" 2>/dev/null || true
     date +%s >"${lock_dir}/started_at" 2>/dev/null || true
-    trap 'rm -rf "${lock_dir}" 2>/dev/null || true' EXIT
+    # Expand the lock path now (while in scope). Using a local var in an EXIT trap with `set -u`
+    # can fail later when the trap runs and the local is out of scope, leaving stale locks behind.
+    trap "rm -rf '${lock_dir}' 2>/dev/null || true" EXIT
     return 0
   fi
 
@@ -81,7 +83,7 @@ acquire_app_lock() {
     if mkdir "${lock_dir}" 2>/dev/null; then
       printf '%s\n' "$$" >"${lock_dir}/pid" 2>/dev/null || true
       date +%s >"${lock_dir}/started_at" 2>/dev/null || true
-      trap 'rm -rf "${lock_dir}" 2>/dev/null || true' EXIT
+      trap "rm -rf '${lock_dir}' 2>/dev/null || true" EXIT
       return 0
     fi
   fi

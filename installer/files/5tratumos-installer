@@ -157,6 +157,8 @@ chroot "${TARGET_MNT}" apt-get install -y --no-install-recommends \
   cloud-guest-utils \
   gnupg \
   jq \
+  avahi-daemon \
+  libnss-mdns \
   python3 \
   python3-yaml \
   cage \
@@ -174,7 +176,7 @@ cat >"${TARGET_MNT}/etc/systemd/system/console-setup.service.d/5tratumos.conf" <
 ConditionPathExists=/dev/tty0
 EOF
 
-systemctl --root "${TARGET_MNT}" enable systemd-networkd systemd-resolved ssh >/dev/null 2>&1 || true
+systemctl --root "${TARGET_MNT}" enable systemd-networkd systemd-resolved ssh avahi-daemon >/dev/null 2>&1 || true
 
 if ! chroot "${TARGET_MNT}" id -u forge >/dev/null 2>&1; then
   chroot "${TARGET_MNT}" useradd -m -s /bin/bash forge || true
