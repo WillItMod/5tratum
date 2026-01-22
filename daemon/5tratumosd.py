@@ -2016,6 +2016,25 @@ def _mosquitto_available() -> bool:
     return _mosquitto_running()
 
 
+def _mosquitto_pub_present() -> bool:
+    for candidate in ("/usr/bin/mosquitto_pub", "/usr/local/bin/mosquitto_pub"):
+        if os.path.isfile(candidate):
+            return True
+    return False
+
+
+def _ensure_mosquitto_clients() -> dict:
+    if _mosquitto_pub_present():
+        return {"ok": True, "installed": True}
+    upd = run_cmd(["apt-get", "update"], timeout_s=600)
+    if upd.returncode != 0:
+        return {"ok": False, "installed": False, "error": (upd.stderr or upd.stdout or "apt update failed").strip()}
+    proc = run_cmd(["apt-get", "install", "-y", "--no-install-recommends", "mosquitto-clients"], timeout_s=900)
+    if proc.returncode != 0:
+        return {"ok": False, "installed": False, "error": (proc.stderr or proc.stdout or "install failed").strip()}
+    return {"ok": True, "installed": _mosquitto_pub_present()}
+
+
 def mqtt_config_get() -> dict:
     cfg = _normalize_notify_config(_read_notify_config())
     available = _mosquitto_available()
@@ -2060,6 +2079,10 @@ def mqtt_config_set(body: dict) -> dict:
             return {"ok": False, "error": "mosquitto start failed", "detail": start_res}
     if mqtt["enabled"] and not _mosquitto_running():
         return {"ok": False, "error": "mosquitto not running"}
+    if mqtt["enabled"] and not _mosquitto_pub_present():
+        clients = _ensure_mosquitto_clients()
+        if not clients.get("ok"):
+            return {"ok": False, "error": "mosquitto clients install failed", "detail": clients}
 
     mqtt["apps"] = [a for a in mqtt.get("apps") or [] if a in AXE_SUITE_APP_IDS]
     cfg["mqtt"] = mqtt
@@ -7474,6 +7497,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if action == "pull":
                 res = stratumos_cmd(["app", "pull", app_id], timeout_s=1800)
+                if res.get("ok"):
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 

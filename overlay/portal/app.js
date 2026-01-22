@@ -976,6 +976,7 @@
     if (!btnMqttSave) return;
     btnMqttSave.disabled = true;
     if (mqttStatusEl) mqttStatusEl.textContent = 'Saving...';
+    let splashToken = null;
     try {
       const body = {
         enabled: !!(mqttEnabledInput && mqttEnabledInput.checked),
@@ -988,7 +989,24 @@
           block_found: !!(mqttEventBlockInput && mqttEventBlockInput.checked),
         },
       };
-      const res = await apiJsonTimeout('/api/v0/system/mqtt/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
+
+      let timeoutMs = 8000;
+      if (body.enabled) {
+        // Enabling MQTT may need to install/start Mosquitto; allow a longer timeout and keep the UI focused.
+        const current = await apiJsonTimeout('/api/v0/system/mqtt/config', {}, 5000).catch(() => null);
+        const available = !!(current && typeof current === 'object' && current.available === true);
+        if (!available) {
+          splashToken = showGlobalSplash({
+            title: 'Enabling MQTT',
+            sub: 'Installing and starting Mosquitto...',
+            showProgress: false,
+            dismissable: false,
+          });
+          timeoutMs = 10 * 60 * 1000;
+        }
+      }
+
+      const res = await apiJsonTimeout('/api/v0/system/mqtt/config', { method: 'POST', body: JSON.stringify(body) }, timeoutMs);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
       saveNotifyCache('mqtt', body);
       showToast('MQTT settings saved', null);
@@ -998,6 +1016,7 @@
       if (mqttStatusEl) mqttStatusEl.textContent = 'Save failed.';
       showToast('MQTT save failed', 'error');
     } finally {
+      if (splashToken) hideGlobalSplash(splashToken);
       btnMqttSave.disabled = false;
     }
   }
@@ -5741,6 +5760,33 @@
     if (!fleetBreakdownEl) return;
     fleetBreakdownEl.innerHTML = '';
 
+    const poolRaw = Array.isArray(pools) ? pools : [];
+    const unreachable = poolRaw
+      .map((p) => {
+        const obj = p && typeof p === 'object' ? p : null;
+        if (!obj) return null;
+        const id = String(obj.id || '').trim();
+        const name = String(obj.name || obj.coin || id || '').trim() || id;
+        const ok = obj.ok === true;
+        const stale = obj.stale === true || obj.sample_ok === false;
+        const err = String(obj.pool_error || obj.workers_error || '').trim();
+        if (ok && !stale) return null;
+        return { id, name, stale, err };
+      })
+      .filter(Boolean);
+
+    if (unreachable.length) {
+      const banner = document.createElement('div');
+      banner.className = 'forgeos-muted';
+      const names = unreachable
+        .slice(0, 3)
+        .map((u) => String(u.name || u.id).trim())
+        .filter(Boolean);
+      const more = unreachable.length > names.length ? ` +${unreachable.length - names.length}` : '';
+      banner.textContent = `Some pools are unreachable (stats may be stale): ${names.join(', ')}${more}`;
+      fleetBreakdownEl.appendChild(banner);
+    }
+
     const entries = Array.isArray(pools)
       ? pools
           .map((p) => {
@@ -6910,22 +6956,44 @@
   }
 
   async function finalizeSystemUpdateUi() {
-    // Wait until the portal is reachable again and the update check confirms we're up-to-date.
+    // Wait until the portal is reachable again, update check confirms we're up-to-date,
+    // and the auth service is stable (avoid handing the UI back during daemon/nginx restarts).
     const startedAt = Date.now();
     const timeoutMs = 3 * 60 * 1000;
+    let stableN = 0;
+    const stableNeed = 3;
     while (Date.now() - startedAt < timeoutMs) {
       const ok = await ensureHealthy();
-      if (ok) {
-        await refreshSystemUpdateCheck({ force: true }).catch(() => {});
-        const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
-        const installedTag =
-          check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '';
-        const updateAvailable = !!(check && check.update_available === true);
-        if (installedTag && installedTag.toLowerCase() !== 'unknown' && !updateAvailable) {
-          systemUpdateHoldSplash = false;
-          renderSystemUpdatePanel();
-          return true;
-        }
+      if (!ok) {
+        stableN = 0;
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      await refreshSystemUpdateCheck({ force: true }).catch(() => {});
+      const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
+      const installedTag =
+        check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '';
+      const updateAvailable = !!(check && check.update_available === true);
+      if (!installedTag || installedTag.toLowerCase() === 'unknown' || updateAvailable) {
+        stableN = 0;
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      const auth = await apiJsonTimeout('/api/v0/auth/status', {}, 2500).catch(() => null);
+      const authOk = !!(auth && typeof auth === 'object' && auth.ok === true);
+      if (!authOk) {
+        stableN = 0;
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      stableN += 1;
+      if (stableN >= stableNeed) {
+        systemUpdateHoldSplash = false;
+        renderSystemUpdatePanel();
+        return true;
       }
       await new Promise((r) => setTimeout(r, 1500));
     }
@@ -11015,8 +11083,25 @@
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
-  mqttEnabledInput?.addEventListener('change', () => {
-    setMqttInputsEnabled(!!(mqttEnabledInput && mqttEnabledInput.checked));
+  mqttEnabledInput?.addEventListener('change', async () => {
+    if (!mqttEnabledInput) return;
+    const nextEnabled = !!mqttEnabledInput.checked;
+    if (nextEnabled) {
+      const okConfirm = await openConfirmModal({
+        kind: 'MQTT',
+        title: 'Enable MQTT notifications?',
+        message:
+          'Enabling MQTT will install and start Mosquitto if it is not already present.\n\nThis may download images and take a few minutes.',
+        confirmText: 'Enable',
+        cancelText: 'Cancel',
+      });
+      if (!okConfirm) {
+        mqttEnabledInput.checked = false;
+        setMqttInputsEnabled(false);
+        return;
+      }
+    }
+    setMqttInputsEnabled(nextEnabled);
     saveMqttConfig().catch(() => {});
   });
   btnAuthUpdate?.addEventListener('click', async () => {
