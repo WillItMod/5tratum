@@ -782,8 +782,10 @@ PY
         dst="${ROOT_DIR}/apps/${app_id}"
         if [ -e "${dst}" ]; then
           project="$(app_project_name "${app_id}")"
-          if [ ! -f "${dst}/docker-compose.yml" ] && ! compose_project_containers "${project}" | grep -q .; then
-            echo "warn: removing stale app directory before install: ${dst}" >&2
+          # If there are no containers for this project's label, treat the directory as stale and allow a reinstall.
+          # This covers cases where an uninstall partially succeeded (containers removed) but the app directory remained.
+          if ! compose_project_containers "${project}" | grep -q .; then
+            echo "warn: removing app directory before (re)install: ${dst}" >&2
             rm -rf "${dst}" 2>/dev/null || true
           else
             die "app already installed: ${app_id} (${dst})"

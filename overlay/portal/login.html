@@ -146,45 +146,6 @@
           if (keyboardSelect) keyboardSelect.disabled = !ok;
         }
 
-        const storeSyncStartAt = Date.now();
-
-        async function pollStoreSync() {
-          try {
-            const res = await fetch('/api/v0/auth/store-sync/status', { headers: { 'Content-Type': 'application/json' } });
-            const data = await res.json().catch(() => null);
-            if (!data || data.ok !== true) return;
-            const state = String(data.state || '').trim().toLowerCase();
-            const msg = String(data.message || '').trim();
-            if (state === 'running' || state === 'pending') {
-              // Never hard-lock login forever (e.g. if a oneshot didn't start).
-              if (Date.now() - storeSyncStartAt > 180000) {
-                if (subtitle) subtitle.textContent = 'App Store sync is taking too long. You can continue and sync later.';
-                storeSyncBlocking = false;
-                setFormEnabled(true);
-                loadStatus();
-                loadKeyboardLayout();
-                return;
-              }
-              storeSyncBlocking = true;
-              setMode('login');
-              if (subtitle) subtitle.textContent = msg ? msg : 'Syncing App Store...';
-              setFormEnabled(false);
-              window.setTimeout(pollStoreSync, 2500);
-              return;
-            }
-
-            if (storeSyncBlocking) {
-              storeSyncBlocking = false;
-              setFormEnabled(true);
-              if (state === 'failed' || state === 'skipped') {
-                if (subtitle) subtitle.textContent = msg || 'App Store sync not completed. You can still sign in.';
-              }
-              loadStatus();
-              loadKeyboardLayout();
-            }
-          } catch (e) {}
-        }
-
         function setKeyboardStatus(msg) {
           if (!keyboardStatus) return;
           keyboardStatus.textContent = String(msg || '').trim();
@@ -289,7 +250,6 @@
 
         loadStatus();
         loadKeyboardLayout();
-        pollStoreSync();
         usernameEl && usernameEl.focus();
       })();
     </script>
