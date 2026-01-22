@@ -1397,6 +1397,44 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   .forgeos-desktop-metric__sub {
     display: none;
   }
+
+  .forgeos-desktop-topbar__version {
+    gap: 6px;
+    padding: 0 4px;
+  }
+
+  .forgeos-topbar-pill {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  .forgeos-topbar-toggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+  }
+
+  .forgeos-topbar-perf {
+    height: 34px;
+    min-width: 34px;
+    padding: 0 10px;
+    border-radius: 12px;
+  }
+
+  .forgeos-topbar-perf__icon {
+    width: 16px;
+    height: 16px;
+    font-size: 11px;
+  }
+
+  .forgeos-topbar-perf__count {
+    font-size: 11px;
+  }
+
+  .forgeos-topbar-activity__text,
+  .forgeos-topbar-activity__pct {
+    font-size: 11px;
+  }
 }
 
 .forgeos-topbar-perf {

@@ -3713,6 +3713,12 @@
     if (!/^-?\d+(?:\.\d+)?$/.test(numeric)) return raw;
     const num = Number(numeric);
     if (!Number.isFinite(num)) return raw;
+    if (t.includes('hashrate')) {
+      const rounded = Math.round(num * 100) / 100;
+      let out = rounded.toFixed(2);
+      out = out.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+      return out;
+    }
     if (t.includes('share') || t.includes('shares') || t.includes('best')) return formatCompactNumber(num);
     return raw;
   }
