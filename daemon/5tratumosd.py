@@ -1877,9 +1877,17 @@ AXE_SUITE_APP_IDS = {
     "axebch",
     "axedgb",
     "axebtc",
+    "axebsv",
     "axelive",
     "axebench",
     "axemig",
+}
+
+AXE_SUITE_POOL_APP_IDS = {
+    "axebch",
+    "axedgb",
+    "axebtc",
+    "axebsv",
 }
 
 
@@ -2257,9 +2265,9 @@ def _pool_block_signature(pool: dict | None) -> str:
     return "|".join(parts)
 
 
-def _pool_hashrate_ths(pool: dict | None) -> float:
+def _pool_hashrate_ths(pool: dict | None) -> float | None:
     if not isinstance(pool, dict):
-        return 0.0
+        return None
     for key in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths"):
         try:
             val = pool.get(key)
@@ -2295,16 +2303,19 @@ def _pool_hashrate_ths(pool: dict | None) -> float:
             return v / 1e12 if v > 1e6 else v
     except Exception:
         pass
-    return 0.0
+    return None
 
 
-def _pool_workers(pool: dict | None) -> int:
+def _pool_workers(pool: dict | None) -> int | None:
     if not isinstance(pool, dict):
-        return 0
+        return None
     try:
-        return int(pool.get("workers") or 0)
+        v = pool.get("workers")
+        if v is None:
+            return None
+        return int(v)
     except Exception:
-        return 0
+        return None
 
 
 def _mqtt_publish(topic: str, payload: dict) -> None:
@@ -4936,16 +4947,35 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 prev_pool_by_id[pid] = it
 
     def _fetch_pool(app_id: str) -> tuple[dict, list[dict]]:
-        store_meta = store_app_by_id(app_id) or {}
-        if not isinstance(store_meta, dict) or not _has_pool_widget(store_meta):
+        app_id = (app_id or "").strip().lower()
+        if not app_id:
             return {}, []
+        if app_id not in AXE_SUITE_POOL_APP_IDS:
+            return {}, []
+
+        store_meta = store_app_by_id(app_id) or {}
+        if not isinstance(store_meta, dict):
+            store_meta = {}
 
         name = str(store_meta.get("name") or app_id).strip() or app_id
         coin = name[3:].strip().upper() if name.lower().startswith("axe") else name.strip().upper()
         if not coin:
             coin = app_id.upper()
 
-        port = _store_port(store_meta)
+        install_meta = read_app_install_meta(app_id)
+        port = None
+        try:
+            ui = install_meta.get("ui") if isinstance(install_meta, dict) else None
+            if isinstance(ui, dict):
+                p = ui.get("port")
+                if isinstance(p, int):
+                    port = int(p)
+                elif isinstance(p, str) and p.strip().isdigit():
+                    port = int(p.strip())
+        except Exception:
+            port = None
+        if port is None:
+            port = _store_port(store_meta)
 
         project = docker_compose_project(app_id)
         st = summarize_project_status(project)
@@ -5213,7 +5243,8 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
 
     exec_pool = concurrent.futures.ThreadPoolExecutor(max_workers=6)
     try:
-        futures = [exec_pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
+        pool_app_ids = [a for a in _axesuite_installed_ids() if a in AXE_SUITE_POOL_APP_IDS]
+        futures = [exec_pool.submit(_fetch_pool, app_id) for app_id in pool_app_ids]
         done, pending = concurrent.futures.wait(
             futures,
             timeout=2.8,
@@ -5244,11 +5275,15 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             if "pool" in entry and isinstance(entry.get("pool"), dict):
                 pool_obj = entry["pool"]
                 try:
-                    total_hashrate_ths += _pool_hashrate_ths(pool_obj)
+                    hr = _pool_hashrate_ths(pool_obj)
+                    if isinstance(hr, (int, float)):
+                        total_hashrate_ths += float(hr)
                 except Exception:
                     pass
                 try:
-                    total_workers += _pool_workers(pool_obj)
+                    w = _pool_workers(pool_obj)
+                    if isinstance(w, int):
+                        total_workers += int(w)
                 except Exception:
                     pass
             for w in details:
