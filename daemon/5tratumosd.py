@@ -424,6 +424,33 @@ def write_build_info(info: dict) -> None:
         _write_json_atomic(os.path.join(STATE_DIR, "build.json"), info)
 
 
+def _ensure_build_info() -> dict:
+    """
+    Ensure /etc/5tratumos/build.json exists and has basic fields.
+
+    This is a safety net for edge cases where the installer/late_command did not
+    manage to persist build metadata. It prevents the UI from showing "missing"
+    and provides consistent defaults until an update sets the real tag.
+    """
+    try:
+        now = _now_iso()
+        info = read_build_info()
+        if not isinstance(info, dict):
+            info = {}
+
+        tag = str(info.get("tag") or info.get("version") or "").strip() or "unknown"
+        channel = str(info.get("channel") or read_default_channel() or "main").strip().lower() or "main"
+        installed_at = str(info.get("installed_at") or "").strip() or now
+        repo = str(info.get("repo") or "WillItMod/5tratum").strip() or "WillItMod/5tratum"
+
+        fixed = {"tag": tag, "repo": repo, "channel": channel, "installed_at": installed_at}
+        if fixed != info:
+            write_build_info(fixed)
+        return fixed
+    except Exception:
+        return {}
+
+
 def _read_update_config() -> dict:
     cfg = _read_json(UPDATE_CONFIG_FILE)
     return cfg if isinstance(cfg, dict) else {}
@@ -7711,6 +7738,7 @@ def main() -> int:
     args = parser.parse_args()
 
     _installed_registry_bootstrap()
+    _ensure_build_info()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
