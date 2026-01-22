@@ -320,7 +320,9 @@ case "${cmd}" in
         [ "${EUID:-$(id -u)}" -eq 0 ] || die "store sync requires root (writes ${ROOT_DIR}/store)"
         have curl || die "curl not found (install curl)"
         have tar || die "tar not found"
-        STORE_TOKEN_FILE="${FIVETRATUMOS_STORE_TOKEN_FILE:-/etc/5tratumos/store.token}"
+        # Store repos are expected to be public; no token is required.
+        # If a private store is ever used, reuse the OS update token.
+        STORE_TOKEN_FILE="${FIVETRATUMOS_UPDATE_TOKEN_FILE:-/etc/5tratumos/update.token}"
 
         is_custom_slot() {
           local slot="${1:-}"
@@ -440,7 +442,7 @@ PY
           local tmp="${store_base}/.tmp-${ch}-$$"
           local tok
           tok="$(store_token)"
-          [ -n "${tok}" ] || die "no GitHub token configured (Settings -> App Store Sync -> Save token)"
+          [ -n "${tok}" ] || return 2
           rm -rf "${tmp}"
           mkdir -p "${tmp}"
 
@@ -452,7 +454,8 @@ PY
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "${api}" | tar -xz -C "${tmp}" --strip-components=1; then
-            die "failed to download private store (${repo}@${ref})"
+            rm -rf "${tmp}"
+            return 1
           fi
 
           rm -rf "${dest}.bak" >/dev/null 2>&1 || true
@@ -461,6 +464,7 @@ PY
           fi
           mv "${tmp}" "${dest}"
           rm -rf "${dest}.bak" >/dev/null 2>&1 || true
+          return 0
         }
 
         sync_one() {
@@ -475,11 +479,17 @@ PY
 
           echo "syncing store (${ch})..."
           if ! curl -fsSL "${url}" | tar -xz -C "${tmp}" --strip-components=1; then
-            [ -n "${url_fallback}" ] || die "failed to download store from ${url}"
             rm -rf "${tmp}"
-            mkdir -p "${tmp}"
-            echo "primary store URL failed; trying fallback..."
-            curl -fsSL "${url_fallback}" | tar -xz -C "${tmp}" --strip-components=1
+            if [ -n "${url_fallback}" ]; then
+              mkdir -p "${tmp}"
+              echo "primary store URL failed; trying fallback..."
+              if ! curl -fsSL "${url_fallback}" | tar -xz -C "${tmp}" --strip-components=1; then
+                rm -rf "${tmp}"
+                return 1
+              fi
+            else
+              return 1
+            fi
           fi
 
           # Normalize third-party manifests to a 5tratumOS-friendly name.
@@ -490,6 +500,7 @@ PY
 
           rm -rf "${dest}"
           mv "${tmp}" "${dest}"
+          return 0
         }
 
         sync_global_assets() {
@@ -544,6 +555,16 @@ PY
         main_url_fallback=""
         dev_url="https://github.com/${dev_repo}/archive/refs/heads/${dev_branch}.tar.gz"
         dev_url_fallback=""
+        if [ "${main_branch}" = "main" ]; then
+          main_url_fallback="https://github.com/${main_repo}/archive/refs/heads/master.tar.gz"
+        elif [ "${main_branch}" = "master" ]; then
+          main_url_fallback="https://github.com/${main_repo}/archive/refs/heads/main.tar.gz"
+        fi
+        if [ "${dev_branch}" = "main" ]; then
+          dev_url_fallback="https://github.com/${dev_repo}/archive/refs/heads/master.tar.gz"
+        elif [ "${dev_branch}" = "master" ]; then
+          dev_url_fallback="https://github.com/${dev_repo}/archive/refs/heads/main.tar.gz"
+        fi
         global_repo="${FIVETRATUMOS_GLOBAL_STORE_REPO:-}"
         global_repo="${global_repo:-$(legacy_env GLOBAL_STORE_REPO)}"
         global_repo="${global_repo:-WillItMod/global-apps}"
@@ -563,6 +584,22 @@ PY
           fi
         fi
 
+        sync_one_repo() {
+          local ch="$1"
+          local repo="$2"
+          local ref="$3"
+          local url="$4"
+          local url_fallback="${5:-}"
+          if sync_one "${ch}" "${url}" "${url_fallback}"; then
+            return 0
+          fi
+          # Public tarball failed (often a private repo). Try GitHub API tarball with a token if present.
+          if sync_one_github_private "${ch}" "${repo}" "${ref}"; then
+            return 0
+          fi
+          die "store sync failed for ${ch} (${repo}@${ref}). If this repo is private, set /etc/5tratumos/update.token and retry."
+        }
+
         sync_custom() {
           local slot="$1"
           local raw
@@ -572,18 +609,13 @@ PY
           resolved="$(resolve_store_url "${raw}")"
           IFS='|' read -r url url_fallback <<<"${resolved}"
           [ -n "${url}" ] || die "invalid custom store url for ${slot}"
-          sync_one "${slot}" "${url}" "${url_fallback}"
+          sync_one "${slot}" "${url}" "${url_fallback}" || die "failed to download custom store (${slot})"
         }
 
         if [ "${target}" = "all" ] || [ -z "${target}" ]; then
-          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}" = "1" ]; then
-            sync_one_github_private "main" "${main_repo}" "${main_branch}"
-            sync_one_github_private "dev" "${dev_repo}" "${dev_branch}"
-          else
-            sync_one "main" "${main_url}" "${main_url_fallback}"
-            sync_one "dev" "${dev_url}" "${dev_url_fallback}"
-          fi
-          sync_one "global" "${global_url}" "${global_url_fallback}"
+          sync_one_repo "main" "${main_repo}" "${main_branch}" "${main_url}" "${main_url_fallback}"
+          sync_one_repo "dev" "${dev_repo}" "${dev_branch}" "${dev_url}" "${dev_url_fallback}"
+          sync_one "global" "${global_url}" "${global_url_fallback}" || die "failed to download global store"
           while IFS= read -r slot; do
             [ -n "${slot}" ] || continue
             if is_custom_slot "${slot}"; then
@@ -595,19 +627,11 @@ PY
           done < <(custom_store_slots)
           sync_global_assets
         elif [ "${target}" = "main" ]; then
-          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}" = "1" ]; then
-            sync_one_github_private "main" "${main_repo}" "${main_branch}"
-          else
-            sync_one "main" "${main_url}" "${main_url_fallback}"
-          fi
+          sync_one_repo "main" "${main_repo}" "${main_branch}" "${main_url}" "${main_url_fallback}"
         elif [ "${target}" = "dev" ]; then
-          if [ "${FIVETRATUMOS_MAIN_STORE_PRIVATE:-0}" = "1" ]; then
-            sync_one_github_private "dev" "${dev_repo}" "${dev_branch}"
-          else
-            sync_one "dev" "${dev_url}" "${dev_url_fallback}"
-          fi
+          sync_one_repo "dev" "${dev_repo}" "${dev_branch}" "${dev_url}" "${dev_url_fallback}"
         elif [ "${target}" = "global" ]; then
-          sync_one "global" "${global_url}" "${global_url_fallback}"
+          sync_one "global" "${global_url}" "${global_url_fallback}" || die "failed to download global store"
           sync_global_assets
         else
           is_custom_slot "${target}" || die "invalid custom store slot: ${target}"

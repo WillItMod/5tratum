@@ -17,6 +17,14 @@ if command -v ssh-keygen >/dev/null 2>&1; then
   fi
 fi
 
+# Normalize common keyboard layout alias to avoid console-setup failures.
+# Debian console-setup expects "gb" (symbols/gb), but some installs end up with "uk" which does not exist.
+if [ -f /etc/default/keyboard ]; then
+  if grep -Eq '^XKBLAYOUT="uk"$' /etc/default/keyboard 2>/dev/null; then
+    sed -i 's/^XKBLAYOUT="uk"$/XKBLAYOUT="gb"/' /etc/default/keyboard 2>/dev/null || true
+  fi
+fi
+
 if [ ! -f /etc/5tratumos/console.json ]; then
   cat >/etc/5tratumos/console.json <<'EOF'
 {"enabled":true,"prompted":false,"user":"forge"}

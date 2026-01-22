@@ -466,6 +466,22 @@
                     <div class="forgeos-mini-card__k">Tailscale</div>
                     <div class="forgeos-mini-card__v"><span id="tailscale-status">Not installed</span></div>
                   </div>
+                  <div class="forgeos-mini-card">
+                    <div class="forgeos-mini-card__k">HTTPS</div>
+                    <div class="forgeos-mini-card__v"><span id="https-status">-</span></div>
+                    <div class="mt-3 forgeos-form">
+                      <label class="forgeos-toggle" title="Enable HTTPS with a self-signed certificate">
+                        <input id="setting-https-enabled" type="checkbox" />
+                        <span>Enable self-signed HTTPS</span>
+                      </label>
+                      <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button id="btn-https-regenerate" class="axe-btn" type="button">Regenerate cert</button>
+                      </div>
+                      <div class="mt-2 text-xs text-slate-300">
+                        Browsers will warn because the certificate is self-signed. HTTP stays available.
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div class="mt-4">
                   <button class="axe-btn" type="button" disabled>Manage firewall + VLAN (coming soon)</button>

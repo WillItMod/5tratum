@@ -6,4 +6,6 @@ services:
     volumes:
       - ./portal:/usr/share/nginx/html:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl.conf:/etc/nginx/conf.d/ssl.conf:ro
+      - ./nginx/tls:/etc/nginx/tls:ro
       - /opt/5tratumos/store:/opt/5tratumos/store:ro

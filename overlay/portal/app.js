@@ -9,6 +9,9 @@
   const tailscaleStatusEl = document.getElementById('tailscale-status');
   const wifiStatusEl = document.getElementById('wifi-status');
   const wifiDetailEl = document.getElementById('wifi-detail');
+  const httpsStatusEl = document.getElementById('https-status');
+  const httpsEnabledInput = document.getElementById('setting-https-enabled');
+  const btnHttpsRegenerate = document.getElementById('btn-https-regenerate');
   const btnWifiToggle = document.getElementById('btn-wifi-toggle');
   const btnWifiScan = document.getElementById('btn-wifi-scan');
   const btnWifiDisconnect = document.getElementById('btn-wifi-disconnect');
@@ -6128,6 +6131,25 @@
     } catch {}
   }
 
+  async function refreshHttpsConfig() {
+    if (!httpsEnabledInput && !httpsStatusEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/https', {}, 6000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      const cfg = res.config && typeof res.config === 'object' ? res.config : {};
+      if (httpsEnabledInput) httpsEnabledInput.checked = !!cfg.enabled;
+      if (httpsStatusEl) {
+        const enabled = !!cfg.enabled;
+        const cert = !!res.cert_present;
+        httpsStatusEl.textContent = enabled ? (cert ? 'Enabled (self-signed)' : 'Enabled (missing cert)') : 'Disabled';
+      }
+    } catch (e) {
+      if (httpsStatusEl) httpsStatusEl.textContent = 'Unavailable.';
+    }
+  }
+
   async function refreshUiConfig() {
     try {
       const ok = await ensureHealthy();
@@ -10579,6 +10601,67 @@
     applyStoreAutoSyncUi();
   });
 
+  httpsEnabledInput?.addEventListener('change', async () => {
+    const enabled = !!httpsEnabledInput.checked;
+    httpsEnabledInput.disabled = true;
+    btnHttpsRegenerate && (btnHttpsRegenerate.disabled = true);
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout(
+        '/api/v0/system/https',
+        { method: 'POST', body: JSON.stringify({ enabled }) },
+        30000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
+      showToast(enabled ? 'HTTPS enabled' : 'HTTPS disabled', null);
+    } catch (err) {
+      // Revert UI state on failure.
+      httpsEnabledInput.checked = !enabled;
+      showToast('HTTPS update failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'HTTPS update failed',
+        message: err && err.message ? String(err.message) : String(err),
+        danger: true,
+      });
+    } finally {
+      httpsEnabledInput.disabled = false;
+      btnHttpsRegenerate && (btnHttpsRegenerate.disabled = false);
+      refreshHttpsConfig().catch(() => {});
+    }
+  });
+
+  btnHttpsRegenerate?.addEventListener('click', async () => {
+    btnHttpsRegenerate.disabled = true;
+    const prev = btnHttpsRegenerate.textContent;
+    btnHttpsRegenerate.textContent = 'Regenerating...';
+    const splashToken = showGlobalSplash({ title: 'Regenerating HTTPS cert', sub: 'This may take a few seconds...' });
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout(
+        '/api/v0/system/https',
+        { method: 'POST', body: JSON.stringify({ enabled: true, regenerate: true }) },
+        60000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'regenerate failed');
+      showToast('HTTPS certificate regenerated', null);
+      if (httpsEnabledInput) httpsEnabledInput.checked = true;
+    } catch (err) {
+      showToast('Regenerate failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Regenerate failed',
+        message: err && err.message ? String(err.message) : String(err),
+        danger: true,
+      });
+    } finally {
+      hideGlobalSplash(splashToken);
+      btnHttpsRegenerate.disabled = false;
+      btnHttpsRegenerate.textContent = prev;
+      refreshHttpsConfig().catch(() => {});
+    }
+  });
+
   btnPower?.addEventListener('click', openPowerModal);
   btnOpenTerminal?.addEventListener('click', openTerminalModal);
   btnAutoLockSave?.addEventListener('click', () => saveSessionConfig(autoLockMinutesInput ? autoLockMinutesInput.value : 0).catch(() => {}));
@@ -11258,6 +11341,7 @@
   refreshSystemSettings().catch(() => {});
   refreshUiConfig().catch(() => {});
   refreshSessionConfig().catch(() => {});
+  refreshHttpsConfig().catch(() => {});
   refreshMqttConfig().catch(() => {});
   refreshDiscordConfig().catch(() => {});
   refreshWatchdogConfig().catch(() => {});

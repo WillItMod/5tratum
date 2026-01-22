@@ -67,12 +67,11 @@ UPDATE_TOKEN_FILE = str(_env("UPDATE_TOKEN_FILE", "/etc/5tratumos/update.token")
 UPDATE_PUBKEY_FILE = str(_env("UPDATE_PUBKEY_FILE", "/etc/5tratumos/update_signing.pub") or "/etc/5tratumos/update_signing.pub")
 UPDATE_REQUIRE_SIG = str(_env("UPDATE_REQUIRE_SIG", "0") or "0").strip() == "1"
 STORE_CONFIG_FILE = str(_env("STORE_CONFIG_FILE", "/etc/5tratumos/store.json") or "/etc/5tratumos/store.json")
-STORE_TOKEN_FILE = str(_env("STORE_TOKEN_FILE", "/etc/5tratumos/store.token") or "/etc/5tratumos/store.token")
 STORE_MAIN_REPO = str(_env("MAIN_STORE_REPO", "WillItMod/umbrel-community-store") or "WillItMod/umbrel-community-store").strip()
 STORE_MAIN_BRANCH = str(_env("MAIN_STORE_BRANCH", "main") or "main").strip()
 STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/umbrel-dev-community-store") or "WillItMod/umbrel-dev-community-store").strip()
 STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "main") or "main").strip()
-STORE_MAIN_PRIVATE = str(_env("MAIN_STORE_PRIVATE", "0") or "0").strip() == "1"
+HTTPS_CONFIG_FILE = str(_env("HTTPS_CONFIG_FILE", "/etc/5tratumos/https.json") or "/etc/5tratumos/https.json")
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
@@ -130,15 +129,23 @@ def run_cmd(
     timeout_s: int = 120,
     input: str | None = None,
 ) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        args,
-        cwd=cwd,
-        timeout=timeout_s,
-        input=input,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        return subprocess.run(
+            args,
+            cwd=cwd,
+            timeout=timeout_s,
+            input=input,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        return subprocess.CompletedProcess(
+            args=e.cmd if isinstance(e.cmd, list) else list(args),
+            returncode=124,
+            stdout=str(getattr(e, "stdout", "") or ""),
+            stderr=str(getattr(e, "stderr", "") or "timeout"),
+        )
 
 
 def _which(cmd: str) -> str:
@@ -513,46 +520,6 @@ def _write_store_config(cfg: dict) -> None:
         pass
 
 
-def _read_store_token_file() -> str:
-    path = str(STORE_TOKEN_FILE or "").strip()
-    if not path or not os.path.isfile(path):
-        return ""
-    try:
-        raw = Path(path).read_text(encoding="utf-8")
-    except Exception:
-        return ""
-    tok = (raw or "").strip()
-    if not tok:
-        return ""
-    tok = tok.splitlines()[0].strip()
-    return tok[:4096].strip()
-
-
-def _write_store_token_file(token: str) -> None:
-    path = str(STORE_TOKEN_FILE or "").strip()
-    if not path:
-        return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
-    tok = str(token or "").strip()
-    if not tok:
-        try:
-            os.remove(path)
-        except Exception:
-            pass
-        return
-
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(tok)
-        f.write("\n")
-    os.replace(tmp, path)
-    try:
-        os.chmod(path, 0o600)
-    except Exception:
-        pass
-
-
 def _normalize_crlf_inplace(path: str) -> None:
     p = str(path or "").strip()
     if not p:
@@ -617,12 +584,10 @@ def store_config_get() -> dict:
     return {
         "ok": True,
         "custom": out,
-        "token_present": bool(_read_store_token_file()),
         "main_repo": STORE_MAIN_REPO,
         "main_branch": STORE_MAIN_BRANCH,
         "dev_repo": STORE_DEV_REPO,
         "dev_branch": STORE_DEV_BRANCH,
-        "private": STORE_MAIN_PRIVATE,
     }
 
 
@@ -681,17 +646,138 @@ def store_config_set(body: dict) -> dict:
     return {**store_config_get(), "saved": True}
 
 
-def store_auth_get() -> dict:
-    tok = _read_store_token_file()
-    return {"ok": True, "token_present": bool(tok)}
+def _https_defaults() -> dict:
+    return {"enabled": False}
 
 
-def store_auth_set(body: dict) -> dict:
+def _read_https_config() -> dict:
+    cfg = _read_json(HTTPS_CONFIG_FILE)
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _write_https_config(cfg: dict) -> None:
+    _write_json_atomic(HTTPS_CONFIG_FILE, cfg if isinstance(cfg, dict) else {})
+    try:
+        os.chmod(HTTPS_CONFIG_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def _https_paths() -> tuple[Path, Path, Path]:
+    overlay_dir = Path(ROOT_DIR) / "overlay"
+    ssl_conf = overlay_dir / "nginx" / "ssl.conf"
+    tls_dir = overlay_dir / "nginx" / "tls"
+    compose_dir = overlay_dir
+    return ssl_conf, tls_dir, compose_dir
+
+
+def _apply_https_config(*, enabled: bool, regenerate: bool = False) -> dict:
+    ssl_conf, tls_dir, compose_dir = _https_paths()
+    tls_dir.mkdir(parents=True, exist_ok=True)
+
+    cert_path = tls_dir / "portal.crt"
+    key_path = tls_dir / "portal.key"
+
+    if enabled:
+        if not _which("openssl"):
+            return {"ok": False, "error": "openssl not installed (required for self-signed HTTPS)"}
+        if regenerate or (not cert_path.is_file()) or (not key_path.is_file()):
+            subj = "/CN=5tratumos"
+            proc = run_cmd(
+                [
+                    "openssl",
+                    "req",
+                    "-x509",
+                    "-nodes",
+                    "-newkey",
+                    "rsa:2048",
+                    "-keyout",
+                    str(key_path),
+                    "-out",
+                    str(cert_path),
+                    "-days",
+                    "3650",
+                    "-subj",
+                    subj,
+                ],
+                timeout_s=90,
+            )
+            if proc.returncode != 0:
+                return {"ok": False, "error": (proc.stderr or proc.stdout or "openssl failed").strip()}
+            try:
+                os.chmod(key_path, 0o600)
+                os.chmod(cert_path, 0o644)
+            except Exception:
+                pass
+        ssl_conf.write_text(
+            "\n".join(
+                [
+                    "# Autogenerated by 5tratumOS",
+                    "listen 443 ssl;",
+                    "ssl_certificate /etc/nginx/tls/portal.crt;",
+                    "ssl_certificate_key /etc/nginx/tls/portal.key;",
+                    "ssl_protocols TLSv1.2 TLSv1.3;",
+                    "ssl_session_cache shared:SSL:10m;",
+                    "ssl_session_timeout 10m;",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+    else:
+        ssl_conf.write_text(
+            "\n".join(
+                [
+                    "# HTTPS disabled",
+                    "# 5tratumOS will overwrite this file when HTTPS is enabled.",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+    proc = run_cmd(
+        ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
+        cwd=str(compose_dir),
+        timeout_s=180,
+    )
+    ok = proc.returncode == 0
+    return {
+        "ok": ok,
+        "enabled": bool(enabled),
+        "cert_present": bool(cert_path.is_file() and key_path.is_file()),
+        "restart": {"ok": ok, "code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr},
+    }
+
+
+def https_config_get() -> dict:
+    cfg = _https_defaults()
+    raw = _read_https_config()
+    if isinstance(raw, dict):
+        cfg["enabled"] = bool(raw.get("enabled"))
+    ssl_conf, tls_dir, _compose_dir = _https_paths()
+    return {
+        "ok": True,
+        "config": cfg,
+        "cert_present": bool((tls_dir / "portal.crt").is_file() and (tls_dir / "portal.key").is_file()),
+        "ssl_conf_present": bool(ssl_conf.is_file()),
+    }
+
+
+def https_config_set(body: dict) -> dict:
     if not isinstance(body, dict):
         return {"ok": False, "error": "invalid body"}
-    token = str(body.get("token") or "").strip()
-    _write_store_token_file(token)
-    return {"ok": True, "saved": True, "token_present": bool(_read_store_token_file())}
+    enabled = bool(body.get("enabled")) if "enabled" in body else None
+    regen = bool(body.get("regenerate")) if "regenerate" in body else False
+    cfg = _https_defaults()
+    raw = _read_https_config()
+    if isinstance(raw, dict):
+        cfg.update({k: raw.get(k) for k in cfg.keys()})
+    if enabled is not None:
+        cfg["enabled"] = bool(enabled)
+    _write_https_config(cfg)
+    apply_res = _apply_https_config(enabled=bool(cfg.get("enabled")), regenerate=regen)
+    return {**https_config_get(), "applied": apply_res}
 
 
 def store_custom_channels() -> list[str]:
@@ -2363,7 +2449,19 @@ def _notify_loop() -> None:
 
                     now_ts = time.time()
                     pool_ok = bool(pool_entry.get("ok")) if isinstance(pool_entry, dict) else False
-                    sample_valid = pool_ok and hashrate is not None and workers is not None
+                    # Don't treat cached/stale pool data as a "fresh" sample for notifications.
+                    # Fleet may reuse the last-good reading when a poll times out; that should not
+                    # trigger hashrate-drop spam.
+                    sample_flag = None
+                    stale_flag = False
+                    if isinstance(pool_entry, dict):
+                        if "sample_ok" in pool_entry:
+                            sample_flag = bool(pool_entry.get("sample_ok"))
+                        stale_flag = bool(pool_entry.get("stale"))
+                    if sample_flag is None:
+                        sample_valid = pool_ok and hashrate is not None and workers is not None
+                    else:
+                        sample_valid = bool(sample_flag) and (not stale_flag) and hashrate is not None and workers is not None
 
                     if sample_valid:
                         hashrate_good = float(hashrate)
@@ -4826,6 +4924,14 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
     last_good: dict | None = None
     if isinstance(cache.get("data"), dict) and (cache.get("data") or {}).get("ok") is True:
         last_good = cache.get("data")  # type: ignore[assignment]
+    prev_pool_by_id: dict[str, dict] = {}
+    if isinstance(last_good, dict) and isinstance(last_good.get("pools"), list):
+        for it in last_good.get("pools") or []:
+            if not isinstance(it, dict):
+                continue
+            pid = str(it.get("id") or "").strip().lower()
+            if pid:
+                prev_pool_by_id[pid] = it
 
     def _fetch_pool(app_id: str) -> tuple[dict, list[dict]]:
         store_meta = store_app_by_id(app_id) or {}
@@ -4886,6 +4992,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         if workers_data is not None:
             entry["workers"] = workers_data
         entry["ok"] = pool_data is not None
+        entry["sample_ok"] = entry["ok"]
 
         details: list[dict] = []
 
@@ -5117,6 +5224,20 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 continue
             if not entry:
                 continue
+            # Prevent Fleet dips-to-zero when a pool endpoint times out.
+            # If we have a last-known-good sample for this pool, reuse it and mark as stale.
+            pid = str(entry.get("id") or "").strip().lower()
+            if pid and pid in prev_pool_by_id:
+                prev = prev_pool_by_id[pid]
+                if not bool(entry.get("ok")):
+                    if isinstance(prev.get("pool"), dict) and "pool" not in entry:
+                        entry["pool"] = prev.get("pool")
+                    if isinstance(prev.get("workers"), dict) and "workers" not in entry:
+                        entry["workers"] = prev.get("workers")
+                    entry["stale"] = True
+                    entry["sample_ok"] = False
+                    # Keep ok=true if we can show cached values in the UI.
+                    entry["ok"] = bool(entry.get("pool"))
             pools.append(entry)
             if "pool" in entry and isinstance(entry.get("pool"), dict):
                 pool_obj = entry["pool"]
@@ -6134,6 +6255,14 @@ def _autoheal_degraded_projects_once() -> None:
 def _boot_reconcile_loop() -> None:
     # Give docker a moment on fresh boots.
     time.sleep(8)
+    # Re-apply HTTPS config on boot so OS updates that replace overlay files don't
+    # accidentally disable/enabled the portal listener.
+    try:
+        cfg = _read_https_config()
+        enabled = bool(cfg.get("enabled")) if isinstance(cfg, dict) else False
+        _apply_https_config(enabled=enabled, regenerate=False)
+    except Exception:
+        pass
     # Ensure nginx /apps routes reflect currently installed apps and their live ports.
     # This also repairs routes after an OS update that replaces the base nginx config.
     try:
@@ -6637,6 +6766,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_ui_config_get())
             return
 
+        if path == "/api/v0/system/https":
+            json_response(self, HTTPStatus.OK, https_config_get())
+            return
+
         if path == "/api/v0/system/storage":
             json_response(self, HTTPStatus.OK, system_storage_status())
             return
@@ -6715,10 +6848,6 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/store/config":
             json_response(self, HTTPStatus.OK, store_config_get())
-            return
-
-        if path == "/api/v0/store/auth":
-            json_response(self, HTTPStatus.OK, store_auth_get())
             return
 
         if path == "/api/v0/apps/installed":
@@ -6967,11 +7096,6 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
-        if path == "/api/v0/store/auth":
-            res = store_auth_set(body if isinstance(body, dict) else {})
-            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
-            return
-
         if path == "/api/v0/terminal/run":
             cmd = str(body.get("cmd") or "") if isinstance(body, dict) else ""
             res = terminal_run(cmd)
@@ -7073,6 +7197,11 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
+        if path == "/api/v0/system/https":
+            res = https_config_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         if path == "/api/v0/system/proxy/repair":
             res = system_proxy_repair()
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
@@ -7159,6 +7288,8 @@ class Handler(BaseHTTPRequestHandler):
                         ch = str(channel).strip().lower()
                         _update_app_install_meta_channel(app_id, ch)
                         _installed_registry_update_meta(app_id, {"channel": ch})
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7170,6 +7301,8 @@ class Handler(BaseHTTPRequestHandler):
                 res = stratumos_cmd(args, timeout_s=600)
                 if res.get("ok"):
                     _installed_registry_set(app_id, False)
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7183,6 +7316,9 @@ class Handler(BaseHTTPRequestHandler):
                 if res.get("ok") and channel:
                     _update_app_install_meta_channel(app_id, channel)
                     _installed_registry_update_meta(app_id, {"channel": channel})
+                if res.get("ok"):
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7193,11 +7329,17 @@ class Handler(BaseHTTPRequestHandler):
                 if version:
                     args += ["--to", version]
                 res = stratumos_cmd(args, timeout_s=1800)
+                if res.get("ok"):
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "up":
                 res = stratumos_cmd(["app", "up", app_id], timeout_s=1800)
+                if res.get("ok"):
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7205,6 +7347,8 @@ class Handler(BaseHTTPRequestHandler):
                 res = stratumos_cmd(["app", "down", app_id], timeout_s=600)
                 if res.get("ok"):
                     watchdog_note_manual_stop(app_id)
+                    proxy_res = system_proxy_repair()
+                    res["proxy"] = proxy_res
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7234,10 +7378,13 @@ class Handler(BaseHTTPRequestHandler):
                 steps.append({"step": "up", **up_res})
                 ok = ok and bool(up_res.get("ok"))
 
+                proxy = None
+                if ok:
+                    proxy = system_proxy_repair()
                 json_response(
                     self,
                     HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST,
-                    {"ok": ok, "app": app_id, "steps": steps},
+                    {"ok": ok, "app": app_id, "steps": steps, "proxy": proxy},
                 )
                 return
 

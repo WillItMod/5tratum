@@ -61,8 +61,22 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 ConditionPathExists=/dev/tty0
 EOF
 
-log "Installing kiosk packages (cage + chromium)..."
-apt-get install -y --no-install-recommends cage chromium || true
+log "Installing kiosk packages (cage + chromium + Xorg input)..."
+# Ensure Proxmox/noVNC/SPICE input works on first boot by installing Xorg + libinput up-front
+# (offline installs may not be able to fetch these later).
+apt-get install -y --no-install-recommends \
+  cage \
+  chromium \
+  curl \
+  kbd \
+  matchbox-window-manager \
+  x11-xserver-utils \
+  xinit \
+  xserver-xorg-input-libinput \
+  xserver-xorg-core \
+  xserver-xorg-video-fbdev \
+  xserver-xorg-video-vesa \
+  xserver-xorg-video-qxl || true
 
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.
@@ -123,6 +137,12 @@ if [ -f /root/build.json ]; then
   install -m 0644 /root/build.json /etc/5tratumos/build.json || true
 elif [ -f /cdrom/5tratumos/build.json ]; then
   install -m 0644 /cdrom/5tratumos/build.json /etc/5tratumos/build.json || true
+fi
+if [ ! -f /etc/5tratumos/build.json ]; then
+  cat >/etc/5tratumos/build.json <<'JSON'
+{"tag":"unknown","repo":"WillItMod/5tratum","channel":"main","installed_at":""}
+JSON
+  chmod 0644 /etc/5tratumos/build.json || true
 fi
 
 if [ -f "${STAGE_DIR}/bin/5tratumos" ]; then
