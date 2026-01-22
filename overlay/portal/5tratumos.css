@@ -625,8 +625,16 @@ body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__name-wrap {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  padding-right: 2px;
+  padding-right: 0;
   flex: 1 1 auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.forgeos-app-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-list,
