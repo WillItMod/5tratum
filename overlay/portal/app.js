@@ -1770,6 +1770,27 @@
     }
   }
 
+  async function hydrateFleetSeriesFromServer() {
+    try {
+      const res = await fetch('/api/v0/fleet/history?limit=720', {
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (!data || data.ok !== true || !Array.isArray(data.series)) return;
+      const series = data.series
+        .map((p) => ({ t: Number(p && p.t), v: Number(p && p.v) }))
+        .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t > 0);
+      if (!series.length) return;
+      fleetSeries = series.slice(-720);
+      saveFleetSeries();
+      try {
+        if (lastFleet) renderFleet(lastFleet);
+      } catch {}
+    } catch {}
+  }
+
   function saveFleetSeries() {
     try {
       window.localStorage.setItem(FLEET_SERIES_KEY, JSON.stringify(fleetSeries.slice(-720)));
@@ -11507,6 +11528,7 @@
   settingsLayout = loadSettingsLayout();
   applySettingsLayout();
   fleetSeries = loadFleetSeries();
+  hydrateFleetSeriesFromServer();
   initDashboard();
   updateClock();
   window.setInterval(updateClock, 1000);

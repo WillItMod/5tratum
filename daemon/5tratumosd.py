@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import datetime
@@ -4688,6 +4689,78 @@ _STORE_CACHE: dict[str, dict] = {}
 _WIDGET_CACHE: dict[str, dict] = {}
 _FLEET_CACHE: dict[str, dict] = {}
 
+_FLEET_HISTORY_PATH = Path("/var/lib/5tratumos/fleet/history.json")
+_FLEET_HISTORY_LOCK = threading.Lock()
+_FLEET_HISTORY_MAX_POINTS = 720
+_FLEET_HISTORY_BUCKET_S = 30
+
+
+def _load_fleet_history() -> list[dict]:
+    try:
+        if not _FLEET_HISTORY_PATH.is_file():
+            return []
+        raw = _FLEET_HISTORY_PATH.read_text(encoding="utf-8").strip()
+        if not raw:
+            return []
+        data = json.loads(raw)
+        if not isinstance(data, list):
+            return []
+        out: list[dict] = []
+        for it in data:
+            if not isinstance(it, dict):
+                continue
+            t = it.get("t")
+            v = it.get("v")
+            if not isinstance(t, int):
+                continue
+            if not isinstance(v, (int, float)):
+                continue
+            out.append({"t": int(t), "v": float(v)})
+        return out
+    except Exception:
+        return []
+
+
+def _save_fleet_history(series: list[dict]) -> None:
+    try:
+        _FLEET_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _FLEET_HISTORY_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(series, separators=(",", ":")), encoding="utf-8")
+        try:
+            os.chmod(tmp, 0o600)
+        except Exception:
+            pass
+        os.replace(tmp, _FLEET_HISTORY_PATH)
+        try:
+            os.chmod(_FLEET_HISTORY_PATH, 0o600)
+        except Exception:
+            pass
+    except Exception:
+        return
+
+
+def _append_fleet_history(total_hashrate_ths: float) -> None:
+    try:
+        if not isinstance(total_hashrate_ths, (int, float)) or not math.isfinite(float(total_hashrate_ths)):
+            return
+    except Exception:
+        return
+
+    now_s = int(time.time())
+    bucket_s = (now_s // int(_FLEET_HISTORY_BUCKET_S)) * int(_FLEET_HISTORY_BUCKET_S)
+    t_ms = int(bucket_s * 1000)
+    v = float(total_hashrate_ths)
+
+    with _FLEET_HISTORY_LOCK:
+        series = _load_fleet_history()
+        if series and isinstance(series[-1], dict) and series[-1].get("t") == t_ms:
+            series[-1]["v"] = v
+        else:
+            series.append({"t": t_ms, "v": v})
+        if len(series) > int(_FLEET_HISTORY_MAX_POINTS):
+            series = series[-int(_FLEET_HISTORY_MAX_POINTS) :]
+        _save_fleet_history(series)
+
 
 def _has_pool_widget(store_meta: dict) -> bool:
     widgets = store_meta.get("widgets")
@@ -5593,6 +5666,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         "workers_inactive": inactive_workers,
         "workers_pruned": pruned_workers,
     }
+    _append_fleet_history(total_hashrate_ths)
     _FLEET_CACHE["summary"] = {"time": now, "limit": limit, "data": res}
     return res
 
@@ -7285,6 +7359,20 @@ class Handler(BaseHTTPRequestHandler):
                     max_age_s=30,
                 ),
             )
+            return
+
+        if path == "/api/v0/fleet/history":
+            limit_raw = (qs.get("limit") or ["720"])[0]
+            try:
+                limit = int(str(limit_raw).strip() or "720")
+            except Exception:
+                limit = 720
+            limit = max(1, min(2000, limit))
+            with _FLEET_HISTORY_LOCK:
+                series = _load_fleet_history()
+            if limit > 0:
+                series = series[-limit:]
+            json_response(self, HTTPStatus.OK, {"ok": True, "time": _now_iso(), "series": series})
             return
 
         if path == "/api/v0/fleet/summary":
