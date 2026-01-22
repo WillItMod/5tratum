@@ -49,6 +49,46 @@ force_stop_project() {
   docker rm -f ${ids} >/dev/null 2>&1 || true
 }
 
+acquire_app_lock() {
+  local app_id="$1"
+  local lock_root="${STATE_DIR}/locks"
+  local lock_dir="${lock_root}/${app_id}.lock"
+
+  mkdir -p "${lock_root}" 2>/dev/null || true
+
+  if mkdir "${lock_dir}" 2>/dev/null; then
+    printf '%s\n' "$$" >"${lock_dir}/pid" 2>/dev/null || true
+    date +%s >"${lock_dir}/started_at" 2>/dev/null || true
+    trap 'rm -rf "${lock_dir}" 2>/dev/null || true' EXIT
+    return 0
+  fi
+
+  local pid started now age
+  pid="$(cat "${lock_dir}/pid" 2>/dev/null || true)"
+  started="$(cat "${lock_dir}/started_at" 2>/dev/null || true)"
+  now="$(date +%s 2>/dev/null || echo 0)"
+  age=0
+  if [ -n "${started}" ] && [ "${now}" -gt 0 ] 2>/dev/null; then
+    age="$((now - started))" || age=0
+  fi
+
+  if [ -n "${pid}" ] && kill -0 "${pid}" >/dev/null 2>&1; then
+    die "app is busy: ${app_id} (operation in progress)"
+  fi
+
+  if [ "${age}" -gt 1800 ] 2>/dev/null || [ -z "${pid}" ]; then
+    rm -rf "${lock_dir}" 2>/dev/null || true
+    if mkdir "${lock_dir}" 2>/dev/null; then
+      printf '%s\n' "$$" >"${lock_dir}/pid" 2>/dev/null || true
+      date +%s >"${lock_dir}/started_at" 2>/dev/null || true
+      trap 'rm -rf "${lock_dir}" 2>/dev/null || true' EXIT
+      return 0
+    fi
+  fi
+
+  die "app is busy: ${app_id} (operation in progress)"
+}
+
 cleanup_project_artifacts() {
   local project="$1"
   local remove_volumes="${2:-false}"
@@ -133,7 +173,11 @@ compose_up() {
   local project="$1"
   local workdir="$2"
   shift 2
-  (cd "${workdir}" && docker compose --project-name "${project}" "$@")
+  if have timeout; then
+    (cd "${workdir}" && timeout 600s docker compose --project-name "${project}" "$@")
+  else
+    (cd "${workdir}" && docker compose --project-name "${project}" "$@")
+  fi
 }
 
 compose_up_app() {
@@ -143,7 +187,11 @@ compose_up_app() {
 
   local out rc
   set +e
-  out="$(cd "${workdir}" && docker compose --project-name "${project}" "$@" 2>&1)"
+  if have timeout; then
+    out="$(cd "${workdir}" && timeout 600s docker compose --project-name "${project}" "$@" 2>&1)"
+  else
+    out="$(cd "${workdir}" && docker compose --project-name "${project}" "$@" 2>&1)"
+  fi
   rc=$?
   set -e
   printf '%s\n' "${out}"
@@ -194,17 +242,19 @@ ensure_app_env() {
 
   if [ -f "${env_file}" ]; then
     awk -v app_data="${app_state_dir}" -v proj="${project}" '
-      BEGIN { ad=0; pj=0 }
+      BEGIN { ad=0; pj=0; dd=0 }
       /^APP_DATA_DIR=/ { print "APP_DATA_DIR=" app_data; ad=1; next }
+      /^DATADIR=/ { print "DATADIR=" app_data; dd=1; next }
       /^COMPOSE_PROJECT_NAME=/ { print "COMPOSE_PROJECT_NAME=" proj; pj=1; next }
       { print }
       END {
         if (ad == 0) print "APP_DATA_DIR=" app_data
+        if (dd == 0) print "DATADIR=" app_data
         if (pj == 0) print "COMPOSE_PROJECT_NAME=" proj
       }
     ' "${env_file}" > "${tmp_file}"
   else
-    printf "APP_DATA_DIR=%s\nCOMPOSE_PROJECT_NAME=%s\n" "${app_state_dir}" "${project}" > "${tmp_file}"
+    printf "APP_DATA_DIR=%s\nDATADIR=%s\nCOMPOSE_PROJECT_NAME=%s\n" "${app_state_dir}" "${app_state_dir}" "${project}" > "${tmp_file}"
   fi
 
   mv -f "${tmp_file}" "${env_file}"
@@ -694,17 +744,19 @@ PY
           tmp_file="$(mktemp)"
           if [ -f "${env_file}" ]; then
             awk -v app_data="${app_state_dir}" -v proj="${project}" '
-              BEGIN { ad=0; pj=0 }
+              BEGIN { ad=0; pj=0; dd=0 }
               /^APP_DATA_DIR=/ { print "APP_DATA_DIR=" app_data; ad=1; next }
+              /^DATADIR=/ { print "DATADIR=" app_data; dd=1; next }
               /^COMPOSE_PROJECT_NAME=/ { print "COMPOSE_PROJECT_NAME=" proj; pj=1; next }
               { print }
               END {
                 if (ad == 0) print "APP_DATA_DIR=" app_data
+                if (dd == 0) print "DATADIR=" app_data
                 if (pj == 0) print "COMPOSE_PROJECT_NAME=" proj
               }
             ' "${env_file}" > "${tmp_file}"
           else
-            printf "APP_DATA_DIR=%s\nCOMPOSE_PROJECT_NAME=%s\n" "${app_state_dir}" "${project}" > "${tmp_file}"
+            printf "APP_DATA_DIR=%s\nDATADIR=%s\nCOMPOSE_PROJECT_NAME=%s\n" "${app_state_dir}" "${app_state_dir}" "${project}" > "${tmp_file}"
           fi
           mv -f "${tmp_file}" "${env_file}"
           chmod 600 "${env_file}" 2>/dev/null || true
@@ -714,6 +766,7 @@ PY
       install)
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
+        acquire_app_lock "${app_id}"
         ch="$(current_channel)"
         if [ "${1:-}" = "--channel" ]; then
           shift
@@ -725,7 +778,15 @@ PY
         store_dir=""
         store_port=""
         dst="${ROOT_DIR}/apps/${app_id}"
-        [ ! -e "${dst}" ] || die "app already installed: ${app_id} (${dst})"
+        if [ -e "${dst}" ]; then
+          project="$(app_project_name "${app_id}")"
+          if [ ! -f "${dst}/docker-compose.yml" ] && ! compose_project_containers "${project}" | grep -q .; then
+            echo "warn: removing stale app directory before install: ${dst}" >&2
+            rm -rf "${dst}" 2>/dev/null || true
+          else
+            die "app already installed: ${app_id} (${dst})"
+          fi
+        fi
 
         install -d -m 0755 "${dst}"
 
@@ -1186,6 +1247,7 @@ PY
         [ "${EUID:-$(id -u)}" -eq 0 ] || die "app update requires root (writes ${ROOT_DIR}/apps)"
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
+        acquire_app_lock "${app_id}"
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
         ensure_app_env "${app_id}" "${app_dir}"
@@ -1777,6 +1839,7 @@ PY
         [ "${EUID:-$(id -u)}" -eq 0 ] || die "app rollback requires root (writes ${ROOT_DIR}/apps)"
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
+        acquire_app_lock "${app_id}"
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
         ensure_app_env "${app_id}" "${app_dir}"
@@ -1883,13 +1946,22 @@ PY
       uninstall)
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
+        acquire_app_lock "${app_id}"
         purge="false"
         if [ "${1:-}" = "--purge" ]; then
           purge="true"
           shift || true
         fi
         app_dir="${ROOT_DIR}/apps/${app_id}"
-        [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
+        if [ ! -d "${app_dir}" ]; then
+          if [ "${purge}" = "true" ]; then
+            rm -rf "${STATE_DIR}/apps/${app_id}" 2>/dev/null || true
+            echo "uninstalled ${app_id} (already removed; purged)"
+          else
+            echo "uninstalled ${app_id} (already removed)"
+          fi
+          exit 0
+        fi
         ensure_app_env "${app_id}" "${app_dir}"
 
         project="$(app_project_name "${app_id}")"
@@ -1907,6 +1979,7 @@ PY
         action="${sub}"
         app_id="${1:-}"; shift || true
         [ -n "${app_id}" ] || die "missing app id"
+        acquire_app_lock "${app_id}"
         app_dir="${ROOT_DIR}/apps/${app_id}"
         [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
         ensure_app_env "${app_id}" "${app_dir}"

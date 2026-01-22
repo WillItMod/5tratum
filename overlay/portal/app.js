@@ -3555,7 +3555,7 @@
       // For same-origin apps, wait until the app endpoint is ready before loading the iframe
       // to avoid showing transient 5xx/501 "not ready" pages.
       if (targetUrl.startsWith(window.location.origin)) {
-        const ready = await waitForAppReady(id, targetUrl, { timeoutMs: 90000 }).catch(() => ({ ok: false, status: 0 }));
+        const ready = await waitForAppReady(id, targetUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
         if (!ready.ok) {
           const label = metaFor(id).name || id;
           const okFix = await openConfirmModal({
@@ -3563,9 +3563,9 @@
             title: `${label} is still starting`,
             message:
               `The app UI is not responding yet (HTTP ${ready.status || 0}).\n\n` +
-              'You can keep waiting, or run Fix App to repair the deployment.',
+              'Run Fix App to repair the deployment, or open anyway.',
             confirmText: 'Run Fix',
-            cancelText: 'Keep waiting',
+            cancelText: 'Open anyway',
           });
           if (okFix) {
             const res = await runRepairWithoutPrompt(id);
@@ -3576,6 +3576,8 @@
                 message: res.error || 'Fix failed.',
                 danger: true,
               });
+            } else {
+              await waitForAppReady(id, targetUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
             }
           }
         }
@@ -3583,7 +3585,7 @@
       iframe.src = targetUrl;
       iframe.addEventListener('load', hideLaunch, { once: true });
       // Safety: don't trap the overlay forever if an app never fully loads.
-      window.setTimeout(hideLaunch, 180000);
+      window.setTimeout(hideLaunch, 600000);
     })();
 
     const resize = document.createElement('div');
@@ -3944,7 +3946,9 @@
       }
       lastNetSample = { time: now, rx, tx };
       const totalRate = rateRx + rateTx;
-      const maxRate = linkMbps > 0 ? (linkMbps * 1000 * 1000) / 8 : 50 * 1024 * 1024;
+      // If link speed is unknown (common on WiFi/virtual NICs), assume ~100Mbps so the bar
+      // remains informative at moderate throughput.
+      const maxRate = linkMbps > 0 ? (linkMbps * 1000 * 1000) / 8 : 12.5 * 1024 * 1024;
       const pct = maxRate > 0 ? Math.max(0, Math.min(100, (totalRate / maxRate) * 100)) : 0;
       if (metricNetBar) setMaskedGradientBar(metricNetBar, pct);
       if (metricNetSub) metricNetSub.textContent = `Up ${formatBytesPerSec(rateTx)} \u2022 Down ${formatBytesPerSec(rateRx)}`;
@@ -4421,7 +4425,7 @@
     });
     (async () => {
       if (pathUrl.startsWith(window.location.origin)) {
-        const ready = await waitForAppReady(id, pathUrl, { timeoutMs: 90000 }).catch(() => ({ ok: false, status: 0 }));
+        const ready = await waitForAppReady(id, pathUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
         if (!ready.ok) {
           const label = metaFor(id).name || id;
           const okFix = await openConfirmModal({
@@ -4429,9 +4433,9 @@
             title: `${label} is still starting`,
             message:
               `The app UI is not responding yet (HTTP ${ready.status || 0}).\n\n` +
-              'You can keep waiting, or run Fix App to repair the deployment.',
+              'Run Fix App to repair the deployment, or open anyway.',
             confirmText: 'Run Fix',
-            cancelText: 'Keep waiting',
+            cancelText: 'Open anyway',
           });
           if (okFix) {
             const res = await runRepairWithoutPrompt(id);
@@ -4442,12 +4446,14 @@
                 message: res.error || 'Fix failed.',
                 danger: true,
               });
+            } else {
+              await waitForAppReady(id, pathUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
             }
           }
         }
       }
       iframe.src = pathUrl;
-      window.setTimeout(hideLaunch, 180000);
+      window.setTimeout(hideLaunch, 600000);
     })();
 
     const ui = installed && installed.ui && typeof installed.ui === 'object' ? installed.ui : null;

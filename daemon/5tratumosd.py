@@ -2081,6 +2081,16 @@ def _app_compose_present(app_id: str) -> bool:
         return False
 
 
+def _app_dir_present(app_id: str) -> bool:
+    app_id = str(app_id or "").strip()
+    if not app_id:
+        return False
+    try:
+        return os.path.isdir(os.path.join(APPS_DIR, app_id))
+    except Exception:
+        return False
+
+
 def _docker_project_container_count(project: str) -> int | None:
     proj = str(project or "").strip()
     if not proj:
@@ -2101,12 +2111,17 @@ def _wait_for_app_removed(app_id: str, *, timeout_s: int = 90) -> dict:
         return {"ok": False, "error": "missing app id"}
     project = docker_compose_project(app)
     started = time.time()
-    last = {"compose_present": _app_compose_present(app), "containers": _docker_project_container_count(project)}
+    last = {
+        "dir_present": _app_dir_present(app),
+        "compose_present": _app_compose_present(app),
+        "containers": _docker_project_container_count(project),
+    }
     while time.time() - started < max(1, int(timeout_s)):
+        dir_present = _app_dir_present(app)
         compose_present = _app_compose_present(app)
         containers = _docker_project_container_count(project)
-        last = {"compose_present": compose_present, "containers": containers}
-        if not compose_present and (containers == 0):
+        last = {"dir_present": dir_present, "compose_present": compose_present, "containers": containers}
+        if (not dir_present) and (containers in (0, None)):
             return {"ok": True, "time_s": int(time.time() - started), **last}
         time.sleep(1.5)
     return {"ok": False, "error": "timeout", "time_s": int(time.time() - started), **last}
