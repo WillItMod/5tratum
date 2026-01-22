@@ -2297,8 +2297,78 @@ def _watchdog_loop() -> None:
 
 
 _NOTIFY_LOCK = threading.Lock()
-_NOTIFY_STATE: dict[str, dict] = {"apps": {}, "update": {}}
 _NOTIFY_POLL_S = 30
+_NOTIFY_STATE_DIR = os.path.join(STATE_DIR, "notify")
+_NOTIFY_STATE_PATH = os.path.join(_NOTIFY_STATE_DIR, "state.json")
+_NOTIFY_STATE_LAST_SAVE_TS = 0.0
+_NOTIFY_DIRTY = False
+
+
+def _notify_state_load() -> dict[str, dict]:
+    try:
+        raw = _read_json(_NOTIFY_STATE_PATH)
+        if not isinstance(raw, dict):
+            return {"apps": {}, "update": {}}
+        apps = raw.get("apps")
+        update = raw.get("update")
+        if not isinstance(apps, dict):
+            apps = {}
+        if not isinstance(update, dict):
+            update = {}
+        # Ensure a stable schema.
+        return {"apps": dict(apps), "update": dict(update)}
+    except Exception:
+        return {"apps": {}, "update": {}}
+
+
+def _notify_state_mark_dirty() -> None:
+    global _NOTIFY_DIRTY
+    _NOTIFY_DIRTY = True
+
+
+def _notify_state_save_if_needed(*, force: bool = False) -> None:
+    global _NOTIFY_STATE_LAST_SAVE_TS, _NOTIFY_DIRTY
+    try:
+        now = time.time()
+        if not force:
+            if not _NOTIFY_DIRTY:
+                return
+            # Rate limit to avoid excessive disk writes.
+            if (now - _NOTIFY_STATE_LAST_SAVE_TS) < 15:
+                return
+
+        Path(_NOTIFY_STATE_DIR).mkdir(parents=True, exist_ok=True)
+        # Persist only the minimal state needed to dedupe notifications across reboot.
+        with _NOTIFY_LOCK:
+            apps_out: dict[str, dict] = {}
+            for app_id, st in (_NOTIFY_STATE.get("apps") or {}).items():
+                if not isinstance(st, dict):
+                    continue
+                last_alert_ts = st.get("last_alert_ts")
+                if not isinstance(last_alert_ts, (int, float)) or last_alert_ts <= 0:
+                    continue
+                apps_out[str(app_id)] = {"last_alert_ts": float(last_alert_ts)}
+            update_out = _NOTIFY_STATE.get("update") if isinstance(_NOTIFY_STATE.get("update"), dict) else {}
+            payload = {"apps": apps_out, "update": dict(update_out or {})}
+
+        _write_json_atomic(_NOTIFY_STATE_PATH, payload)
+        try:
+            os.chmod(_NOTIFY_STATE_PATH, 0o600)
+        except Exception:
+            pass
+        _NOTIFY_STATE_LAST_SAVE_TS = now
+        _NOTIFY_DIRTY = False
+    except Exception:
+        return
+
+
+_NOTIFY_STATE: dict[str, dict] = _notify_state_load()
+if not isinstance(_NOTIFY_STATE, dict):
+    _NOTIFY_STATE = {"apps": {}, "update": {}}
+if "apps" not in _NOTIFY_STATE or not isinstance(_NOTIFY_STATE.get("apps"), dict):
+    _NOTIFY_STATE["apps"] = {}
+if "update" not in _NOTIFY_STATE or not isinstance(_NOTIFY_STATE.get("update"), dict):
+    _NOTIFY_STATE["update"] = {}
 
 
 def _selected_notify_apps(cfg: dict, installed: list[str]) -> list[str]:
@@ -2640,6 +2710,7 @@ def _notify_loop() -> None:
                         with _NOTIFY_LOCK:
                             _NOTIFY_STATE["apps"][app_id]["last_alert_ts"] = time.time()
                             _NOTIFY_STATE["apps"][app_id]["drop_n"] = 0
+                        _notify_state_mark_dirty()
 
                 if sample_ok and prev_workers > 0 and (events_mqtt.get("worker_offline") or events_discord.get("worker_offline")):
                     cur_workers = int(_NOTIFY_STATE["apps"][app_id].get("workers") or 0)
@@ -2666,6 +2737,7 @@ def _notify_loop() -> None:
                         with _NOTIFY_LOCK:
                             _NOTIFY_STATE["apps"][app_id]["last_alert_ts"] = time.time()
                             _NOTIFY_STATE["apps"][app_id]["worker_n"] = 0
+                        _notify_state_mark_dirty()
 
                 if block_sig and prev_block and block_sig != prev_block and (
                     events_mqtt.get("block_found") or events_discord.get("block_found")
@@ -2690,6 +2762,7 @@ def _notify_loop() -> None:
                     prev_update = _NOTIFY_STATE.get("update") or {}
                     prev_state = str(prev_update.get("state") or "")
                     _NOTIFY_STATE["update"] = {"state": state, "tag": str(st.get("target_tag") or "")}
+                _notify_state_mark_dirty()
 
                 if state != prev_state:
                     if state == "done" and events_discord.get("update_success"):
@@ -2705,6 +2778,7 @@ def _notify_loop() -> None:
                             mqtt_apps=mqtt_apps,
                             discord_apps=discord_apps,
                         )
+                        _notify_state_save_if_needed(force=True)
                     if state == "error" and events_discord.get("update_failure"):
                         detail = f"update failed ({st.get('error') or 'unknown'})"
                         _emit_notify_event(
@@ -2718,7 +2792,9 @@ def _notify_loop() -> None:
                             mqtt_apps=mqtt_apps,
                             discord_apps=discord_apps,
                         )
+                        _notify_state_save_if_needed(force=True)
 
+            _notify_state_save_if_needed()
             time.sleep(_NOTIFY_POLL_S)
         except Exception:
             time.sleep(_NOTIFY_POLL_S)
