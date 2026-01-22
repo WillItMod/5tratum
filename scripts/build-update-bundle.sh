@@ -7,6 +7,7 @@ DIST_DIR="${ROOT_DIR}/dist"
 BUNDLE_NAME="${BUNDLE_NAME:-5tratumos-update.tgz}"
 SIGNING_KEY="${SIGNING_KEY:-}"
 BUILD_CHANNEL="${BUILD_CHANNEL:-main}"
+BUILD_TAG="${BUILD_TAG:-}"
 
 mkdir -p "${DIST_DIR}"
 
@@ -31,7 +32,10 @@ fi
 
 # Embed build metadata inside the bundle so fresh installs can show a real version
 # even if the installer fails to write /etc/5tratumos/build.json.
-tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+tag="${BUILD_TAG}"
+if [ -z "${tag}" ]; then
+  tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+fi
 if [ -z "${tag}" ]; then
   sha="$(git rev-parse --short HEAD 2>/dev/null || true)"
   tag="${sha:+rev-${sha}}"

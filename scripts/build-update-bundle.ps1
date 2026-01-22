@@ -2,7 +2,8 @@ Param(
   [string]$BundleName = "5tratumos-update.tgz",
   [string]$DistDir = "",
   [string]$SigningKey = "",
-  [string]$BuildChannel = ""
+  [string]$BuildChannel = "",
+  [string]$BuildTag = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,8 +54,10 @@ try {
   # even if the installer fails to write /etc/5tratumos/build.json.
   $channel = $BuildChannel
   if ([string]::IsNullOrWhiteSpace($channel)) { $channel = "main" }
-  $tag = ""
-  try { $tag = (& git -C $root describe --tags --abbrev=0 2>$null).Trim() } catch {}
+  $tag = $BuildTag
+  if ([string]::IsNullOrWhiteSpace($tag)) {
+    try { $tag = (& git -C $root describe --tags --abbrev=0 2>$null).Trim() } catch {}
+  }
   if ([string]::IsNullOrWhiteSpace($tag)) {
     try { $tag = ("rev-" + (& git -C $root rev-parse --short HEAD 2>$null).Trim()) } catch {}
   }
