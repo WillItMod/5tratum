@@ -12,12 +12,16 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 - Licensing policy summary: [LICENSE_POLICY.md](LICENSE_POLICY.md)
 - Trademark/branding policy: [TRADEMARK.md](TRADEMARK.md)
 
-## Downloads (v0.3.89)
+## Downloads (v0.3.113)
 
-**AMD/INTEL only (x86_64 / amd64).** No ARM/Raspberry Pi builds in this release.
+**AMD/INTEL only (x86_64 / amd64) for the installer ISO.**
 
-- [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso)
-- [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.89/5tratumos-installer.iso.sha256)
+- **AMD/INTEL installer ISO**
+  - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-installer-v0.3.113.iso)
+  - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-installer-v0.3.113.iso.sha256)
+- **Raspberry Pi (arm64) image**
+  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz)
+  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz.sha256)
 
 ## Requirements
 
@@ -30,17 +34,18 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 
 - Full install guide: [docs/install/README.md](docs/install/README.md)
 - Verify downloads: [docs/install/VERIFY.md](docs/install/VERIFY.md)
+- Raspberry Pi: [docs/rpi/README.md](docs/rpi/README.md)
 
 ### Windows (Balena Etcher)
 
-1) Download `5tratumos-installer.iso`
-2) Open **Balena Etcher** -> "Flash from file" -> select `5tratumos-installer.iso`
+1) Download `5tratumos-installer-<version>.iso` (from the release assets)
+2) Open **Balena Etcher** -> "Flash from file" -> select `5tratumos-installer-<version>.iso`
 3) Select your USB drive -> Flash
 4) Boot the target machine from the USB drive and follow the installer prompts
 
 ### Windows (Win32 Disk Imager / "WinImager")
 
 1) Open **Win32 Disk Imager**
-2) Select `5tratumos-installer.iso` (you may need to choose "*.* / All files")
+2) Select `5tratumos-installer-<version>.iso` (you may need to choose "*.* / All files")
 3) Select the correct USB drive letter -> Write
 4) Boot the target machine from the USB drive and follow the installer prompts
