@@ -2346,7 +2346,7 @@
   function fallbackLogoFor(appId, name) {
     const id = String(appId || '').trim();
     const label = String(name || id || '?').trim() || '?';
-    if (id.toLowerCase() === 'axedoom') return '/assets/doom.webp';
+    if (id.toLowerCase() === 'axedoom') return '/assets/doom_original.webp';
     const key = id || label;
     const cached = fallbackLogoCache.get(key);
     if (cached) return cached;
@@ -2409,7 +2409,7 @@
       name: 'Doom',
       desc: 'Play Doom in your browser (Freedoom). Optional install.',
       tag: 'Fun',
-      logo: '/assets/doom_original.png',
+      logo: '/assets/doom_original.webp',
       screenshots: [makeShot('Doom', 'Freedoom + Chocolate Doom (noVNC)')],
     },
   };
@@ -2428,7 +2428,7 @@
       const category = sanitizeStoreText(String(store.category || '')).trim();
       let logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
       if (id === 'axedoom') name = 'Doom';
-      if (id === 'axedoom') logo = '/assets/doom_original.png';
+      if (id === 'axedoom') logo = '/assets/doom_original.webp';
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
       const depsRaw = Array.isArray(store.dependencies)

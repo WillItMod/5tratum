@@ -4631,7 +4631,9 @@ def list_store_apps(channel: str | None) -> dict:
         if not any(str(a.get("id") or "").strip().lower() == "axedoom" for a in apps):
             portal_assets = Path(ROOT_DIR) / "overlay" / "portal" / "assets"
             doom_icon = ""
-            if (portal_assets / "doom_original.png").is_file():
+            if (portal_assets / "doom_original.webp").is_file():
+                doom_icon = "/assets/doom_original.webp"
+            elif (portal_assets / "doom_original.png").is_file():
                 doom_icon = "/assets/doom_original.png"
             elif (portal_assets / "doom.webp").is_file():
                 doom_icon = "/assets/doom.webp"
