@@ -47,8 +47,47 @@ if [ ! -d "${host_root}" ]; then
   exit 1
 fi
 
-if [ ! -d "${host_root}/opt/5tratumos" ]; then
-  echo "Missing ${host_root}/opt/5tratumos on host; refusing to run." >&2
+detect_root() {
+  local base="${host_root}/opt"
+  local -a candidates=(
+    "${base}/5tratumos"
+    "${base}/5tratumOS"
+    "${base}/forgeos"
+    "${base}/ForgeOS"
+  )
+
+  local c
+  for c in "${candidates[@]}"; do
+    if [ -d "${c}" ]; then
+      printf '%s' "${c}"
+      return 0
+    fi
+  done
+
+  # Heuristic search (handles unexpected casing/paths).
+  # Look for a known file that exists in deployed installs.
+  local found
+  found="$(find "${base}" -maxdepth 5 -type f -path '*/overlay/nginx/default.conf' -print -quit 2>/dev/null || true)"
+  if [ -n "${found}" ]; then
+    # found: <root>/overlay/nginx/default.conf
+    local p
+    p="$(dirname "${found}")"  # .../overlay/nginx
+    p="$(dirname "${p}")"      # .../overlay
+    p="$(dirname "${p}")"      # <root>
+    if [ -d "${p}" ]; then
+      printf '%s' "${p}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+root=""
+if ! root="$(detect_root)"; then
+  echo "Unable to find 5tratumOS install root on host under ${host_root}/opt." >&2
+  echo "Tried: ${host_root}/opt/5tratumos and common variants." >&2
+  echo "If the install is elsewhere, create a symlink on the host to /opt/5tratumos and rerun." >&2
   exit 1
 fi
 
@@ -107,7 +146,6 @@ mkdir -p "${stage}"
 tar -xzf "${work}/${asset}" -C "${stage}"
 
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
-root="${host_root}/opt/5tratumos"
 
 echo "[self-repair] backing up host directories"
 for d in overlay daemon console bootstrap apps-available; do
