@@ -17,11 +17,11 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 **AMD/INTEL only (x86_64 / amd64) for the installer ISO.**
 
 - **AMD/INTEL installer ISO**
-  - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-installer-v0.3.113.iso)
-  - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-installer-v0.3.113.iso.sha256)
+  - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.120/5tratumos-installer-v0.3.120.iso)
+  - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.120/5tratumos-installer-v0.3.120.iso.sha256)
 - **Raspberry Pi (arm64) image**
-  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz)
-  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz.sha256)
+  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.122/5tratumos-raspios-trixie-arm64-lite-v0.3.122.img.xz)
+  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.122/5tratumos-raspios-trixie-arm64-lite-v0.3.122.img.xz.sha256)
 
 ## Requirements
 
