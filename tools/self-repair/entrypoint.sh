@@ -105,8 +105,47 @@ hostctl() {
 
 token_file="${host_root}/etc/5tratumos/update.token"
 token=""
-if [ -f "${token_file}" ]; then
-  token="$(tr -d '\r\n' < "${token_file}" | sed -n '1p' || true)"
+
+read_token_first_line() {
+  local f="$1"
+  tr -d '\r\n' < "${f}" | sed -n '1p' || true
+}
+
+read_token() {
+  # Allow explicit override (useful for debugging), otherwise read from host filesystem.
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    printf '%s' "${GITHUB_TOKEN}"
+    return 0
+  fi
+
+  # Common paths seen across installer/updates.
+  local -a candidates=(
+    "${host_root}/etc/5tratumos/update.token"
+    "${host_root}/root/update.token"
+    "${host_root}/etc/5tratumos/update_token"
+    "${host_root}/etc/5tratumos/github.token"
+    "${host_root}/etc/5tratumos/store.token"
+  )
+
+  local f
+  for f in "${candidates[@]}"; do
+    if [ -f "${f}" ]; then
+      local t
+      t="$(read_token_first_line "${f}")"
+      if [ -n "${t}" ]; then
+        printf '%s' "${t}"
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
+if token="$(read_token)"; then
+  token="$(printf '%s' "${token}" | tr -d '\r\n' | sed -n '1p' || true)"
+else
+  token=""
 fi
 
 base_url="https://github.com/${repo}/releases/download/${version}"
@@ -140,6 +179,7 @@ download_release_asset() {
   # If we don't have a token, there's nothing else we can do.
   if [ -z "${token}" ]; then
     echo "[self-repair] download failed (no token): ${url}" >&2
+    echo "[self-repair] looked for token at /etc/5tratumos/update.token and /root/update.token (inside host mount)." >&2
     return 1
   fi
 
