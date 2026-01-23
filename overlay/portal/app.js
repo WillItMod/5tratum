@@ -2685,6 +2685,15 @@
     if (appId === 'tailscale' && host) {
       return `${window.location.protocol}//${host}:8240/`;
     }
+    try {
+      const st = installedById && installedById.get ? installedById.get(appId) : null;
+      const ui = st && typeof st === 'object' ? st.ui : null;
+      const mode = ui && typeof ui.mode === 'string' ? String(ui.mode).trim().toLowerCase() : '';
+      const port = ui && typeof ui.port === 'number' ? ui.port : Number(ui && ui.port);
+      if (mode === 'direct' && host && Number.isFinite(port) && port > 0) {
+        return `http://${host}:${port}/`;
+      }
+    } catch {}
     return `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
   }
 
@@ -2693,12 +2702,22 @@
     const ctl = new AbortController();
     const timer = window.setTimeout(() => ctl.abort(), t);
     try {
+      const isCrossOrigin = (() => {
+        try {
+          const u = new URL(url, window.location.href);
+          return u.origin !== window.location.origin;
+        } catch {
+          return false;
+        }
+      })();
       const res = await fetch(url, {
         method: 'GET',
         cache: 'no-store',
-        credentials: 'same-origin',
+        credentials: isCrossOrigin ? 'omit' : 'same-origin',
+        mode: isCrossOrigin ? 'no-cors' : 'cors',
         signal: ctl.signal,
       });
+      if (isCrossOrigin) return 200;
       return res && typeof res.status === 'number' ? res.status : 0;
     } catch {
       return 0;

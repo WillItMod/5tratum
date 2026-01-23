@@ -7063,6 +7063,11 @@ def system_proxy_repair(*, restart_portal: bool = False) -> dict:
     for app_id in list_installed_app_ids():
         install_meta = read_app_install_meta(app_id)
         meta_ch = str(install_meta.get("channel") or "").strip().lower()
+        # Global-store apps are not safe to host under a subpath (/apps/<id>/) because many third-party
+        # UIs assume they run at "/". Those should be opened via direct host:port access instead, so we
+        # skip generating /apps/* nginx blocks for them.
+        if meta_ch == "global":
+            continue
         preferred_channels: list[str] = []
         sys_ch = str(read_default_channel() or "").strip().lower()
         allowed = allowed_store_channels()
@@ -7669,6 +7674,7 @@ class Handler(BaseHTTPRequestHandler):
                         "ui": {
                             "path": f"/apps/{app_id}/",
                             "port": port,
+                            "mode": "direct" if meta_ch == "global" else "proxy",
                         },
                     }
                 )
