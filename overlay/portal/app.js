@@ -3015,31 +3015,25 @@
       title: 'Mission statement',
       build: (body) => {
         appendHeading(body, "Hi, I'm Johnny.");
-        appendPara(
-          body,
-          [
-            '',
-            "AxeSuite and 5tratumOS are built by me, on my own. There's no company behind this, no venture capital, no hidden team. Just one person designing, building, testing, breaking, and rebuilding a blockchain-focused operating system and application stack because I believe mining and blockchain infrastructure should belong to the people actually running the hardware.",
-            '',
-            "This project exists to push back against centralisation, black-box firmware, closed platforms, and the idea that mining should only happen at industrial scale. Home and small-scale miners matter. Individuals matter. Knowledge matters. When you understand your hardware, your power, and your software, you're no longer dependent on someone else's dashboard or promises.",
-            '',
-            "5tratumOS is a blockchain-first operating system. Blockchain is not an add-on or a feature, it's the core design principle. The OS is built specifically to run mining software, blockchain nodes, and supporting services as first-class citizens. AxeSuite applications are integrated directly into the operating system as a root-level layer, not bolted on afterwards. That integration is deliberate. It keeps the system fast, stable, predictable, and efficient, while still exposing what's actually happening under the hood.",
-            '',
-            "AxeSuite exists to give miners real tools, not abstractions. Benchmarking, solo and pool mining, monitoring, tuning, and node management are designed to be transparent, inspectable, and under your control. There are no magic presets, no hidden behaviour, and no 'trust us' configuration. You should know exactly what your hardware is doing, why it's doing it, and how to change it safely.",
-            '',
-            'This is also about hardware. Software is only half the story. The long-term goal is to take designs that usually stay as diagrams, spreadsheets, or half-finished ideas and turn them into real boards, real devices, and real mining hardware that people can actually run at home. An operating system that truly understands blockchain and hardware at a low level is what makes that possible.',
-            '',
-            "Community matters here, but not in a performative way. Decentralisation doesn't come from slogans or social media posts. It comes from lots of people running their own nodes, mining on their own terms, learning how things work, and sharing that knowledge. The feedback, testing, encouragement, and yes, the donated donuts from the community have played a huge part in getting this as far as it has.",
-            '',
-            "This isn't a side project or a hobby experiment. 5tratumOS is intended to be a complete, stable, blockchain-focused operating system. AxeSuite is intended to be a serious toolset for people who care about control, transparency, and decentralisation. If this helps you mine smarter, run your own infrastructure, or simply understand your setup better, then it's doing exactly what it was built to do.",
-            '',
-            "If you're a hardware manufacturer, supplier, or someone with serious ideas around mining or blockchain hardware, you can reach me directly at axesuite.app@gmail.com",
-            '',
-            'Johnny Murray - Donut.',
-            '',
-            "If you'd like to support the project, donuts are always appreciated:",
-          ].join('\n')
-        );
+        const paragraphs = [
+          "AxeSuite and 5tratumOS are built by me, on my own. There's no company behind this, no venture capital, no hidden team. Just one person designing, building, testing, breaking, and rebuilding a blockchain-focused operating system and application stack because I believe mining and blockchain infrastructure should belong to the people actually running the hardware.",
+          "This project exists to push back against centralisation, black-box firmware, closed platforms, and the idea that mining should only happen at industrial scale. Home and small-scale miners matter. Individuals matter. Knowledge matters. When you understand your hardware, your power, and your software, you're no longer dependent on someone else's dashboard or promises.",
+          "5tratumOS is a blockchain-first operating system. Blockchain is not an add-on or a feature, it's the core design principle. The OS is built specifically to run mining software, blockchain nodes, and supporting services as first-class citizens. AxeSuite applications are integrated directly into the operating system as a root-level layer, not bolted on afterwards. That integration is deliberate. It keeps the system fast, stable, predictable, and efficient, while still exposing what's actually happening under the hood.",
+          "AxeSuite exists to give miners real tools, not abstractions. Benchmarking, solo and pool mining, monitoring, tuning, and node management are designed to be transparent, inspectable, and under your control. There are no magic presets, no hidden behaviour, and no 'trust us' configuration. You should know exactly what your hardware is doing, why it's doing it, and how to change it safely.",
+          'This is also about hardware. Software is only half the story. The long-term goal is to take designs that usually stay as diagrams, spreadsheets, or half-finished ideas and turn them into real boards, real devices, and real mining hardware that people can actually run at home. An operating system that truly understands blockchain and hardware at a low level is what makes that possible.',
+          "Community matters here, but not in a performative way. Decentralisation doesn't come from slogans or social media posts. It comes from lots of people running their own nodes, mining on their own terms, learning how things work, and sharing that knowledge. The feedback, testing, encouragement, and yes, the donated donuts from the community have played a huge part in getting this as far as it has.",
+          "This isn't a side project or a hobby experiment. 5tratumOS is intended to be a complete, stable, blockchain-focused operating system. AxeSuite is intended to be a serious toolset for people who care about control, transparency, and decentralisation. If this helps you mine smarter, run your own infrastructure, or simply understand your setup better, then it's doing exactly what it was built to do.",
+          "If you're a hardware manufacturer, supplier, or someone with serious ideas around mining or blockchain hardware, you can reach me directly at axesuite.app@gmail.com",
+          'Johnny Murray - Donut.',
+          "If you'd like to support the project, donuts are always appreciated:",
+        ];
+
+        paragraphs.forEach((p, idx) => {
+          const el = document.createElement('div');
+          el.className = `whitespace-pre-wrap text-sm leading-relaxed text-slate-200${idx === 0 ? ' mt-2' : ' mt-4'}`;
+          el.textContent = p;
+          body.appendChild(el);
+        });
 
         const donate = document.createElement('div');
         donate.className = 'mt-2 flex flex-col gap-2';
