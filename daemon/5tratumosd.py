@@ -5242,6 +5242,92 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             if pid:
                 prev_pool_by_id[pid] = it
 
+    def _append_worker_cache_for(pids: list[str], *, workers_out: list[dict]) -> None:
+        if not pids:
+            return
+        if not isinstance(last_good, dict):
+            return
+        want = {str(i).strip().lower() for i in pids if str(i).strip()}
+        if not want:
+            return
+        seen: set[str] = set()
+        for w in workers_out:
+            if not isinstance(w, dict):
+                continue
+            app_id = str(w.get("app_id") or "").strip().lower()
+            wn = str(w.get("workername") or "").strip()
+            if app_id and wn:
+                seen.add(f"{app_id}|{wn}")
+        for k in ("workers", "workers_inactive"):
+            items = last_good.get(k)
+            if not isinstance(items, list):
+                continue
+            for w in items:
+                if not isinstance(w, dict):
+                    continue
+                app_id = str(w.get("app_id") or "").strip().lower()
+                if app_id not in want:
+                    continue
+                wn = str(w.get("workername") or "").strip()
+                key = f"{app_id}|{wn}" if wn else ""
+                if key and key in seen:
+                    continue
+                workers_out.append(dict(w))
+                if key:
+                    seen.add(key)
+
+    def _make_partial_entry(app_id: str) -> dict:
+        app_id = (app_id or "").strip().lower()
+        if not app_id:
+            return {}
+
+        store_meta = store_app_by_id(app_id) or {}
+        if not isinstance(store_meta, dict):
+            store_meta = {}
+
+        name = str(store_meta.get("name") or app_id).strip() or app_id
+        coin = name[3:].strip().upper() if name.lower().startswith("axe") else name.strip().upper()
+        if not coin:
+            coin = app_id.upper()
+
+        install_meta = read_app_install_meta(app_id)
+
+        def _read_ui_port(meta: dict) -> int | None:
+            try:
+                ui = meta.get("ui") if isinstance(meta, dict) else None
+                if isinstance(ui, dict):
+                    p = ui.get("port")
+                    if isinstance(p, int):
+                        return int(p)
+                    if isinstance(p, str) and p.strip().isdigit():
+                        return int(p.strip())
+            except Exception:
+                return None
+            return None
+
+        install_port = _read_ui_port(install_meta)
+        store_port = _store_port(store_meta)
+        candidates: list[int] = []
+        for p in (install_port, store_port):
+            if isinstance(p, int) and p > 0 and p not in candidates:
+                candidates.append(p)
+
+        project = docker_compose_project(app_id)
+        st = summarize_project_status(project)
+        status = str(st.get("status") or "unknown")
+
+        return {
+            "id": app_id,
+            "name": name,
+            "coin": coin,
+            "status": status,
+            "port": candidates[0] if candidates else None,
+            "ok": False,
+            "sample_ok": False,
+            "pool_error": "timeout",
+            "workers_error": "timeout",
+        }
+
     def _fetch_pool(app_id: str) -> tuple[dict, list[dict]]:
         app_id = (app_id or "").strip().lower()
         if not app_id:
@@ -5572,12 +5658,18 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
     exec_pool = concurrent.futures.ThreadPoolExecutor(max_workers=6)
     try:
         pool_app_ids = [a for a in _axesuite_installed_ids() if a in AXE_SUITE_POOL_APP_IDS]
-        futures = [exec_pool.submit(_fetch_pool, app_id) for app_id in pool_app_ids]
+        future_to_app_id: dict[concurrent.futures.Future, str] = {}
+        futures: list[concurrent.futures.Future] = []
+        for app_id in pool_app_ids:
+            fut = exec_pool.submit(_fetch_pool, app_id)
+            futures.append(fut)
+            future_to_app_id[fut] = app_id
         done, pending = concurrent.futures.wait(
             futures,
             timeout=2.8,
             return_when=concurrent.futures.ALL_COMPLETED,
         )
+        pool_ids_present: set[str] = set()
         for fut in done:
             try:
                 entry, details = fut.result()
@@ -5599,6 +5691,8 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                     entry["sample_ok"] = False
                     # Keep ok=true if we can show cached values in the UI.
                     entry["ok"] = bool(entry.get("pool"))
+            if pid:
+                pool_ids_present.add(pid)
             pools.append(entry)
             if "pool" in entry and isinstance(entry.get("pool"), dict):
                 pool_obj = entry["pool"]
@@ -5617,7 +5711,46 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
             for w in details:
                 if isinstance(w, dict):
                     workers_out.append(w)
+
+        # If some pool fetches didn't complete in time, don't let Fleet collapse to 0/empty.
+        # Reuse last-known-good pool samples (and worker rows) for any missing pools.
+        missing_ids = [a for a in pool_app_ids if a not in pool_ids_present]
+        if missing_ids:
+            _append_worker_cache_for(missing_ids, workers_out=workers_out)
+            for app_id in missing_ids:
+                stale = None
+                pid = str(app_id or "").strip().lower()
+                if pid and pid in prev_pool_by_id:
+                    try:
+                        stale = dict(prev_pool_by_id[pid])
+                        stale["stale"] = True
+                        stale["sample_ok"] = False
+                        stale["ok"] = bool(stale.get("pool"))
+                        stale["pool_error"] = str(stale.get("pool_error") or "timeout")
+                        stale["workers_error"] = str(stale.get("workers_error") or "timeout")
+                    except Exception:
+                        stale = None
+                entry = stale if isinstance(stale, dict) else _make_partial_entry(app_id)
+                if not entry:
+                    continue
+                pools.append(entry)
+                if "pool" in entry and isinstance(entry.get("pool"), dict):
+                    pool_obj = entry["pool"]
+                    try:
+                        hr = _pool_hashrate_ths(pool_obj)
+                        if isinstance(hr, (int, float)):
+                            total_hashrate_ths += float(hr)
+                    except Exception:
+                        pass
+                    try:
+                        w = _pool_workers(pool_obj)
+                        if isinstance(w, int):
+                            total_workers += int(w)
+                    except Exception:
+                        pass
+
         for fut in pending:
+            # Best effort: cancel slow/hung requests, but we've already populated stale placeholders above.
             fut.cancel()
     finally:
         # Do not block request handling on slow/hung pool endpoints.
