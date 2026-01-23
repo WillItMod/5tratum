@@ -120,9 +120,61 @@ if [ -d "${WORK_DIR}/iso/isolinux" ] && have_imagemagick_convert; then
   if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
     tmp_splash="${WORK_DIR}/iso/isolinux/splash.png"
     convert -size 640x480 xc:'#07090e' \
-      "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 520x -gravity north -geometry +0+60 -composite \
-      "${WORK_DIR}/iso/5tratumos/branding/5.png" -resize 90x -gravity northeast -geometry +36+24 -composite \
+      \( "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 520x \) -gravity north -geometry +0+60 -composite \
+      \( "${WORK_DIR}/iso/5tratumos/branding/5.png" -resize 90x \) -gravity northeast -geometry +36+24 -composite \
       "${tmp_splash}" || true
+  fi
+fi
+
+# Optional: replace Debian's GTK installer banner (the "debian13" header).
+# The banner PNGs live inside the GTK initrd at /install.amd/gtk/initrd.gz:
+#   usr/share/graphics/logo_debian.png
+#   usr/share/graphics/logo_debian_dark.png
+#
+# If these are not updated, the graphical installer will still show "debian13"
+# even though the boot menus and splash are branded.
+if have_imagemagick_convert; then
+  gtk_initrd="${WORK_DIR}/iso/install.amd/gtk/initrd.gz"
+  if [ -f "${gtk_initrd}" ] && [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
+    if have cpio && have gzip; then
+      tmp_gtk="${WORK_DIR}/tmp-gtk-initrd"
+      rm -rf "${tmp_gtk}"
+      mkdir -p "${tmp_gtk}"
+
+      # Extract initrd
+      (cd "${tmp_gtk}" && gzip -dc "${gtk_initrd}" | cpio -idmu >/dev/null 2>&1) || true
+
+      # Create branded banner (800x75), matching Debian's expected dimensions.
+      banner="${WORK_DIR}/tmp-gtk-banner.png"
+      banner_dark="${WORK_DIR}/tmp-gtk-banner-dark.png"
+
+      convert -size 800x75 xc:'#07090e' \
+        \( "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize x52 \) -gravity west -geometry +22+0 -composite \
+        -fill '#34d399' -font 'DejaVu-Sans' -pointsize 16 -gravity east -annotate +22+0 'Debian-based (Debian 13 Trixie)' \
+        "${banner}" >/dev/null 2>&1 || true
+
+      convert -size 800x75 xc:'#0b0f17' \
+        \( "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize x52 \) -gravity west -geometry +22+0 -composite \
+        -fill '#22c55e' -font 'DejaVu-Sans' -pointsize 16 -gravity east -annotate +22+0 'Debian-based (Debian 13 Trixie)' \
+        "${banner_dark}" >/dev/null 2>&1 || true
+
+      # Replace the in-initrd assets if present.
+      install -d -m 0755 "${tmp_gtk}/usr/share/graphics" >/dev/null 2>&1 || true
+      if [ -f "${banner}" ]; then
+        cp -f "${banner}" "${tmp_gtk}/usr/share/graphics/logo_debian.png" >/dev/null 2>&1 || true
+      fi
+      if [ -f "${banner_dark}" ]; then
+        cp -f "${banner_dark}" "${tmp_gtk}/usr/share/graphics/logo_debian_dark.png" >/dev/null 2>&1 || true
+      fi
+
+      # Repack initrd (best-effort). If this fails, the ISO will still be usable.
+      (cd "${tmp_gtk}" && find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9 >"${gtk_initrd}") || true
+
+      rm -f "${banner}" "${banner_dark}" >/dev/null 2>&1 || true
+      rm -rf "${tmp_gtk}" >/dev/null 2>&1 || true
+    else
+      echo "warn: cpio/gzip not found; skipping GTK banner replacement" >&2
+    fi
   fi
 fi
 
