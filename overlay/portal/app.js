@@ -197,6 +197,8 @@
   const discordEventUpdateFailureInput = document.getElementById('setting-discord-event-update-failure');
   const discordEventRestartInput = document.getElementById('setting-discord-event-restart');
   const btnDiscordSave = document.getElementById('btn-discord-save');
+  const btnAboutMission = document.getElementById('btn-about-mission');
+  const btnAboutLegal = document.getElementById('btn-about-legal');
   const watchdogCardEl = document.getElementById('settings-watchdog-card');
   const watchdogEnabledInput = document.getElementById('setting-watchdog-enabled');
   const watchdogAppsEl = document.getElementById('setting-watchdog-apps');
@@ -2917,6 +2919,200 @@
       document.body.style.overflow = 'hidden';
       const first = actions.querySelector('button');
       if (first) window.setTimeout(() => first.focus(), 20);
+    });
+  }
+
+  function openRichModal(options) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve();
+    const opts = options && typeof options === 'object' ? options : {};
+    const title = String(opts.title || 'About').trim() || 'About';
+    const kind = String(opts.kind || 'About').trim() || 'About';
+    const build = typeof opts.build === 'function' ? opts.build : null;
+    const closeText = String(opts.closeText || 'Close').trim() || 'Close';
+
+    return new Promise((resolve) => {
+      modalOnClose = () => resolve();
+      if (modalKindEl) modalKindEl.textContent = kind;
+      modalTitleEl.textContent = title;
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const body = document.createElement('div');
+      body.className = 'max-h-[60vh] overflow-y-auto pr-1 text-sm text-slate-200';
+      if (build) build(body);
+      wrap.appendChild(body);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2';
+
+      const btnClose = document.createElement('button');
+      btnClose.type = 'button';
+      btnClose.className = 'axe-btn';
+      btnClose.textContent = closeText;
+      btnClose.addEventListener('click', () => closeModal());
+      actions.appendChild(btnClose);
+
+      wrap.appendChild(actions);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      window.setTimeout(() => btnClose.focus(), 20);
+    });
+  }
+
+  function appendHeading(parent, text) {
+    const el = document.createElement('div');
+    el.className = 'text-base font-semibold text-slate-100';
+    el.textContent = String(text || '').trim();
+    parent.appendChild(el);
+  }
+
+  function appendPara(parent, text) {
+    const el = document.createElement('div');
+    el.className = 'whitespace-pre-wrap';
+    el.textContent = String(text || '');
+    parent.appendChild(el);
+  }
+
+  function appendMono(parent, label, value) {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 gap-1 md:grid-cols-[160px_1fr]';
+    const k = document.createElement('div');
+    k.className = 'text-xs text-slate-300';
+    k.textContent = String(label || '').trim();
+    const v = document.createElement('div');
+    v.className = 'forgeos-mono break-all text-slate-100';
+    v.textContent = String(value || '').trim();
+    row.appendChild(k);
+    row.appendChild(v);
+    parent.appendChild(row);
+  }
+
+  function appendLink(parent, label, href) {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 gap-1 md:grid-cols-[160px_1fr]';
+    const k = document.createElement('div');
+    k.className = 'text-xs text-slate-300';
+    k.textContent = String(label || '').trim();
+    const a = document.createElement('a');
+    a.className = 'text-sky-300 hover:text-sky-200 underline break-all';
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    a.textContent = href;
+    row.appendChild(k);
+    row.appendChild(a);
+    parent.appendChild(row);
+  }
+
+  function openMissionStatementModal() {
+    return openRichModal({
+      kind: 'About',
+      title: 'Mission statement',
+      build: (body) => {
+        appendHeading(body, "Hi, I'm Johnny.");
+        appendPara(
+          body,
+          [
+            '',
+            "AxeSuite and 5tratumOS are built by me, on my own. There's no company behind this, no venture capital, no hidden team. Just one person designing, building, testing, breaking, and rebuilding a blockchain-focused operating system and application stack because I believe mining and blockchain infrastructure should belong to the people actually running the hardware.",
+            '',
+            "This project exists to push back against centralisation, black-box firmware, closed platforms, and the idea that mining should only happen at industrial scale. Home and small-scale miners matter. Individuals matter. Knowledge matters. When you understand your hardware, your power, and your software, you're no longer dependent on someone else's dashboard or promises.",
+            '',
+            "5tratumOS is a blockchain-first operating system. Blockchain is not an add-on or a feature, it's the core design principle. The OS is built specifically to run mining software, blockchain nodes, and supporting services as first-class citizens. AxeSuite applications are integrated directly into the operating system as a root-level layer, not bolted on afterwards. That integration is deliberate. It keeps the system fast, stable, predictable, and efficient, while still exposing what's actually happening under the hood.",
+            '',
+            "AxeSuite exists to give miners real tools, not abstractions. Benchmarking, solo and pool mining, monitoring, tuning, and node management are designed to be transparent, inspectable, and under your control. There are no magic presets, no hidden behaviour, and no 'trust us' configuration. You should know exactly what your hardware is doing, why it's doing it, and how to change it safely.",
+            '',
+            'This is also about hardware. Software is only half the story. The long-term goal is to take designs that usually stay as diagrams, spreadsheets, or half-finished ideas and turn them into real boards, real devices, and real mining hardware that people can actually run at home. An operating system that truly understands blockchain and hardware at a low level is what makes that possible.',
+            '',
+            "Community matters here, but not in a performative way. Decentralisation doesn't come from slogans or social media posts. It comes from lots of people running their own nodes, mining on their own terms, learning how things work, and sharing that knowledge. The feedback, testing, encouragement, and yes, the donated donuts from the community have played a huge part in getting this as far as it has.",
+            '',
+            "This isn't a side project or a hobby experiment. 5tratumOS is intended to be a complete, stable, blockchain-focused operating system. AxeSuite is intended to be a serious toolset for people who care about control, transparency, and decentralisation. If this helps you mine smarter, run your own infrastructure, or simply understand your setup better, then it's doing exactly what it was built to do.",
+            '',
+            "If you're a hardware manufacturer, supplier, or someone with serious ideas around mining or blockchain hardware, you can reach me directly at axesuite.app@gmail.com",
+            '',
+            'Johnny Murray - Donut.',
+            '',
+            "If you'd like to support the project, donuts are always appreciated:",
+          ].join('\n')
+        );
+
+        const donate = document.createElement('div');
+        donate.className = 'mt-2 flex flex-col gap-2';
+        appendMono(donate, 'Lightning', 'lightning:staticrod559@walletofsatoshi.com');
+        appendMono(donate, 'Bitcoin (BTC)', 'bitcoin:bc1q0hvxhnvg3hku7fd9ht04araggpykq75xeq5xdx');
+        appendMono(donate, 'Bitcoin Cash (BCH)', 'bitcoincash:qqnfrrqefddf2gexr5l8ey7t4y2qgpgrwcc6l3rgmr');
+        appendMono(donate, 'DigiByte (DGB)', 'digibyte:dgb1qurt6nec48uc6uehj3492rlmlr74ghtazetdrt9');
+        body.appendChild(donate);
+      },
+    });
+  }
+
+  async function openLegalTrademarkModal() {
+    function fetchText(url) {
+      return fetch(url, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .catch(() => '');
+    }
+
+    const container = document.createElement('div');
+    container.className = 'flex flex-col gap-4';
+
+    appendPara(
+      container,
+      [
+        'Summary (human-readable):',
+        '- You can run and modify 5tratumOS for personal and internal use.',
+        '- You cannot redistribute/rebrand it or sell preinstalled images/appliances without permission.',
+        '- Trademarks (5tratum / 5tratumOS / logos) are protected; do not use them to market forks/derivatives.',
+        '',
+        'Full terms are below and in the repository docs.',
+      ].join('\n')
+    );
+
+    appendLink(container, 'LICENSE', 'https://github.com/WillItMod/5tratum/blob/main/LICENSE');
+    appendLink(container, 'LICENSE_POLICY.md', 'https://github.com/WillItMod/5tratum/blob/main/LICENSE_POLICY.md');
+    appendLink(container, 'TRADEMARK.md', 'https://github.com/WillItMod/5tratum/blob/main/TRADEMARK.md');
+
+    const status = document.createElement('div');
+    status.className = 'text-xs text-slate-300';
+    status.textContent = 'Loading full text...';
+    container.appendChild(status);
+
+    const [licenseText, policyText, trademarkText] = await Promise.all([
+      fetchText('/assets/legal/LICENSE.txt'),
+      fetchText('/assets/legal/LICENSE_POLICY.md'),
+      fetchText('/assets/legal/TRADEMARK.md'),
+    ]);
+
+    status.textContent = '';
+
+    function addDetails(title, text) {
+      const details = document.createElement('details');
+      details.className = 'rounded-xl border border-white/10 bg-black/20 px-3 py-2';
+      const summary = document.createElement('summary');
+      summary.className = 'cursor-pointer select-none text-sm font-semibold text-slate-100';
+      summary.textContent = title;
+      const pre = document.createElement('pre');
+      pre.className = 'mt-2 whitespace-pre-wrap break-words text-xs text-slate-200';
+      pre.textContent = text || '(unavailable)';
+      details.appendChild(summary);
+      details.appendChild(pre);
+      container.appendChild(details);
+    }
+
+    addDetails('LICENSE', licenseText);
+    addDetails('LICENSE_POLICY.md', policyText);
+    addDetails('TRADEMARK.md', trademarkText);
+
+    return openRichModal({
+      kind: 'Legal',
+      title: 'Legal & Trademark',
+      build: (body) => body.appendChild(container),
     });
   }
 
@@ -11331,6 +11527,8 @@
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
+  btnAboutMission?.addEventListener('click', () => openMissionStatementModal().catch(() => {}));
+  btnAboutLegal?.addEventListener('click', () => openLegalTrademarkModal().catch(() => {}));
   mqttEnabledInput?.addEventListener('change', async () => {
     if (!mqttEnabledInput) return;
     const nextEnabled = !!mqttEnabledInput.checked;
