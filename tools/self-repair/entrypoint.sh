@@ -111,6 +111,16 @@ read_token_first_line() {
   tr -d '\r\n' < "${f}" | sed -n '1p' || true
 }
 
+read_token_first_line_host() {
+  local f="$1"
+  # Read via host PID 1 to bypass Docker userns/root-squash scenarios.
+  # shellcheck disable=SC2002
+  hostctl sh -lc "test -f \"${f}\" && head -n 1 \"${f}\" || true" 2>/dev/null \
+    | tr -d '\r\n' \
+    | sed -n '1p' \
+    || true
+}
+
 read_token() {
   # Allow explicit override (useful for debugging), otherwise read from host filesystem.
   if [ -n "${GITHUB_TOKEN:-}" ]; then
@@ -132,6 +142,14 @@ read_token() {
     if [ -f "${f}" ]; then
       local t
       t="$(read_token_first_line "${f}")"
+      if [ -z "${t}" ]; then
+        # Fallback to reading via host namespaces in case the bind-mounted file isn't readable.
+        t="$(read_token_first_line_host "${f#${host_root}}")"
+        if [ -z "${t}" ]; then
+          # Final fallback: try the full host path as-seen from the host.
+          t="$(read_token_first_line_host "${f}")"
+        fi
+      fi
       if [ -n "${t}" ]; then
         printf '%s' "${t}"
         return 0
