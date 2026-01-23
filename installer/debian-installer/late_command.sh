@@ -202,6 +202,30 @@ HandlePowerKeyLongPress=poweroff
 EOF
 SYSTEMD_OFFLINE=1 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
 
+log "Configuring GRUB to auto-boot (avoid selection menu on first boot)..."
+# Some systems/USB installs can hang at the GRUB menu ("OS selection") on first boot.
+# Force a short timeout and hide the menu where possible.
+if [ -f /etc/default/grub ]; then
+  set_grub_kv() {
+    key="$1"
+    value="$2"
+    if grep -qE "^${key}=" /etc/default/grub; then
+      sed -i "s#^${key}=.*#${key}=${value}#g" /etc/default/grub || true
+    else
+      printf '\n%s=%s\n' "${key}" "${value}" >>/etc/default/grub
+    fi
+  }
+  set_grub_kv "GRUB_TIMEOUT_STYLE" "hidden"
+  set_grub_kv "GRUB_TIMEOUT" "1"
+  set_grub_kv "GRUB_DEFAULT" "0"
+  set_grub_kv "GRUB_DISABLE_OS_PROBER" "true"
+  if command -v update-grub >/dev/null 2>&1; then
+    update-grub || true
+  elif command -v grub-mkconfig >/dev/null 2>&1; then
+    grub-mkconfig -o /boot/grub/grub.cfg || true
+  fi
+fi
+
 log "Cleanup..."
 rm -rf "${TMP_DIR}"
 rm -rf /opt/5tratumos/apps/* /var/lib/5tratumos/apps/* 2>/dev/null || true
