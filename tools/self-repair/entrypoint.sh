@@ -122,11 +122,52 @@ if [ -n "${token}" ]; then
   curl_args+=(-H "Authorization: token ${token}")
 fi
 
+api_headers=(-H "Accept: application/vnd.github+json")
+if [ -n "${token}" ]; then
+  api_headers+=(-H "Authorization: token ${token}")
+fi
+
+download_release_asset() {
+  local url="$1"
+  local out="$2"
+  local name="$3"
+
+  # Fast path: public repo (or GitHub accepting auth on github.com download URLs).
+  if curl "${curl_args[@]}" -o "${out}" "${url}" 2>/dev/null; then
+    return 0
+  fi
+
+  # If we don't have a token, there's nothing else we can do.
+  if [ -z "${token}" ]; then
+    echo "[self-repair] download failed (no token): ${url}" >&2
+    return 1
+  fi
+
+  # Private releases often return 404 on the github.com download URL even with Authorization headers.
+  # Use the GitHub API to resolve asset IDs and download via the assets endpoint.
+  local release_json
+  release_json="$(curl -fsSL "${api_headers[@]}" "https://api.github.com/repos/${repo}/releases/tags/${version}")"
+
+  local asset_id
+  asset_id="$(printf '%s' "${release_json}" | jq -r --arg n "${name}" '.assets[] | select(.name==$n) | .id' | head -n 1)"
+  if [ -z "${asset_id}" ] || [ "${asset_id}" = "null" ]; then
+    echo "[self-repair] could not find asset '${name}' for ${repo}@${version}" >&2
+    printf '%s\n' "${release_json}" | jq -r '.assets[].name' | sed 's/^/[self-repair] available: /' >&2 || true
+    return 1
+  fi
+
+  curl -fsSL -L \
+    -H "Authorization: token ${token}" \
+    -H "Accept: application/octet-stream" \
+    -o "${out}" \
+    "https://api.github.com/repos/${repo}/releases/assets/${asset_id}"
+}
+
 echo "[self-repair] downloading ${bundle_url}"
-curl "${curl_args[@]}" -o "${work}/${asset}" "${bundle_url}"
+download_release_asset "${bundle_url}" "${work}/${asset}" "${asset}"
 
 echo "[self-repair] downloading ${sha_url}"
-curl "${curl_args[@]}" -o "${work}/${asset}.sha256" "${sha_url}"
+download_release_asset "${sha_url}" "${work}/${asset}.sha256" "${asset}.sha256"
 
 echo "[self-repair] verifying sha256"
 expected="$(awk '{print $1}' "${work}/${asset}.sha256" | head -n 1)"

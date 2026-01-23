@@ -1,6 +1,6 @@
 FROM alpine:3.20
 
-RUN apk add --no-cache bash coreutils curl tar openssl util-linux
+RUN apk add --no-cache bash coreutils curl tar openssl util-linux jq
 
 WORKDIR /app
 COPY entrypoint.sh /app/entrypoint.sh
