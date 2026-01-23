@@ -14,6 +14,15 @@ die() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# Backwards-compatibility helper for older FORGEOS_* env vars.
+# Usage: legacy_env KEY_SUFFIX (e.g. CHANNEL, GLOBAL_STORE_REPO).
+legacy_env() {
+  local key="${1:-}"
+  [ -n "${key}" ] || return 0
+  local var="FORGEOS_${key}"
+  printf '%s' "${!var:-}"
+}
+
 compose_project_containers() {
   local project="$1"
   docker ps -a --filter "label=com.docker.compose.project=${project}" --format '{{.ID}}' 2>/dev/null || true
