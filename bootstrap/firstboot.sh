@@ -28,6 +28,29 @@ ensure_mdns() {
   fi
 }
 
+adopt_update_token() {
+  # Never ship secrets in images. But allow a user/operator to provide an update
+  # token via removable media (e.g. the Raspberry Pi boot partition) so the
+  # system can pick it up on first boot.
+  #
+  # Supported locations:
+  # - /boot/firmware/update.token (Debian/RPi)
+  # - /boot/update.token (some distros)
+  # - /boot/firmware/5tratumos/update.token (namespaced)
+  if [ -f /etc/5tratumos/update.token ]; then
+    return 0
+  fi
+
+  local tok=""
+  for tok in /boot/firmware/5tratumos/update.token /boot/firmware/update.token /boot/update.token; do
+    if [ -f "${tok}" ]; then
+      install -d -m 0755 /etc/5tratumos >/dev/null 2>&1 || true
+      install -m 0600 "${tok}" /etc/5tratumos/update.token >/dev/null 2>&1 || true
+      break
+    fi
+  done
+}
+
 ensure_grub_boot() {
   # Some systems show a GRUB menu on the first reboot if recordfail is set.
   # Make boot unattended by clearing recordfail and using a short timeout.
@@ -70,6 +93,7 @@ ensure_grub_boot() {
 
 ensure_hostname
 ensure_mdns
+adopt_update_token
 ensure_grub_boot
 
 if [ ! -s /etc/machine-id ]; then

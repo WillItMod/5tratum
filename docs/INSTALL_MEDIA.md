@@ -1,6 +1,6 @@
 # Install Media (Etcher Image + Bootable Installer ISO)
 
-5tratumOS supports two “bare metal” install paths:
+5tratumOS supports two "bare metal" install paths:
 
 ## 1) Etcher disk image (recommended first)
 
@@ -23,7 +23,7 @@ You ship a bootable ISO that runs an unattended Debian netinst and installs the 
 
 Pros:
 - guided UX (select disk, confirm)
-- works even when the user doesn’t want to install Etcher
+- works even when the user doesn't want to install Etcher
 
 Cons:
 - more engineering and testing than Etcher image
@@ -39,7 +39,7 @@ The ISO build is driven from `installer/build-debian-preseed-iso.sh` and embeds:
 - `5tratumos/build.json` (so the UI shows the correct version on first boot)
 - optionally: `5tratumos/update.token` (only needed for private update repos)
 
-Build steps (run on a Debian/Ubuntu box â€” e.g. your Proxmox host or a Debian VM):
+Build steps (run on a Debian/Ubuntu box — e.g. your Proxmox host or a Debian VM):
 
 ```bash
 cd /opt/5tratum_Build/5tratumOS
@@ -51,15 +51,26 @@ cd /opt/5tratum_Build/5tratumOS
 OS_TAG="v0.x.y" ./installer/build-debian-preseed-iso.sh
 ```
 
-Optional token injection (without committing secrets):
+Optional token staging (without committing secrets):
 
 ```bash
 OS_TAG="v0.x.y" UPDATE_TOKEN_FILE="/root/update.token" ./installer/build-debian-preseed-iso.sh
 ```
 
-## Proxmox
+## Proxmox build workflow
 
-Proxmox is a separate virtualized path:
+For the project, builds are typically run on the Proxmox host and then the ISO is copied into Proxmox "local" ISO storage.
+
+- Proxmox host (example): `192.168.1.254`
+- Local ISO storage path: `/var/lib/vz/template/iso/`
+
+Example copy:
+
+```bash
+scp dist/5tratumos-installer-*.iso root@192.168.1.254:/var/lib/vz/template/iso/
+```
+
+Proxmox is also a separate virtualized install path:
 - import a qcow2/raw disk or clone from a VM template
 
 It is not the same as ISO/Etcher bare-metal installs.

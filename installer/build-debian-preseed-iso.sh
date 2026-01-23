@@ -150,12 +150,12 @@ if have_imagemagick_convert; then
 
       convert -size 800x75 xc:'#07090e' \
         \( "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize x52 \) -gravity west -geometry +22+0 -composite \
-        -fill '#34d399' -font 'DejaVu-Sans' -pointsize 16 -gravity east -annotate +22+0 'Debian-based (Debian 13 Trixie)' \
+        -fill '#34d399' -font 'DejaVu-Sans' -pointsize 16 -gravity east -annotate +22+0 'The 5th layer of blockchain operation.' \
         "${banner}" >/dev/null 2>&1 || true
 
       convert -size 800x75 xc:'#0b0f17' \
         \( "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize x52 \) -gravity west -geometry +22+0 -composite \
-        -fill '#22c55e' -font 'DejaVu-Sans' -pointsize 16 -gravity east -annotate +22+0 'Debian-based (Debian 13 Trixie)' \
+        -fill '#22c55e' -font 'DejaVu-Sans' -pointsize 16 -gravity east -annotate +22+0 'The 5th layer of blockchain operation.' \
         "${banner_dark}" >/dev/null 2>&1 || true
 
       # Replace the in-initrd assets if present.

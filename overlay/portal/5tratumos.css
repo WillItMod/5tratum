@@ -530,10 +530,11 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
 
 body.forgeos-sidebar-collapsed .forgeos-nav-item,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item {
-  padding: 0;
+  /* Keep icon alignment stable when expanding/collapsing the drawer. */
+  padding: 7px 9px;
   height: 44px;
   border-radius: 14px;
-  justify-content: center;
+  justify-content: flex-start;
   background: rgba(0, 0, 0, 0.12);
   border-color: rgba(255, 255, 255, 0.06);
 }
@@ -640,7 +641,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__name-wrap {
 
 body.forgeos-sidebar-collapsed .forgeos-app-list,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-list {
-  gap: 8px;
+  /* Match the expanded drawer's more relaxed spacing. */
+  gap: 12px;
 }
 
 .forgeos-app-item {

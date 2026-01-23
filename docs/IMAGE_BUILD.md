@@ -4,6 +4,10 @@ Goal: produce a clean, app-free 5tratumOS image with default configuration (no i
 
 This should be done on a dedicated "golden image" VM, not on an in-use system.
 
+Related:
+- `docs/INSTALL_MEDIA.md` (installer ISO workflow)
+- `docs/RPI_IMAGE.md` (Raspberry Pi image workflow)
+
 ## High-level approach
 1) Provision a fresh Debian 13 (Trixie) VM.
 2) Run `bootstrap/install.sh` to install Docker + 5tratumOS services.
@@ -71,6 +75,11 @@ Then write with Balena Etcher:
 - Select `5tratumos-v0.3.33.img`
 - Select target disk
 - Flash
+
+## Proxmox note
+If you're using Proxmox (example host: `192.168.1.254`), ISO images are typically placed in:
+
+- `/var/lib/vz/template/iso/`
 
 ## USB installer vs "direct flash"
 - Direct flash: Etcher writes the OS image straight to disk.
