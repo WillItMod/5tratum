@@ -16,6 +16,8 @@ Options:
 
 Notes:
   - If /host/etc/5tratumos/update.token exists, it will be used to download private GitHub assets.
+  - You can also provide a token via env var: -e GITHUB_TOKEN=...
+  - If no token is found and a TTY is attached, you'll be prompted to enter one.
   - This container modifies the host filesystem under /host and restarts 5tratumOS services via nsenter.
 EOF
 }
@@ -108,17 +110,32 @@ token=""
 
 read_token_first_line() {
   local f="$1"
-  tr -d '\r\n' < "${f}" | sed -n '1p' || true
+  tr -d '\r\n' < "${f}" 2>/dev/null | sed -n '1p' || true
 }
 
 read_token_first_line_host() {
   local f="$1"
-  # Read via host PID 1 to bypass Docker userns/root-squash scenarios.
-  # shellcheck disable=SC2002
   hostctl sh -lc "test -f \"${f}\" && head -n 1 \"${f}\" || true" 2>/dev/null \
     | tr -d '\r\n' \
     | sed -n '1p' \
     || true
+}
+
+prompt_token() {
+  # Only prompt if we're running interactively (docker run -it ...)
+  if [ -t 0 ] && [ -t 1 ]; then
+    local t=""
+    printf '[self-repair] GitHub token required to download private release assets.\n' >&2
+    printf '[self-repair] Enter GitHub token (input hidden): ' >&2
+    IFS= read -r -s t || true
+    printf '\n' >&2
+    t="$(printf '%s' "${t}" | tr -d '\r\n' | sed -n '1p' || true)"
+    if [ -n "${t}" ]; then
+      printf '%s' "${t}"
+      return 0
+    fi
+  fi
+  return 1
 }
 
 read_token() {
@@ -128,38 +145,51 @@ read_token() {
     return 0
   fi
 
-  # Common paths seen across installer/updates.
-  local -a candidates=(
+  # Prefer reading from the host directly (works even if /host is root-squashed).
+  local -a host_candidates=(
+    "/etc/5tratumos/update.token"
+    "/root/update.token"
+    "/etc/5tratumos/update_token"
+    "/etc/5tratumos/github.token"
+    "/etc/5tratumos/store.token"
+  )
+  local f t
+  for f in "${host_candidates[@]}"; do
+    t="$(read_token_first_line_host "${f}")"
+    if [ -n "${t}" ]; then
+      printf '%s' "${t}"
+      return 0
+    fi
+  done
+
+  # Fallback: attempt via bind mount (if readable).
+  local -a mount_candidates=(
     "${host_root}/etc/5tratumos/update.token"
     "${host_root}/root/update.token"
     "${host_root}/etc/5tratumos/update_token"
     "${host_root}/etc/5tratumos/github.token"
     "${host_root}/etc/5tratumos/store.token"
   )
-
-  local f
-  for f in "${candidates[@]}"; do
-    if [ -f "${f}" ]; then
-      local t
-      t="$(read_token_first_line "${f}")"
-      if [ -z "${t}" ]; then
-        # Fallback to reading via host namespaces in case the bind-mounted file isn't readable.
-        t="$(read_token_first_line_host "${f#${host_root}}")"
-        if [ -z "${t}" ]; then
-          # Final fallback: try the full host path as-seen from the host.
-          t="$(read_token_first_line_host "${f}")"
-        fi
-      fi
-      if [ -n "${t}" ]; then
-        printf '%s' "${t}"
-        return 0
-      fi
+  for f in "${mount_candidates[@]}"; do
+    t="$(read_token_first_line "${f}")"
+    if [ -n "${t}" ]; then
+      printf '%s' "${t}"
+      return 0
     fi
   done
+
+  # Last resort: prompt interactively.
+  if t="$(prompt_token)"; then
+    if [ -n "${t}" ]; then
+      printf '%s' "${t}"
+      return 0
+    fi
+  fi
 
   return 1
 }
 
+token=""
 if token="$(read_token)"; then
   token="$(printf '%s' "${token}" | tr -d '\r\n' | sed -n '1p' || true)"
 else
@@ -195,9 +225,9 @@ download_release_asset() {
   fi
 
   # If we don't have a token, there's nothing else we can do.
-  if [ -z "${token}" ]; then
+if [ -z "${token}" ]; then
     echo "[self-repair] download failed (no token): ${url}" >&2
-    echo "[self-repair] looked for token at /etc/5tratumos/update.token and /root/update.token (inside host mount)." >&2
+    echo "[self-repair] looked for token at /etc/5tratumos/update.token and /root/update.token (host + /host mount)." >&2
     return 1
   fi
 
