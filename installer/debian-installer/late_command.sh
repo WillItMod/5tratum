@@ -49,7 +49,20 @@ while :; do
   sleep 3
 done
 
-apt-get install -y --no-install-recommends ca-certificates curl gnupg jq python3 python3-yaml xkb-data openssh-server
+apt-get install -y --no-install-recommends \
+  ca-certificates \
+  curl \
+  gnupg \
+  jq \
+  python3 \
+  python3-yaml \
+  xkb-data \
+  openssh-server \
+  avahi-daemon \
+  libnss-mdns
+
+log "Enabling mDNS (avahi)..."
+SYSTEMD_OFFLINE=1 systemctl enable avahi-daemon.service >/dev/null 2>&1 || SYSTEMD_OFFLINE=1 systemctl enable avahi-daemon >/dev/null 2>&1 || true
 
 log "Making console-setup optional on headless/serial systems..."
 # On some VMs/serial-only installs, Debian's console-setup.service can fail noisily because

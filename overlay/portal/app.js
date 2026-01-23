@@ -381,21 +381,94 @@
     topbarActivityEl.addEventListener('click', async () => {
       const items = activityItems();
       if (!items.length) return;
-      const lines = items
-        .slice()
-        .sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0))
-        .map((it) => {
-          const p = it.pct === null || it.pct === undefined ? '' : ` (${it.pct}%)`;
-          const sub = it.sub ? `\n${it.sub}` : '';
-          return `- ${it.label}${p}${sub}`;
-        })
-        .join('\n\n');
-      await openNoticeModal({
-        kind: 'System',
-        title: 'Activity',
-        message: lines,
-        danger: false,
-      });
+      if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+
+      modalTitleEl.textContent = 'Activity';
+      if (modalKindEl) modalKindEl.textContent = 'System';
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-3';
+
+      const sorted = items.slice().sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0));
+      for (const it of sorted) {
+        const row = document.createElement('div');
+        row.className = 'forgeos-mini-card';
+
+        const title = document.createElement('div');
+        title.className = 'text-sm font-extrabold';
+        title.textContent = String(it.label || 'Working...');
+        row.appendChild(title);
+
+        const subText = String(it.sub || '').trim();
+        if (subText) {
+          const sub = document.createElement('div');
+          sub.className = 'mt-1 text-xs text-slate-300 whitespace-pre-wrap';
+          sub.textContent = subText;
+          row.appendChild(sub);
+        }
+
+        const pct = it.pct === null || it.pct === undefined ? null : Number(it.pct);
+        if (Number.isFinite(pct)) {
+          const pctEl = document.createElement('div');
+          pctEl.className = 'mt-2 text-xs text-slate-300';
+          pctEl.textContent = `${Math.max(0, Math.min(100, Math.round(pct)))}%`;
+          row.appendChild(pctEl);
+        }
+
+        try {
+          const key = String(it.key || '');
+          if (key.startsWith('app-action:')) {
+            const id = key.slice('app-action:'.length);
+            const st = pendingAppActions.get(id);
+            if (st && typeof st === 'object' && typeof st.abort === 'function') {
+              const actions = document.createElement('div');
+              actions.className = 'mt-3 flex items-center justify-end gap-2';
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'axe-btn';
+              btn.textContent = 'Cancel';
+              btn.addEventListener('click', async () => {
+                const ok = await openConfirmModal({
+                  title: 'Cancel action?',
+                  message:
+                    'This aborts the request from the browser.\n\nThe server may still be working in the background. Use this only if you\'re sure.',
+                  confirmText: 'Cancel action',
+                  cancelText: 'Keep running',
+                  danger: true,
+                });
+                if (!ok) return;
+                try {
+                  st.abort();
+                } catch {}
+                pendingAppActions.delete(id);
+                renderTopbarActivity();
+                closeModal();
+              });
+              actions.appendChild(btn);
+              row.appendChild(actions);
+            }
+          }
+        } catch {}
+
+        wrap.appendChild(row);
+      }
+
+      const footer = document.createElement('div');
+      footer.className = 'flex items-center justify-end gap-2';
+      const btnClose = document.createElement('button');
+      btnClose.type = 'button';
+      btnClose.className = 'axe-btn';
+      btnClose.textContent = 'Close';
+      btnClose.addEventListener('click', () => closeModal());
+      footer.appendChild(btnClose);
+
+      wrap.appendChild(footer);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
     });
   }
 
@@ -3697,10 +3770,16 @@
   async function apiJsonTimeout(path, opts, timeoutMs) {
     const t = Number(timeoutMs) || 0;
     if (!t) return apiJson(path, opts);
-    const ctl = new AbortController();
-    const timer = window.setTimeout(() => ctl.abort(), t);
+    const hasSignal = !!(opts && typeof opts === 'object' && opts.signal);
+    const ctl = hasSignal ? null : new AbortController();
+    const signal = hasSignal ? opts.signal : ctl.signal;
+    const timer = window.setTimeout(() => {
+      try {
+        if (ctl) ctl.abort();
+      } catch {}
+    }, t);
     try {
-      return await apiJson(path, { ...opts, signal: ctl.signal });
+      return await apiJson(path, { ...opts, signal });
     } finally {
       window.clearTimeout(timer);
     }
@@ -4052,6 +4131,8 @@
               ? 'Restarting'
               : kind === 'redeploy'
                 ? 'Redeploying'
+                : kind === 'repair'
+                  ? 'Fixing'
                 : 'Working on';
       items.push({
         key: `app-action:${id}`,
@@ -7846,9 +7927,16 @@
     if (!okConfirm) return;
 
     const splashToken = showGlobalSplash({ title: `Fixing ${label}`, sub: 'Rebuilding app from template...' });
+    const ctl = new AbortController();
+    pendingAppActions.set(app_id, { kind: 'repair', startedAt: Date.now(), abort: () => ctl.abort() });
+    renderTopbarActivity();
     try {
       await ensureHealthy();
-      const res = await apiJsonTimeout('/api/v0/apps/repair', { method: 'POST', body: JSON.stringify({ id: app_id }) }, 900000);
+      const res = await apiJsonTimeout(
+        '/api/v0/apps/repair',
+        { method: 'POST', body: JSON.stringify({ id: app_id }), signal: ctl.signal },
+        900000,
+      );
       if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Fix failed');
       showToast('App repaired', null);
       await refresh();
@@ -7862,6 +7950,8 @@
         danger: true,
       });
     } finally {
+      pendingAppActions.delete(app_id);
+      renderTopbarActivity();
       hideGlobalSplash(splashToken);
     }
   }
