@@ -120,6 +120,7 @@
   const btnResumeWorkspace = document.getElementById('btn-resume-workspace');
   const settingSidebarSelect = document.getElementById('setting-sidebar');
   const settingTopbarSelect = document.getElementById('setting-topbar');
+  const settingThemeSelect = document.getElementById('setting-theme');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
@@ -153,6 +154,9 @@
   const updateProgressEl = document.getElementById('update-progress');
   const updateProgressBarEl = document.getElementById('update-progress-bar');
   const updateNotesEl = document.getElementById('update-notes');
+  const updateRollbackTagSelect = document.getElementById('update-rollback-tag');
+  const btnUpdateRollback = document.getElementById('btn-update-rollback');
+  const updateRollbackStatusEl = document.getElementById('update-rollback-status');
   const btnUpdateCheck = document.getElementById('btn-update-check');
   const btnUpdateApply = document.getElementById('btn-update-apply');
   const btnFixApp = document.getElementById('btn-fix-app');
@@ -297,6 +301,9 @@
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
     let systemUpdateHoldSplash = false;
+    let systemUpdateRollbacksCache = null;
+    let systemUpdateRollbacksAt = 0;
+    let systemUpdateRollbacksInFlight = false;
     let uiConfigCache = null;
     let topbarTempOpen = false;
     let topbarHoverOpen = false;
@@ -1334,6 +1341,30 @@
     return 'static';
   }
 
+  function normalizeThemeId(value) {
+    const v = String(value || '').trim().toLowerCase();
+    const allowed = new Set(['default', 'midnight', 'aurora', 'ember', 'matrix', 'ice', 'donut', 'mono']);
+    return allowed.has(v) ? v : 'default';
+  }
+
+  function getThemeId() {
+    const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
+    return normalizeThemeId(cfg.theme);
+  }
+
+  function applyTheme() {
+    const theme = getThemeId();
+    if (theme === 'default') {
+      try {
+        delete document.body.dataset.theme;
+      } catch {
+        document.body.removeAttribute('data-theme');
+      }
+      return;
+    }
+    document.body.dataset.theme = theme;
+  }
+
   function getTopbarMode() {
     const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
     if (Object.prototype.hasOwnProperty.call(cfg, 'topbar_mode')) return normalizeTopbarMode(cfg.topbar_mode);
@@ -1353,7 +1384,13 @@
     const collapsedLike = mode !== 'static';
 
     let open = false;
-    if (pinned) open = true;
+    if (isMobileLayout()) {
+      // Mobile UX: keep the top bar as a slim header by default, and let the user
+      // temporarily expand it (metrics) without changing their saved pin/auto mode.
+      open = !!topbarTempOpen;
+    } else if (pinned) {
+      open = true;
+    }
     else if (manual) open = !!topbarTempOpen;
     else if (auto) open = !!topbarTempOpen || (!isMobileLayout() && topbarHoverOpen);
     else open = false;
@@ -6691,10 +6728,14 @@
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
       uiConfigCache = res;
       if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
+      if (settingThemeSelect) settingThemeSelect.value = getThemeId();
       applyTopbarMode();
+      applyTheme();
     } catch {
       if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
       applyTopbarMode();
+      if (settingThemeSelect) settingThemeSelect.value = getThemeId();
+      applyTheme();
     }
   }
 
@@ -6703,6 +6744,7 @@
     const res = await apiJsonTimeout('/api/v0/system/ui', { method: 'POST', body: JSON.stringify(body) }, 8000).catch(() => null);
     if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
     uiConfigCache = res;
+    applyTheme();
     return res;
   }
 
@@ -7276,6 +7318,8 @@
   function renderSystemUpdatePanel() {
     const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
     const status = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
+    const rollbacks =
+      systemUpdateRollbacksCache && typeof systemUpdateRollbacksCache === 'object' ? systemUpdateRollbacksCache : null;
 
     const installedTag =
       check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '-';
@@ -7319,6 +7363,41 @@
 
     const updateAvailable = !!(check && check.update_available === true);
     if (btnUpdateApply) btnUpdateApply.disabled = busy || !updateAvailable;
+
+    // Rollback UI (uses locally cached update bundles, up to the last N).
+    if (updateRollbackTagSelect && btnUpdateRollback && updateRollbackStatusEl) {
+      const items = rollbacks && Array.isArray(rollbacks.items) ? rollbacks.items : [];
+      const prev = String(updateRollbackTagSelect.value || '').trim();
+
+      updateRollbackTagSelect.innerHTML = '';
+      for (const it of items) {
+        const tag = it && it.tag ? String(it.tag).trim() : '';
+        if (!tag) continue;
+        const cachedAt = it && it.cached_at ? String(it.cached_at).trim() : '';
+        const label = cachedAt ? `${tag} (${cachedAt.replace('T', ' ').replace('Z', ' UTC')})` : tag;
+        const opt = document.createElement('option');
+        opt.value = tag;
+        opt.textContent = label;
+        updateRollbackTagSelect.appendChild(opt);
+      }
+
+      if (prev) updateRollbackTagSelect.value = prev;
+      if (!updateRollbackTagSelect.value && updateRollbackTagSelect.options.length) {
+        updateRollbackTagSelect.value = updateRollbackTagSelect.options[0].value;
+      }
+
+      const selected = String(updateRollbackTagSelect.value || '').trim();
+      const hasItems = updateRollbackTagSelect.options.length > 0;
+      btnUpdateRollback.disabled = busy || !hasItems || !selected;
+      updateRollbackTagSelect.disabled = busy || !hasItems;
+
+      let line = '-';
+      if (busy) line = 'Update in progress.';
+      else if (systemUpdateRollbacksInFlight) line = 'Loading cached versions...';
+      else if (!hasItems) line = 'No cached versions yet. Apply an update to enable rollbacks.';
+      else line = `Ready. ${updateRollbackTagSelect.options.length} cached version(s).`;
+      updateRollbackStatusEl.textContent = line;
+    }
 
     if (updateStatusEl) {
       let line = '-';
@@ -7391,20 +7470,23 @@
         }
 
         // Keep the splash up until we've reconnected and confirmed the new version.
-        if (systemUpdateHoldSplash) {
-          scheduleSystemUpdatePoll(2500);
-          const ok = await finalizeSystemUpdateUi().catch(() => false);
-          if (ok) stopSystemUpdatePoll();
-          return;
-        }
-
-        stopSystemUpdatePoll();
-        if (state === 'done') refreshSystemUpdateCheck({ force: true }).catch(() => {});
+      if (systemUpdateHoldSplash) {
+        scheduleSystemUpdatePoll(2500);
+        const ok = await finalizeSystemUpdateUi().catch(() => false);
+        if (ok) stopSystemUpdatePoll();
+        return;
       }
-    } catch {
-      if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting...';
-      scheduleSystemUpdatePoll(4000);
-    } finally {
+
+      stopSystemUpdatePoll();
+      if (state === 'done') {
+        refreshSystemUpdateCheck({ force: true }).catch(() => {});
+        refreshSystemUpdateRollbacks({ force: true }).catch(() => {});
+      }
+    }
+  } catch {
+    if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting...';
+    scheduleSystemUpdatePoll(4000);
+  } finally {
       systemUpdatePollInFlight = false;
     }
   }
@@ -7633,6 +7715,90 @@
     } finally {
       btnUpdateSave.disabled = false;
       btnUpdateSave.textContent = prev;
+    }
+  }
+
+  async function refreshSystemUpdateRollbacks(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const force = !!options.force;
+    const now = Date.now();
+    if (systemUpdateRollbacksInFlight) return;
+    if (!force && systemUpdateRollbacksAt && now - systemUpdateRollbacksAt < 60000) {
+      renderSystemUpdatePanel();
+      return;
+    }
+    systemUpdateRollbacksAt = now;
+    systemUpdateRollbacksInFlight = true;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/update/rollbacks', {}, 12000).catch(() => null);
+      if (res && typeof res === 'object') systemUpdateRollbacksCache = res;
+    } finally {
+      systemUpdateRollbacksInFlight = false;
+      renderSystemUpdatePanel();
+    }
+  }
+
+  async function applySystemRollback(tag) {
+    const targetTag = String(tag || '').trim();
+    if (!targetTag) return;
+    if (btnUpdateRollback && btnUpdateRollback.disabled) return;
+
+    const okConfirm = await openConfirmModal({
+      title: `Rollback to ${targetTag}?`,
+      message: 'This reinstalls a cached system bundle and restarts portal services.',
+      confirmText: 'Rollback',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!okConfirm) return;
+
+    if (btnUpdateRollback) btnUpdateRollback.disabled = true;
+    if (btnUpdateApply) btnUpdateApply.disabled = true;
+    if (btnUpdateCheck) btnUpdateCheck.disabled = true;
+    systemUpdateHoldSplash = true;
+
+    if (!systemUpdateSplashToken) {
+      systemUpdateSplashToken = showGlobalSplash({
+        title: 'Rolling back 5tratumOS',
+        sub: 'Starting rollback...',
+        showProgress: true,
+        progress: 0,
+        dismissable: false,
+      });
+    } else {
+      updateGlobalSplash('Rolling back 5tratumOS', 'Starting rollback...');
+      updateGlobalSplashProgress(0);
+    }
+
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) throw new Error('System service unavailable');
+      const ch = systemUpdateCheckCache && systemUpdateCheckCache.channel ? String(systemUpdateCheckCache.channel) : '';
+      const res = await apiJsonTimeout(
+        '/api/v0/system/update/rollback',
+        { method: 'POST', body: JSON.stringify({ tag: targetTag, channel: ch }) },
+        30000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Rollback did not start');
+      showToast(`Rollback started: ${targetTag}`, null);
+      await refreshSystemUpdateStatus();
+      scheduleSystemUpdatePoll(1200);
+    } catch (e) {
+      showToast('Rollback failed', 'error');
+      if (systemUpdateSplashToken) {
+        hideGlobalSplash(systemUpdateSplashToken);
+        systemUpdateSplashToken = null;
+      }
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Rollback failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      renderSystemUpdatePanel();
     }
   }
 
@@ -11481,6 +11647,7 @@
 
   btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true, user: true }).catch(() => {}));
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
+  btnUpdateRollback?.addEventListener('click', () => applySystemRollback(updateRollbackTagSelect?.value).catch(() => {}));
   btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
   btnStorageRefresh?.addEventListener('click', () => refreshStorageSettings().catch(() => {}));
@@ -11905,12 +12072,37 @@
     });
   }
 
+  async function setTheme(nextTheme) {
+    const theme = normalizeThemeId(nextTheme);
+    uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), theme };
+    if (settingThemeSelect) settingThemeSelect.value = theme;
+    applyTheme();
+    try {
+      await saveUiConfig({ theme });
+      showToast('Theme saved', null);
+    } catch (err) {
+      showToast('Theme save failed', err && err.message ? err.message : 'error');
+      await refreshUiConfig();
+    }
+  }
+
+  if (settingThemeSelect) {
+    settingThemeSelect.addEventListener('change', async () => {
+      await setTheme(settingThemeSelect.value);
+    });
+  }
+
   if (btnTopbarToggle) {
     btnTopbarToggle.addEventListener('click', async (e) => {
       try {
         e.preventDefault();
         e.stopPropagation();
       } catch {}
+      if (isMobileLayout()) {
+        topbarTempOpen = !topbarTempOpen;
+        applyTopbarMode();
+        return;
+      }
       const mode = getTopbarMode();
       if (mode === 'manual') {
         topbarTempOpen = !topbarTempOpen;
@@ -11960,6 +12152,7 @@
   refreshStoreCustomConfig().catch(() => {});
   refreshSystemUpdateStatus().catch(() => {});
   refreshSystemUpdateConfig().catch(() => {});
+  refreshSystemUpdateRollbacks().catch(() => {});
   refreshAuthSettings().catch(() => {});
   refreshSystemSettings().catch(() => {});
   refreshUiConfig().catch(() => {});

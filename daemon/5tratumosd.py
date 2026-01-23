@@ -986,7 +986,27 @@ def system_ui_config_get() -> dict:
     # Keep pinned consistent with explicit mode.
     pinned = topbar_mode == "static"
 
-    return {"ok": True, "workbench_topbar_mode": mode, "topbar_pinned": pinned, "topbar_mode": topbar_mode}
+    allowed_themes = {
+        "default",
+        "midnight",
+        "aurora",
+        "ember",
+        "matrix",
+        "ice",
+        "donut",
+        "mono",
+    }
+    theme = str(cfg.get("theme") or "").strip().lower() or "default"
+    if theme not in allowed_themes:
+        theme = "default"
+
+    return {
+        "ok": True,
+        "workbench_topbar_mode": mode,
+        "topbar_pinned": pinned,
+        "topbar_mode": topbar_mode,
+        "theme": theme,
+    }
 
 
 def system_ui_config_set(body: dict) -> dict:
@@ -1024,6 +1044,23 @@ def system_ui_config_set(body: dict) -> dict:
         cfg["topbar_mode"] = mode
         # Keep pinned coherent with mode for old clients.
         cfg["topbar_pinned"] = mode == "static"
+
+    if "theme" in body:
+        raw = body.get("theme")
+        theme = str(raw or "").strip().lower() or "default"
+        allowed_themes = {
+            "default",
+            "midnight",
+            "aurora",
+            "ember",
+            "matrix",
+            "ice",
+            "donut",
+            "mono",
+        }
+        if theme not in allowed_themes:
+            return {"ok": False, "error": "theme must be one of: default, midnight, aurora, ember, matrix, ice, donut, mono"}
+        cfg["theme"] = theme
 
     _write_ui_config(cfg)
     return {**system_ui_config_get(), "saved": True}
@@ -2916,6 +2953,8 @@ _UPDATE_CHECK_CACHE: dict[str, object] = {"checked_at": 0.0, "channel": "", "res
 _UPDATE_STATE_DIR = os.path.join(STATE_DIR, "update")
 _UPDATE_STATUS_PATH = os.path.join(_UPDATE_STATE_DIR, "status.json")
 _UPDATE_LOCK_PATH = os.path.join(_UPDATE_STATE_DIR, "lock.json")
+_UPDATE_CACHE_DIR = os.path.join(_UPDATE_STATE_DIR, "cache")
+_UPDATE_CACHE_KEEP_N = 5
 _UPDATE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
@@ -2971,6 +3010,299 @@ def _update_has_recent_artifacts(*, within_s: float) -> bool:
     except Exception:
         return False
 
+
+def _update_cache_safe_dirname(tag: str) -> str:
+    t = str(tag or "").strip()
+    if not t:
+        return "unknown"
+    t = re.sub(r"[^A-Za-z0-9_.-]+", "_", t)
+    t = t.strip("._-")
+    return t or "unknown"
+
+
+def _update_cache_store(*, target_tag: str, bundle_path: str, sha256: str, url: str, channel: str) -> None:
+    try:
+        os.makedirs(_UPDATE_CACHE_DIR, exist_ok=True)
+        safe = _update_cache_safe_dirname(target_tag)
+        entry = Path(_UPDATE_CACHE_DIR) / safe
+        os.makedirs(entry, exist_ok=True)
+        dst = entry / "bundle.tgz"
+        try:
+            shutil.copy2(bundle_path, str(dst))
+        except Exception:
+            shutil.copyfile(bundle_path, str(dst))
+        meta = {
+            "tag": str(target_tag or "").strip(),
+            "sha256": str(sha256 or "").strip().lower(),
+            "url": str(url or "").strip(),
+            "channel": str(channel or "").strip().lower() or "main",
+            "cached_at": _now_iso(),
+        }
+        _write_json_atomic(str(entry / "meta.json"), meta)
+        try:
+            now = time.time()
+            os.utime(str(entry), (now, now))
+            os.utime(str(dst), (now, now))
+            os.utime(str(entry / "meta.json"), (now, now))
+        except Exception:
+            pass
+
+        # Prune old cache entries (keep most recent N by mtime).
+        try:
+            root = Path(_UPDATE_CACHE_DIR)
+            entries = [p for p in root.iterdir() if p.is_dir()]
+            entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            for p in entries[_UPDATE_CACHE_KEEP_N :]:
+                try:
+                    shutil.rmtree(str(p))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    except Exception:
+        return
+
+
+def system_update_rollbacks_list() -> dict:
+    items: list[dict] = []
+    try:
+        root = Path(_UPDATE_CACHE_DIR)
+        if root.is_dir():
+            for d in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime if p.exists() else 0.0, reverse=True):
+                if not d.is_dir():
+                    continue
+                meta = _read_json(str(d / "meta.json")) or {}
+                bundle = d / "bundle.tgz"
+                if not bundle.is_file():
+                    continue
+                tag = str(meta.get("tag") or d.name).strip()
+                cached_at = str(meta.get("cached_at") or "").strip()
+                sha = str(meta.get("sha256") or "").strip().lower()
+                items.append({"tag": tag, "cached_at": cached_at, "sha256": sha, "path": str(bundle)})
+                if len(items) >= _UPDATE_CACHE_KEEP_N:
+                    break
+    except Exception:
+        pass
+    public_items = [{"tag": it["tag"], "cached_at": it["cached_at"], "sha256": it["sha256"]} for it in items]
+    return {"ok": True, "items": public_items}
+
+
+def _system_update_deploy_bundle(*, target_tag: str, bundle_path: str, channel: str) -> None:
+    stage_dir = os.path.join(_UPDATE_STATE_DIR, f"stage-{int(time.time())}")
+    update_status_write("extracting", target_tag=target_tag, progress=40)
+    if os.path.isdir(stage_dir):
+        for p in sorted(Path(stage_dir).rglob("*"), reverse=True):
+            try:
+                if p.is_file() or p.is_symlink():
+                    p.unlink()
+                elif p.is_dir():
+                    p.rmdir()
+            except Exception:
+                pass
+        try:
+            Path(stage_dir).rmdir()
+        except Exception:
+            pass
+    os.makedirs(stage_dir, exist_ok=True)
+
+    with tarfile.open(bundle_path, "r:gz") as tar:
+        _safe_extract_tar(tar, stage_dir)
+    update_status_write("extracting", target_tag=target_tag, progress=55)
+
+    stage_root = Path(stage_dir)
+    stage_overlay = _coalesce_nested_dir(root=stage_root / "overlay", nested_name="overlay", marker="docker-compose.yml")
+    stage_daemon = _coalesce_nested_dir(root=stage_root / "daemon", nested_name="daemon", marker="5tratumosd.py")
+    stage_systemd = stage_root / "systemd"
+    stage_bin = stage_root / "bin" / "5tratumos"
+
+    cur_overlay = Path(ROOT_DIR) / "overlay"
+    cur_daemon = Path(ROOT_DIR) / "daemon"
+    cur_systemd = Path("/etc/systemd/system")
+
+    _flatten_current_install(root=cur_overlay, nested_name="overlay", marker="docker-compose.yml")
+    _flatten_current_install(root=cur_daemon, nested_name="daemon", marker="5tratumosd.py")
+
+    daemon_changed = stage_daemon.is_dir()
+    overlay_cfg_changed = False
+    if stage_overlay.is_dir():
+        stage_cfg = hashlib.sha256()
+        for rel in ("docker-compose.yml", "nginx/default.conf"):
+            p = stage_overlay / rel
+            if p.is_file():
+                stage_cfg.update(rel.encode("utf-8"))
+                stage_cfg.update(b\"\\0\")
+                stage_cfg.update(p.read_bytes())
+                stage_cfg.update(b\"\\0\")
+        cur_cfg = hashlib.sha256()
+        for rel in ("docker-compose.yml", "nginx/default.conf"):
+            p = cur_overlay / rel
+            if p.is_file():
+                cur_cfg.update(rel.encode(\"utf-8\"))
+                cur_cfg.update(b\"\\0\")
+                cur_cfg.update(p.read_bytes())
+        cur_cfg.update(b\"\\0\")
+        overlay_cfg_changed = stage_cfg.hexdigest() != cur_cfg.hexdigest()
+
+    systemd_changed = _systemd_units_changed(stage_systemd, cur_systemd)
+
+    update_status_write(
+        \"deploying\",
+        target_tag=target_tag,
+        progress=60,
+        restarts={\"overlay\": bool(overlay_cfg_changed), \"daemon\": bool(daemon_changed), \"systemd\": bool(systemd_changed)},
+    )
+
+    if stage_overlay.is_dir():
+        update_status_write(
+            \"deploying\",
+            target_tag=target_tag,
+            progress=70,
+            restarts={\"overlay\": bool(overlay_cfg_changed), \"daemon\": bool(daemon_changed), \"systemd\": bool(systemd_changed)},
+        )
+        _mirror_tree(str(stage_overlay), str(cur_overlay))
+
+    if stage_daemon.is_dir():
+        update_status_write(
+            \"deploying\",
+            target_tag=target_tag,
+            progress=80,
+            restarts={\"overlay\": bool(overlay_cfg_changed), \"daemon\": bool(daemon_changed), \"systemd\": bool(systemd_changed)},
+        )
+        _mirror_tree(str(stage_daemon), str(cur_daemon))
+        _flatten_current_install(root=cur_daemon, nested_name=\"daemon\", marker=\"5tratumosd.py\")
+
+    if (stage_root / \"apps-available\").is_dir():
+        update_status_write(
+            \"deploying\",
+            target_tag=target_tag,
+            progress=84,
+            restarts={\"overlay\": bool(overlay_cfg_changed), \"daemon\": bool(daemon_changed), \"systemd\": bool(systemd_changed)},
+        )
+        _mirror_tree(str(stage_root / \"apps-available\"), str(Path(ROOT_DIR) / \"apps-available\"))
+
+    if (stage_root / \"bootstrap\").is_dir():
+        update_status_write(
+            \"deploying\",
+            target_tag=target_tag,
+            progress=86,
+            restarts={\"overlay\": bool(overlay_cfg_changed), \"daemon\": bool(daemon_changed), \"systemd\": bool(systemd_changed)},
+        )
+        _mirror_tree(str(stage_root / \"bootstrap\"), str(Path(ROOT_DIR) / \"bootstrap\"))
+
+    if (stage_root / \"console\").is_dir():
+        _mirror_tree(str(stage_root / \"console\"), str(Path(ROOT_DIR) / \"console\"))
+        try:
+            console_dir = os.path.join(ROOT_DIR, \"console\")
+            for name in (\"install.sh\", \"5tratumos-console.sh\", \"5tratumos-x11-session.sh\"):
+                p = os.path.join(console_dir, name)
+                if os.path.isfile(p):
+                    _normalize_crlf_inplace(p)
+                    try:
+                        os.chmod(p, 0o755)
+                    except Exception:
+                        pass
+            has_display = os.path.exists(\"/dev/dri/card0\") or os.path.exists(\"/dev/fb0\")
+            if has_display and os.path.isfile(os.path.join(ROOT_DIR, \"console\", \"install.sh\")):
+                if shutil.which(\"systemd-run\"):
+                    run_cmd(
+                        [
+                            \"systemd-run\",
+                            \"--unit=5tratumos-console-install\",
+                            \"--collect\",
+                            \"--property=After=network-online.target\",
+                            \"--property=Wants=network-online.target\",
+                            \"/bin/bash\",
+                            os.path.join(ROOT_DIR, \"console\", \"install.sh\"),
+                        ],
+                        timeout_s=30,
+                    )
+                else:
+                    run_cmd(
+                        [
+                            \"/bin/bash\",
+                            \"-lc\",
+                            f\"nohup /bin/bash {shlex.quote(os.path.join(ROOT_DIR,'console','install.sh'))} >/var/log/5tratumos-console-install.log 2>&1 &\",
+                        ],
+                        timeout_s=30,
+                    )
+        except Exception:
+            pass
+
+    if stage_bin.is_file():
+        run_cmd([\"install\", \"-m\", \"0755\", str(stage_bin), \"/usr/local/bin/5tratumos\"], timeout_s=60)
+
+    if stage_systemd.is_dir():
+        for unit in sorted(stage_systemd.glob(\"*.service\"), key=lambda it: it.name):
+            run_cmd([\"install\", \"-m\", \"0644\", str(unit), str(cur_systemd / unit.name)], timeout_s=30)
+
+    write_build_info({\"tag\": target_tag, \"repo\": str(update_repo()), \"channel\": channel, \"installed_at\": _now_iso()})
+
+    if systemd_changed:
+        run_cmd([\"systemctl\", \"daemon-reload\"], timeout_s=60)
+
+    if overlay_cfg_changed:
+        update_status_write(\"restarting\", target_tag=target_tag, service=\"overlay\", progress=92)
+        run_cmd([\"systemctl\", \"restart\", \"5tratumos-overlay.service\"], timeout_s=180)
+
+    if daemon_changed:
+        update_status_write(\"restarting_daemon\", target_tag=target_tag, service=\"daemon\", progress=96)
+        run_cmd([\"systemctl\", \"restart\", \"5tratumosd.service\"], timeout_s=180)
+        return
+
+    update_status_write(\"done\", target_tag=target_tag, progress=100)
+
+
+def system_update_rollback(tag: str, *, channel: str | None = None) -> dict:
+    target_tag = str(tag or \"\").strip()
+    if not target_tag:
+        return {\"ok\": False, \"error\": \"missing tag\"}
+    ch = (channel or read_default_channel() or \"main\").strip().lower() or \"main\"
+    with _UPDATE_LOCK:
+        st = update_status_read()
+        if str(st.get(\"state\") or \"\").strip().lower() in {\"downloading\", \"extracting\", \"deploying\", \"restarting\", \"restarting_daemon\"}:
+            return {\"ok\": False, \"error\": \"update already in progress\"}
+
+        root = Path(_UPDATE_CACHE_DIR)
+        if not root.is_dir():
+            return {\"ok\": False, \"error\": \"no cached rollbacks available\"}
+
+        selected: Path | None = None
+        selected_meta: dict | None = None
+        for d in root.iterdir():
+            if not d.is_dir():
+                continue
+            meta = _read_json(str(d / \"meta.json\")) or {}
+            meta_tag = str(meta.get(\"tag\") or \"\").strip()
+            if meta_tag == target_tag:
+                selected = d
+                selected_meta = meta
+                break
+
+        if not selected:
+            return {\"ok\": False, \"error\": \"rollback tag not found (not cached)\"}
+
+        bundle = selected / \"bundle.tgz\"
+        if not bundle.is_file():
+            return {\"ok\": False, \"error\": \"cached bundle is missing\"}
+
+        expected_sha = str((selected_meta or {}).get(\"sha256\") or \"\").strip().lower()
+
+        def worker() -> None:
+            _update_lock_write(target_tag=target_tag)
+            try:
+                if expected_sha:
+                    got = _sha256_file(str(bundle))
+                    if got.lower() != expected_sha:
+                        update_status_write(\"error\", target_tag=target_tag, error=\"cached bundle checksum mismatch\", progress=100)
+                        return
+                _system_update_deploy_bundle(target_tag=target_tag, bundle_path=str(bundle), channel=ch)
+            except Exception as e:
+                update_status_write(\"error\", target_tag=target_tag, error=str(e), progress=100)
+            finally:
+                _update_lock_clear()
+
+        threading.Thread(target=worker, daemon=True).start()
+        return {\"ok\": True, \"started\": True, \"target_tag\": target_tag}
 
 def update_status_read() -> dict:
     st = _read_json(_UPDATE_STATUS_PATH)
@@ -3665,6 +3997,20 @@ def system_update_apply(channel: str | None = None) -> dict:
                     if not sig_bytes or not _verify_ed25519_sig(file_path=bundle_path, sig_bytes=sig_bytes, pubkey_pem=pubkey):
                         update_status_write("error", target_tag=target_tag, error="signature verification failed", progress=100)
                         return
+
+                # Cache the verified bundle for quick rollbacks (keep last N).
+                try:
+                    cache_sha = bundle_sha or _sha256_file(bundle_path)
+                    if cache_sha:
+                        _update_cache_store(
+                            target_tag=target_tag,
+                            bundle_path=bundle_path,
+                            sha256=cache_sha,
+                            url=bundle_url,
+                            channel=ch,
+                        )
+                except Exception:
+                    pass
 
                 update_status_write("extracting", target_tag=target_tag, progress=40)
                 if os.path.isdir(stage_dir):
@@ -7573,6 +7919,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, update_status_read())
             return
 
+        if path == "/api/v0/system/update/rollbacks":
+            json_response(self, HTTPStatus.OK, system_update_rollbacks_list())
+            return
+
         if path == "/api/v0/system/channel":
             json_response(self, HTTPStatus.OK, system_channel_get())
             return
@@ -7972,6 +8322,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/system/update/apply":
             channel = str(body.get("channel") or "").strip().lower() if isinstance(body, dict) else ""
             res = system_update_apply(channel or None)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/update/rollback":
+            tag = str(body.get("tag") or body.get("target_tag") or body.get("version") or "").strip() if isinstance(body, dict) else ""
+            if not tag:
+                json_response(self, HTTPStatus.BAD_REQUEST, {"ok": False, "error": "missing tag"})
+                return
+            channel = str(body.get("channel") or "").strip().lower() if isinstance(body, dict) else ""
+            res = system_update_rollback(tag, channel=channel or None)
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 

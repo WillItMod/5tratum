@@ -15,6 +15,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.log
+.tmp_bundle_compare/
 
 # Local config / secrets
 .env
