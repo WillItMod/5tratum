@@ -6864,7 +6864,9 @@ def _boot_reconcile_loop() -> None:
     # Ensure nginx /apps routes reflect currently installed apps and their live ports.
     # This also repairs routes after an OS update that replaces the base nginx config.
     try:
-        system_proxy_repair()
+        # On some systems the portal container can end up with a stale bind-mounted nginx
+        # config after an update. Allow a one-time restart at boot to self-heal.
+        system_proxy_repair(restart_portal=True)
     except Exception:
         pass
     while True:
@@ -7109,6 +7111,7 @@ def system_proxy_repair(*, restart_portal: bool = False) -> dict:
 
     reload_res: dict | None = None
     restart_res: dict | None = None
+    stale_mount: dict | None = None
 
     # IMPORTANT:
     # Restarting the portal container can drop active HTTP connections (the UI then shows "Failed to fetch"
@@ -7162,11 +7165,50 @@ def system_proxy_repair(*, restart_portal: bool = False) -> dict:
                 "stdout": proc.stdout,
                 "stderr": proc.stderr,
             }
+        # If the nginx config is bind-mounted as a single file, atomic replace can leave the
+        # running container stuck on an old inode. Detect that situation and restart portal.
+        if reload_res and reload_res.get("ok") and (not restart_res or not restart_res.get("ok")):
+            try:
+                host_size = conf_path.stat().st_size
+                proc = run_cmd(
+                    [
+                        "docker",
+                        "compose",
+                        "--project-name",
+                        "5tratumos-overlay",
+                        "exec",
+                        "-T",
+                        "portal",
+                        "sh",
+                        "-lc",
+                        "wc -c </etc/nginx/conf.d/default.conf 2>/dev/null || stat -c%s /etc/nginx/conf.d/default.conf",
+                    ],
+                    cwd=str(overlay_dir),
+                    timeout_s=15,
+                )
+                cont_size = int(str(proc.stdout or "").strip().splitlines()[-1])
+                if cont_size != int(host_size):
+                    stale_mount = {"ok": True, "host_bytes": int(host_size), "container_bytes": cont_size}
+                    proc2 = run_cmd(
+                        ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
+                        cwd=str(overlay_dir),
+                        timeout_s=180,
+                    )
+                    restart_res = {
+                        "ok": proc2.returncode == 0,
+                        "code": proc2.returncode,
+                        "stdout": proc2.stdout,
+                        "stderr": proc2.stderr,
+                    }
+                else:
+                    stale_mount = {"ok": True, "host_bytes": int(host_size), "container_bytes": cont_size, "match": True}
+            except Exception as e:
+                stale_mount = {"ok": False, "error": str(e)}
 
     ok = True
     if changed:
         ok = bool(reload_res and reload_res.get("ok"))
-        if restart_portal and restart_res is not None:
+        if restart_res is not None:
             ok = ok and bool(restart_res.get("ok"))
 
     return {
@@ -7176,6 +7218,7 @@ def system_proxy_repair(*, restart_portal: bool = False) -> dict:
         "added": added,
         "reload": reload_res,
         "restart": restart_res,
+        "stale_mount": stale_mount,
     }
 
 
