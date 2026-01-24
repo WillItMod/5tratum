@@ -92,10 +92,15 @@ body[data-theme='donut'] {
   --forgeos-bg: #090613;
   --forgeos-text: rgba(240, 233, 255, 0.9);
   --forgeos-text-muted: rgba(216, 180, 254, 0.72);
-  --forgeos-sidebar: rgba(0, 0, 0, 0.56);
-  --forgeos-border: rgba(216, 180, 254, 0.14);
-  --forgeos-border-strong: rgba(216, 180, 254, 0.2);
+  /* Slightly stronger UI contrast + color. */
+  --forgeos-sidebar: rgba(0, 0, 0, 0.62);
+  --forgeos-border: rgba(216, 180, 254, 0.18);
+  --forgeos-border-strong: rgba(216, 180, 254, 0.26);
+  --forgeos-card-glow-opacity: 0.1;
   --forgeos-rainbow-strong: linear-gradient(135deg, #a78bfa 0%, #fb7185 45%, #38bdf8 100%);
+  --forgeos-watermark-opacity: 0.16;
+  --forgeos-watermark-y: 74%;
+  --forgeos-watermark-size: min(96vmin, 980px);
 }
 
 body[data-theme='mono'] {
@@ -117,45 +122,6 @@ body {
 body {
   background: var(--forgeos-bg);
   color: var(--forgeos-text);
-}
-
-/* Theme-specific background overlays (subtle, behind everything). */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  opacity: 0;
-}
-
-/* Donut theme: cartoon-ish donut ring + sprinkles (CSS only). */
-body[data-theme='donut']::before {
-  opacity: 0.35;
-  background:
-    /* donut ring */
-    radial-gradient(circle at 70% 22%, rgba(251, 113, 133, 0.22) 0 10%, rgba(251, 113, 133, 0) 10.2%),
-    radial-gradient(circle at 70% 22%,
-      rgba(255, 255, 255, 0.08) 0 7%,
-      rgba(255, 255, 255, 0) 7.2% 12.5%,
-      rgba(251, 113, 133, 0.16) 12.6% 18.5%,
-      rgba(251, 113, 133, 0) 18.6% 24%,
-      rgba(0, 0, 0, 0) 24%),
-    radial-gradient(circle at 70% 22%,
-      rgba(0, 0, 0, 0) 0 26%,
-      rgba(255, 255, 255, 0.06) 26.1% 26.7%,
-      rgba(0, 0, 0, 0) 26.8%),
-    /* sprinkles */
-    radial-gradient(circle at 62% 16%, rgba(56, 189, 248, 0.22) 0 0.6%, rgba(0, 0, 0, 0) 0.7%),
-    radial-gradient(circle at 78% 15%, rgba(250, 204, 21, 0.22) 0 0.6%, rgba(0, 0, 0, 0) 0.7%),
-    radial-gradient(circle at 74% 30%, rgba(34, 197, 94, 0.22) 0 0.55%, rgba(0, 0, 0, 0) 0.65%),
-    radial-gradient(circle at 66% 28%, rgba(167, 139, 250, 0.22) 0 0.55%, rgba(0, 0, 0, 0) 0.65%),
-    radial-gradient(circle at 80% 26%, rgba(251, 113, 133, 0.22) 0 0.55%, rgba(0, 0, 0, 0) 0.65%),
-    radial-gradient(circle at 68% 20%, rgba(34, 211, 238, 0.22) 0 0.5%, rgba(0, 0, 0, 0) 0.6%),
-    radial-gradient(circle at 75% 20%, rgba(216, 180, 254, 0.22) 0 0.5%, rgba(0, 0, 0, 0) 0.6%),
-    /* subtle vignette */
-    radial-gradient(closest-side at 60% 40%, rgba(0, 0, 0, 0) 0 55%, rgba(0, 0, 0, 0.6) 100%);
-  filter: blur(0.2px);
 }
 
 /* Theme picker (Settings → Appearance). */
@@ -215,6 +181,48 @@ body[data-theme='donut']::before {
   font-size: 11px;
   color: var(--forgeos-text-muted);
   line-height: 1.2;
+}
+
+/* Donut theme: use donuts watermark instead of the default mark (stronger but subtle). */
+body[data-theme='donut'] .forgeos-bg-watermark {
+  background-image: url("/assets/New%20Logos/donuts.png");
+  background-position: center 78%;
+  background-size: min(94vmin, 1040px);
+  opacity: 0.18;
+  filter: saturate(1.1) contrast(1.05);
+}
+
+/* Donut rain (only used when triggered by JS). */
+.forgeos-donut-rain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.forgeos-donut-drop {
+  position: absolute;
+  top: -10vh;
+  left: 0;
+  will-change: transform, opacity;
+  animation: forgeos-donut-fall var(--dur, 7s) linear forwards;
+  opacity: 0.9;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
+}
+
+@keyframes forgeos-donut-fall {
+  0% {
+    transform: translate3d(var(--x, 50vw), -12vh, 0) rotate(0deg);
+    opacity: 0.0;
+  }
+  8% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(calc(var(--x, 50vw) + var(--dx, 0px)), 110vh, 0) rotate(var(--rot, 360deg));
+    opacity: 0.0;
+  }
 }
 
 .forgeos-theme-btn[data-theme='midnight'] .forgeos-theme-btn__swatch {

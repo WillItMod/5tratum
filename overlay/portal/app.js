@@ -340,6 +340,7 @@
   const DRAWER_PINNED_KEY = '5tratumos.drawerPinned.v1';
   const SETTINGS_LAYOUT_KEY = '5tratumos.settingsLayout.v1';
   const SETTINGS_SECTION_KEY = '5tratumos.settingsSection.v1';
+  const DONUT_RAIN_LAST_KEY = '5tratumos.donutRainLast.v1';
   const STORE_RENDER_STEP = 72;
   let dragAppId = null;
   const openWindows = new Map();
@@ -1355,6 +1356,16 @@
 
   function applyTheme() {
     const theme = getThemeId();
+
+    // Donut theme can swap the topbar brand mark (fun mode only).
+    try {
+      const topbarLogo = document.querySelector('.forgeos-desktop-topbar__brand-mark');
+      if (topbarLogo && topbarLogo.tagName === 'IMG') {
+        topbarLogo.src =
+          theme === 'donut' ? '/assets/New%20Logos/donuts.png' : '/assets/New%20Logos/WordOnlyLogo.png';
+      }
+    } catch (_) {}
+
     if (theme === 'default') {
       try {
         delete document.body.dataset.theme;
@@ -1362,10 +1373,93 @@
         document.body.removeAttribute('data-theme');
       }
       syncThemeGridSelection();
+      maybeScheduleDonutRain();
       return;
     }
     document.body.dataset.theme = theme;
     syncThemeGridSelection();
+    maybeScheduleDonutRain();
+  }
+
+  let donutRainScheduled = false;
+
+  function maybeScheduleDonutRain() {
+    // One-time "donut rain" effect: random start within the next hour, runs for 10s.
+    // Only in donut theme, and rate-limited to once per hour per browser via localStorage.
+    try {
+      const theme = getThemeId();
+      if (theme !== 'donut') return;
+      if (donutRainScheduled) return;
+      donutRainScheduled = true;
+
+      const now = Date.now();
+      const lastRaw = window.localStorage.getItem(DONUT_RAIN_LAST_KEY);
+      const last = lastRaw ? Number(lastRaw) : 0;
+      if (Number.isFinite(last) && last > 0 && now - last < 60 * 60 * 1000) return;
+
+      const delayMs = Math.floor(Math.random() * 60 * 60 * 1000);
+      window.setTimeout(() => {
+        try {
+          if (getThemeId() !== 'donut') return;
+          const now2 = Date.now();
+          const last2Raw = window.localStorage.getItem(DONUT_RAIN_LAST_KEY);
+          const last2 = last2Raw ? Number(last2Raw) : 0;
+          if (Number.isFinite(last2) && last2 > 0 && now2 - last2 < 60 * 60 * 1000) return;
+          window.localStorage.setItem(DONUT_RAIN_LAST_KEY, String(now2));
+          triggerDonutRain();
+        } catch (_) {}
+      }, delayMs);
+    } catch (_) {}
+  }
+
+  function triggerDonutRain() {
+    try {
+      const existing = document.querySelector('.forgeos-donut-rain');
+      if (existing) existing.remove();
+
+      const host = document.createElement('div');
+      host.className = 'forgeos-donut-rain';
+
+      const donuts = ['🍩', '🍩', '🍩', '🧁', '🍬', '🍭', '🍫'];
+      const sprinkles = ['·', '•', '∙', '⋅'];
+      const sprinkleColors = ['#38bdf8', '#fb7185', '#a78bfa', '#22c55e', '#facc15', '#22d3ee'];
+
+      const drops = 46;
+      for (let i = 0; i < drops; i++) {
+        const el = document.createElement('div');
+        el.className = 'forgeos-donut-drop';
+
+        const isSprinkle = Math.random() < 0.38;
+        if (isSprinkle) {
+          el.textContent = sprinkles[Math.floor(Math.random() * sprinkles.length)];
+          el.style.color = sprinkleColors[Math.floor(Math.random() * sprinkleColors.length)];
+          el.style.fontSize = `${10 + Math.floor(Math.random() * 12)}px`;
+          el.style.opacity = '0.85';
+        } else {
+          el.textContent = donuts[Math.floor(Math.random() * donuts.length)];
+          el.style.fontSize = `${18 + Math.floor(Math.random() * 22)}px`;
+        }
+
+        const x = Math.floor(Math.random() * 100);
+        const dx = Math.floor((Math.random() - 0.5) * 240);
+        const dur = 5 + Math.random() * 5.5;
+        const rot = Math.floor((Math.random() * 720 + 180) * (Math.random() < 0.5 ? 1 : -1));
+        el.style.setProperty('--x', `${x}vw`);
+        el.style.setProperty('--dx', `${dx}px`);
+        el.style.setProperty('--dur', `${dur}s`);
+        el.style.setProperty('--rot', `${rot}deg`);
+
+        host.appendChild(el);
+      }
+
+      document.body.appendChild(host);
+
+      window.setTimeout(() => {
+        try {
+          host.remove();
+        } catch (_) {}
+      }, 10_000);
+    } catch (_) {}
   }
 
   const THEMES = [
