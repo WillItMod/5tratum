@@ -4938,8 +4938,43 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
                 details.append({"app_id": app_id, "coin": coin, **_normalize_worker_fields(w)})
         return entry, details
 
+    # IMPORTANT: do not derive Fleet pool membership solely from the presence of
+    # `/opt/5tratumos/apps/<id>/docker-compose.yml`. During install/update/repair,
+    # the compose file can temporarily disappear, which would make Fleet "forget"
+    # that a pool is installed and cause totals/graphs to dip or flatline.
+    #
+    # Use the installed-app registry as the source of truth, and fall back to
+    # a directory scan if needed.
+    def _fleet_pool_app_ids() -> list[str]:
+        ids: set[str] = set()
+        try:
+            for a in list_installed_app_ids():
+                aid = str(a or "").strip().lower()
+                if aid:
+                    ids.add(aid)
+        except Exception:
+            pass
+        try:
+            reg = _installed_registry_read()
+            apps = reg.get("apps") if isinstance(reg, dict) else None
+            if isinstance(apps, dict):
+                for aid, meta in apps.items():
+                    if not isinstance(meta, dict):
+                        continue
+                    if bool(meta.get("installed")) is not True:
+                        continue
+                    aid_norm = str(aid or "").strip().lower()
+                    if aid_norm:
+                        ids.add(aid_norm)
+        except Exception:
+            pass
+        out = [a for a in ids if a in AXE_SUITE_POOL_APP_IDS]
+        out.sort()
+        return out
+
+    pool_app_ids = _fleet_pool_app_ids()
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(_fetch_pool, app_id) for app_id in list_installed_app_ids()]
+        futures = [pool.submit(_fetch_pool, app_id) for app_id in pool_app_ids]
         done, pending = concurrent.futures.wait(
             futures,
             timeout=1.8,
