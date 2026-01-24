@@ -5955,6 +5955,40 @@
     renderFleetWorkers(payload);
   }
 
+  async function hydrateFleetSeriesFromServer() {
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/fleet/history?limit=720', {}, 3500).catch(() => null);
+      if (!res || res.ok !== true || !Array.isArray(res.points)) return;
+
+      const incoming = res.points
+        .map((p) => {
+          const t = Date.parse(String((p && p.time) || ''));
+          const v = Number(p && p.hashrate_ths);
+          if (!Number.isFinite(t) || !Number.isFinite(v)) return null;
+          return { t, v };
+        })
+        .filter(Boolean);
+      if (!incoming.length) return;
+
+      const map = new Map();
+      for (const p of fleetSeries) {
+        if (!p || !Number.isFinite(p.t) || !Number.isFinite(p.v)) continue;
+        map.set(p.t, p.v);
+      }
+      for (const p of incoming) map.set(p.t, p.v);
+
+      fleetSeries = Array.from(map.entries())
+        .map(([t, v]) => ({ t, v }))
+        .sort((a, b) => a.t - b.t)
+        .slice(-720);
+
+      saveFleetSeries();
+      renderFleetSpark();
+    } catch {}
+  }
+
   function loadFleetCache() {
     try {
       const raw = String(window.localStorage.getItem(FLEET_CACHE_KEY) || '').trim();
@@ -9518,7 +9552,14 @@
       const path = String(d.path || d.mount || '-') || '-';
       const used = Number(d.used_bytes);
       const total = Number(d.total_bytes);
-      const pct = total > 0 ? Math.round((Math.max(0, used) / total) * 100) : NaN;
+      let pct = Number(d.used_pct);
+      if (Number.isFinite(pct)) {
+        // allow either ratio (0-1) or percent (0-100)
+        if (pct <= 1) pct = pct * 100;
+        pct = Math.round(Math.max(0, Math.min(100, pct)));
+      } else {
+        pct = total > 0 ? Math.round((Math.max(0, used) / total) * 100) : NaN;
+      }
       const cols = [path, Number.isFinite(used) ? formatBytes(used) : '-', Number.isFinite(total) ? formatBytes(total) : '-', Number.isFinite(pct) ? `${pct}%` : '-'];
       const tr = document.createElement('tr');
       for (const c of cols) {
@@ -9577,10 +9618,16 @@
 
         const disks = Array.isArray(m.disks) ? m.disks : [];
         const preferred = disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
-        const diskPct =
-          preferred && Number(preferred.total_bytes) > 0
-            ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
-            : null;
+        let diskPct = preferred ? Number(preferred.used_pct) : NaN;
+        if (Number.isFinite(diskPct)) {
+          if (diskPct <= 1) diskPct = diskPct * 100;
+          diskPct = Math.round(Math.max(0, Math.min(100, diskPct)));
+        } else {
+          diskPct =
+            preferred && Number(preferred.total_bytes) > 0
+              ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
+              : null;
+        }
 
         const uptime = formatUptime(m.uptime_s);
         let line = '';
@@ -11139,6 +11186,7 @@
   settingsLayout = loadSettingsLayout();
   applySettingsLayout();
   fleetSeries = loadFleetSeries();
+  hydrateFleetSeriesFromServer().catch(() => {});
   initDashboard();
   updateClock();
   window.setInterval(updateClock, 1000);

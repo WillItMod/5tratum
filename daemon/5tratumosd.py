@@ -4239,6 +4239,147 @@ def _prefer_local_gallery(channel: str, app_dir_path: Path, app_dir_name: str, m
 _STORE_CACHE: dict[str, dict] = {}
 _WIDGET_CACHE: dict[str, dict] = {}
 _FLEET_CACHE: dict[str, dict] = {}
+_FLEET_POOL_CACHE_LOCK = threading.Lock()
+_FLEET_POOL_CACHE: dict[str, dict] = {}
+
+_FLEET_HISTORY_LOCK = threading.Lock()
+_FLEET_HISTORY: list[dict] = []
+FLEET_HISTORY_FILE = str(_env("FLEET_HISTORY_FILE", os.path.join(STATE_DIR, "fleet_history.json")) or os.path.join(STATE_DIR, "fleet_history.json"))
+FLEET_HISTORY_MAX_POINTS = int(str(_env("FLEET_HISTORY_MAX_POINTS", "720") or "720").strip() or "720")
+FLEET_HISTORY_SAMPLE_S = float(str(_env("FLEET_HISTORY_SAMPLE_S", "30") or "30").strip() or "30")
+FLEET_HISTORY_POOL_STALE_S = float(str(_env("FLEET_HISTORY_POOL_STALE_S", "600") or "600").strip() or "600")
+FLEET_HISTORY_SAVE_EVERY_S = float(str(_env("FLEET_HISTORY_SAVE_EVERY_S", "60") or "60").strip() or "60")
+
+
+def _fleet_history_load() -> None:
+    try:
+        path = Path(FLEET_HISTORY_FILE)
+        if not path.is_file():
+            return
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            return
+        cleaned: list[dict] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            t = str(item.get("time") or "").strip()
+            try:
+                v = float(item.get("hashrate_ths") or item.get("v") or 0.0)
+            except Exception:
+                v = 0.0
+            try:
+                w = int(item.get("workers") or 0)
+            except Exception:
+                w = 0
+            if not t:
+                continue
+            cleaned.append({"time": t, "hashrate_ths": v, "workers": w})
+        if len(cleaned) > FLEET_HISTORY_MAX_POINTS:
+            cleaned = cleaned[-FLEET_HISTORY_MAX_POINTS:]
+        with _FLEET_HISTORY_LOCK:
+            _FLEET_HISTORY.clear()
+            _FLEET_HISTORY.extend(cleaned)
+    except Exception:
+        return
+
+
+def _fleet_history_save() -> None:
+    try:
+        path = Path(FLEET_HISTORY_FILE)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with _FLEET_HISTORY_LOCK:
+            data = list(_FLEET_HISTORY)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+        os.replace(str(tmp), str(path))
+    except Exception:
+        return
+
+
+def _fleet_history_append(point: dict) -> None:
+    if not isinstance(point, dict):
+        return
+    t = str(point.get("time") or "").strip()
+    if not t:
+        return
+    try:
+        v = float(point.get("hashrate_ths") or 0.0)
+    except Exception:
+        v = 0.0
+    try:
+        w = int(point.get("workers") or 0)
+    except Exception:
+        w = 0
+
+    with _FLEET_HISTORY_LOCK:
+        if _FLEET_HISTORY and str(_FLEET_HISTORY[-1].get("time") or "").strip() == t:
+            _FLEET_HISTORY[-1] = {"time": t, "hashrate_ths": v, "workers": w}
+        else:
+            _FLEET_HISTORY.append({"time": t, "hashrate_ths": v, "workers": w})
+        if len(_FLEET_HISTORY) > FLEET_HISTORY_MAX_POINTS:
+            del _FLEET_HISTORY[: len(_FLEET_HISTORY) - FLEET_HISTORY_MAX_POINTS]
+
+
+def _fleet_history_record_from_summary(summary: dict) -> None:
+    if not isinstance(summary, dict) or summary.get("ok") is not True:
+        return
+    t = str(summary.get("time") or "").strip() or _now_iso()
+    total = summary.get("total") if isinstance(summary.get("total"), dict) else {}
+    try:
+        v = float((total or {}).get("hashrate_ths") or 0.0)
+    except Exception:
+        v = 0.0
+    try:
+        w = int((total or {}).get("workers") or 0)
+    except Exception:
+        w = 0
+    _fleet_history_append({"time": t, "hashrate_ths": v, "workers": w})
+
+
+def _fleet_pool_cache_get(app_id: str) -> dict | None:
+    aid = str(app_id or "").strip().lower()
+    if not aid:
+        return None
+    with _FLEET_POOL_CACHE_LOCK:
+        v = _FLEET_POOL_CACHE.get(aid)
+        if isinstance(v, dict):
+            return dict(v)
+    return None
+
+
+def _fleet_pool_cache_set(app_id: str, *, pool: dict | None, workers: dict | None) -> None:
+    aid = str(app_id or "").strip().lower()
+    if not aid:
+        return
+    entry: dict = {"time": time.time()}
+    if isinstance(pool, dict):
+        entry["pool"] = pool
+    if isinstance(workers, dict):
+        entry["workers"] = workers
+    with _FLEET_POOL_CACHE_LOCK:
+        _FLEET_POOL_CACHE[aid] = entry
+
+
+def _fleet_sampler_loop() -> None:
+    last_save = 0.0
+    while True:
+        try:
+            s = axe_fleet_summary(limit_workers=0, include_workers=False)
+            _fleet_history_record_from_summary(s)
+        except Exception:
+            pass
+        try:
+            now = time.time()
+            if now - last_save >= float(FLEET_HISTORY_SAVE_EVERY_S):
+                _fleet_history_save()
+                last_save = now
+        except Exception:
+            pass
+        try:
+            time.sleep(max(5.0, float(FLEET_HISTORY_SAMPLE_S)))
+        except Exception:
+            time.sleep(30.0)
 
 
 def _has_pool_widget(store_meta: dict) -> bool:
@@ -4644,10 +4785,11 @@ def list_app_widgets() -> dict:
     return {"ok": True, "time": _now_iso(), "apps": apps_out}
 
 
-def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
+def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool = True) -> dict:
     now = time.time()
     limit = int(limit_workers or 0)
-    cache = _FLEET_CACHE.get("summary") or {}
+    cache_key = "summary_w" if include_workers else "summary_nw"
+    cache = _FLEET_CACHE.get(cache_key) or {}
     if cache.get("time") and now - float(cache.get("time") or 0) < 3 and int(cache.get("limit") or 0) == limit:
         data = cache.get("data") or {}
         if isinstance(data, dict) and data.get("ok") is True:
@@ -4709,20 +4851,40 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         except Exception as e:
             entry["pool_error"] = str(e)
 
+        if include_workers:
+            try:
+                workers_raw = _fetch_json(workers_url, timeout_s=1, headers=_internal_auth_headers())
+                if isinstance(workers_raw, dict):
+                    workers_data = workers_raw
+                else:
+                    entry["workers_error"] = "invalid workers response"
+            except Exception as e:
+                entry["workers_error"] = str(e)
+
+        # Use last-known-good values to avoid transient timeouts collapsing totals/graphs.
+        cached = _fleet_pool_cache_get(app_id) or {}
+        cached_age_s = None
         try:
-            workers_raw = _fetch_json(workers_url, timeout_s=1, headers=_internal_auth_headers())
-            if isinstance(workers_raw, dict):
-                workers_data = workers_raw
-            else:
-                entry["workers_error"] = "invalid workers response"
-        except Exception as e:
-            entry["workers_error"] = str(e)
+            cached_age_s = time.time() - float(cached.get("time") or 0.0)
+        except Exception:
+            cached_age_s = None
+        cached_fresh = cached_age_s is not None and cached_age_s >= 0 and cached_age_s <= float(FLEET_HISTORY_POOL_STALE_S)
+        if pool_data is None and cached_fresh and isinstance(cached.get("pool"), dict):
+            pool_data = dict(cached.get("pool") or {})
+            entry["pool_stale"] = True
+            entry["stale"] = True
+        if include_workers and workers_data is None and cached_fresh and isinstance(cached.get("workers"), dict):
+            workers_data = dict(cached.get("workers") or {})
+            entry["workers_stale"] = True
+            entry["stale"] = True
 
         if pool_data is not None:
             entry["pool"] = pool_data
         if workers_data is not None:
             entry["workers"] = workers_data
         entry["ok"] = pool_data is not None
+        if pool_data is not None:
+            _fleet_pool_cache_set(app_id, pool=pool_data, workers=workers_data if include_workers else None)
 
         details: list[dict] = []
 
@@ -5077,7 +5239,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None) -> dict:
         "workers_inactive": inactive_workers,
         "workers_pruned": pruned_workers,
     }
-    _FLEET_CACHE["summary"] = {"time": now, "limit": limit, "data": res}
+    _FLEET_CACHE[cache_key] = {"time": now, "limit": limit, "data": res}
     return res
 
 
@@ -5133,10 +5295,36 @@ def disk_usage(path: str) -> dict | None:
         st = os.statvfs(path)
     except Exception:
         return None
-    total = int(st.f_frsize) * int(st.f_blocks)
-    free = int(st.f_frsize) * int(st.f_bavail)
-    used = max(0, total - free)
-    return {"path": path, "total_bytes": total, "free_bytes": free, "used_bytes": used}
+    # Notes on semantics:
+    # - f_bfree: total free blocks (includes reserved blocks)
+    # - f_bavail: blocks available to unprivileged users (excludes reserved blocks)
+    # Using f_bavail as "free" and (total-free) as "used" inflates usage because
+    # reserved blocks get counted as "used". Match `df` more closely:
+    # - used_bytes = (blocks - bfree) * frsize
+    # - pct_used   = used / (used + avail)  where avail = bavail * frsize
+    frsize = int(st.f_frsize) or 1
+    blocks = int(st.f_blocks)
+    bfree = int(st.f_bfree)
+    bavail = int(st.f_bavail)
+
+    total = frsize * blocks
+    free_total = frsize * bfree
+    avail = frsize * bavail
+    used = max(0, frsize * (blocks - bfree))
+    reserved = max(0, free_total - avail)
+
+    denom = used + max(0, avail)
+    used_pct = (used / denom) * 100.0 if denom > 0 else 0.0
+
+    return {
+        "path": path,
+        "total_bytes": int(total),
+        "used_bytes": int(used),
+        "free_bytes": int(free_total),
+        "avail_bytes": int(avail),
+        "reserved_bytes": int(reserved),
+        "used_pct": float(used_pct),
+    }
 
 
 def read_uptime_s() -> float | None:
@@ -6639,6 +6827,33 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/api/v0/fleet/history":
+            limit = FLEET_HISTORY_MAX_POINTS
+            if "limit" in qs and qs["limit"]:
+                try:
+                    limit = int(str(qs["limit"][0]).strip() or str(FLEET_HISTORY_MAX_POINTS))
+                except Exception:
+                    limit = FLEET_HISTORY_MAX_POINTS
+            # Keep sane bounds to avoid giant responses.
+            if limit <= 0:
+                limit = FLEET_HISTORY_MAX_POINTS
+            if limit > 5000:
+                limit = 5000
+
+            with _FLEET_HISTORY_LOCK:
+                points = list(_FLEET_HISTORY[-limit:])
+
+            json_response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "time": _now_iso(),
+                    "points": points,
+                },
+            )
+            return
+
         if path == "/api/v0/apps/available":
             channel = None
             if "channel" in qs and qs["channel"]:
@@ -7028,6 +7243,7 @@ def main() -> int:
     args = parser.parse_args()
 
     _installed_registry_bootstrap()
+    _fleet_history_load()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
@@ -7036,6 +7252,7 @@ def main() -> int:
     threading.Thread(target=_support_checkin_loop, daemon=True).start()
     threading.Thread(target=_watchdog_loop, daemon=True).start()
     threading.Thread(target=_boot_reconcile_loop, daemon=True).start()
+    threading.Thread(target=_fleet_sampler_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
