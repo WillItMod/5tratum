@@ -2329,7 +2329,8 @@ def _notify_loop() -> None:
                 prev_block = str(prev.get("block_sig") or "")
 
                 if status and status != prev_status and (events_mqtt.get("status_change") or events_discord.get("status_change")):
-                    detail = f"status changed to {status}"
+                    pretty_status = "not running" if status == "not-created" else status
+                    detail = f"status changed to {pretty_status}"
                     _emit_notify_event(
                         app_id=app_id,
                         app_name=app_name,
