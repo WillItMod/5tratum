@@ -121,6 +121,7 @@
   const settingSidebarSelect = document.getElementById('setting-sidebar');
   const settingTopbarSelect = document.getElementById('setting-topbar');
   const settingThemeSelect = document.getElementById('setting-theme');
+  const themeGridEl = document.getElementById('theme-grid');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
@@ -1360,9 +1361,70 @@
       } catch {
         document.body.removeAttribute('data-theme');
       }
+      syncThemeGridSelection();
       return;
     }
     document.body.dataset.theme = theme;
+    syncThemeGridSelection();
+  }
+
+  const THEMES = [
+    { id: 'default', label: 'Default', desc: 'Classic 5tratumOS' },
+    { id: 'midnight', label: 'Midnight', desc: 'Deep blue' },
+    { id: 'aurora', label: 'Aurora', desc: 'Teal + purple' },
+    { id: 'ember', label: 'Ember', desc: 'Warm orange' },
+    { id: 'matrix', label: 'Matrix', desc: 'Green terminal' },
+    { id: 'ice', label: 'Ice', desc: 'Cool cyan' },
+    { id: 'donut', label: 'Donut', desc: 'Purple candy' },
+    { id: 'mono', label: 'Mono', desc: 'Greyscale' },
+  ];
+
+  function renderThemeGrid() {
+    if (!themeGridEl) return;
+    themeGridEl.innerHTML = '';
+    for (const theme of THEMES) {
+      const id = normalizeThemeId(theme.id);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forgeos-theme-btn';
+      btn.dataset.theme = id;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = `${theme.label}${theme.desc ? ` — ${theme.desc}` : ''}`;
+
+      const swatch = document.createElement('div');
+      swatch.className = 'forgeos-theme-btn__swatch';
+
+      const label = document.createElement('div');
+      label.className = 'forgeos-theme-btn__label';
+      label.textContent = theme.label;
+
+      const hint = document.createElement('div');
+      hint.className = 'forgeos-theme-btn__hint';
+      hint.textContent = theme.desc || '';
+
+      btn.appendChild(swatch);
+      btn.appendChild(label);
+      if (theme.desc) btn.appendChild(hint);
+
+      btn.addEventListener('click', async () => {
+        await setTheme(id);
+      });
+
+      themeGridEl.appendChild(btn);
+    }
+    syncThemeGridSelection();
+  }
+
+  function syncThemeGridSelection() {
+    if (!themeGridEl) return;
+    const active = getThemeId();
+    const buttons = Array.from(themeGridEl.querySelectorAll('button.forgeos-theme-btn'));
+    for (const btn of buttons) {
+      const id = normalizeThemeId(btn.dataset.theme);
+      const on = id === active;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
   }
 
   function getTopbarMode() {
@@ -3034,6 +3096,13 @@
     parent.appendChild(el);
   }
 
+  function appendBlock(parent, text, className) {
+    const el = document.createElement('div');
+    el.className = String(className || 'whitespace-pre-wrap text-sm leading-relaxed text-slate-200').trim();
+    el.textContent = String(text || '');
+    parent.appendChild(el);
+  }
+
   function appendMono(parent, label, value) {
     const row = document.createElement('div');
     row.className = 'grid grid-cols-1 gap-1 md:grid-cols-[160px_1fr]';
@@ -3070,34 +3139,41 @@
       kind: 'About',
       title: 'Mission statement',
       build: (body) => {
-        appendHeading(body, "Hi, I'm Johnny.");
-        const paragraphs = [
-          "AxeSuite and 5tratumOS are built by me, on my own. There's no company behind this, no venture capital, no hidden team. Just one person designing, building, testing, breaking, and rebuilding a blockchain-focused operating system and application stack because I believe mining and blockchain infrastructure should belong to the people actually running the hardware.",
-          "This project exists to push back against centralisation, black-box firmware, closed platforms, and the idea that mining should only happen at industrial scale. Home and small-scale miners matter. Individuals matter. Knowledge matters. When you understand your hardware, your power, and your software, you're no longer dependent on someone else's dashboard or promises.",
-          "5tratumOS is a blockchain-first operating system. Blockchain is not an add-on or a feature, it's the core design principle. The OS is built specifically to run mining software, blockchain nodes, and supporting services as first-class citizens. AxeSuite applications are integrated directly into the operating system as a root-level layer, not bolted on afterwards. That integration is deliberate. It keeps the system fast, stable, predictable, and efficient, while still exposing what's actually happening under the hood.",
-          "AxeSuite exists to give miners real tools, not abstractions. Benchmarking, solo and pool mining, monitoring, tuning, and node management are designed to be transparent, inspectable, and under your control. There are no magic presets, no hidden behaviour, and no 'trust us' configuration. You should know exactly what your hardware is doing, why it's doing it, and how to change it safely.",
-          'This is also about hardware. Software is only half the story. The long-term goal is to take designs that usually stay as diagrams, spreadsheets, or half-finished ideas and turn them into real boards, real devices, and real mining hardware that people can actually run at home. An operating system that truly understands blockchain and hardware at a low level is what makes that possible.',
-          "Community matters here, but not in a performative way. Decentralisation doesn't come from slogans or social media posts. It comes from lots of people running their own nodes, mining on their own terms, learning how things work, and sharing that knowledge. The feedback, testing, encouragement, and yes, the donated donuts from the community have played a huge part in getting this as far as it has.",
-          "This isn't a side project or a hobby experiment. 5tratumOS is intended to be a complete, stable, blockchain-focused operating system. AxeSuite is intended to be a serious toolset for people who care about control, transparency, and decentralisation. If this helps you mine smarter, run your own infrastructure, or simply understand your setup better, then it's doing exactly what it was built to do.",
-          "If you're a hardware manufacturer, supplier, or someone with serious ideas around mining or blockchain hardware, you can reach me directly at axesuite.app@gmail.com",
-          'Johnny Murray - Donut.',
-          "If you'd like to support the project, donuts are always appreciated:",
-        ];
+        const mission = `Hi, I'm Johnny.
 
-        paragraphs.forEach((p, idx) => {
-          const el = document.createElement('div');
-          el.className = `whitespace-pre-wrap text-sm leading-relaxed text-slate-200${idx === 0 ? ' mt-2' : ' mt-4'}`;
-          el.textContent = p;
-          body.appendChild(el);
-        });
+AxeSuite and 5tratumOS are built by me, on my own. There's no company behind this, no venture capital, no hidden team. Just one person designing, building, testing, breaking, and rebuilding a blockchain-focused operating system and application stack because I believe mining and blockchain infrastructure should belong to the people actually running the hardware.
 
-        const donate = document.createElement('div');
-        donate.className = 'mt-2 flex flex-col gap-2';
-        appendMono(donate, 'Lightning', 'lightning:staticrod559@walletofsatoshi.com');
-        appendMono(donate, 'Bitcoin (BTC)', 'bitcoin:bc1q0hvxhnvg3hku7fd9ht04araggpykq75xeq5xdx');
-        appendMono(donate, 'Bitcoin Cash (BCH)', 'bitcoincash:qqnfrrqefddf2gexr5l8ey7t4y2qgpgrwcc6l3rgmr');
-        appendMono(donate, 'DigiByte (DGB)', 'digibyte:dgb1qurt6nec48uc6uehj3492rlmlr74ghtazetdrt9');
-        body.appendChild(donate);
+This project exists to push back against centralisation, black-box firmware, closed platforms, and the idea that mining should only happen at industrial scale. Home and small-scale miners matter. Individuals matter. Knowledge matters. When you understand your hardware, your power, and your software, you're no longer dependent on someone else's dashboard or promises.
+
+5tratumOS is a blockchain-first operating system. Blockchain is not an add-on or a feature, it's the core design principle. The OS is built specifically to run mining software, blockchain nodes, and supporting services as first-class citizens. AxeSuite applications are integrated directly into the operating system as a root-level layer, not bolted on afterwards. That integration is deliberate. It keeps the system fast, stable, predictable, and efficient, while still exposing what's actually happening under the hood.
+
+AxeSuite exists to give miners real tools, not abstractions. Benchmarking, solo and pool mining, monitoring, tuning, and node management are designed to be transparent, inspectable, and under your control. There are no magic presets, no hidden behaviour, and no 'trust us' configuration. You should know exactly what your hardware is doing, why it's doing it, and how to change it safely.
+
+This is also about hardware. Software is only half the story. The long-term goal is to take designs that usually stay as diagrams, spreadsheets, or half-finished ideas and turn them into real boards, real devices, and real mining hardware that people can actually run at home. An operating system that truly understands blockchain and hardware at a low level is what makes that possible.
+
+Community matters here, but not in a performative way. Decentralisation doesn't come from slogans or social media posts. It comes from lots of people running their own nodes, mining on their own terms, learning how things work, and sharing that knowledge. The feedback, testing, encouragement, and yes, the donated donuts from the community have played a huge part in getting this as far as it has.
+
+This isn't a side project or a hobby experiment. 5tratumOS is intended to be a complete, stable, blockchain-focused operating system. AxeSuite is intended to be a serious toolset for people who care about control, transparency, and decentralisation. If this helps you mine smarter, run your own infrastructure, or simply understand your setup better, then it's doing exactly what it was built to do.
+
+If you're a hardware manufacturer, supplier, or someone with serious ideas around mining or blockchain hardware, you can reach me directly at axesuite.app@gmail.com
+
+Johnny Murray - Donut.
+
+If you'd like to support the project, donuts are always appreciated:
+
+Lightning
+lightning:staticrod559@walletofsatoshi.com
+
+Bitcoin (BTC)
+bitcoin:bc1q0hvxhnvg3hku7fd9ht04araggpykq75xeq5xdx
+
+Bitcoin Cash (BCH)
+bitcoincash:qqnfrrqefddf2gexr5l8ey7t4y2qgpgrwcc6l3rgmr
+
+DigiByte (DGB)
+digibyte:dgb1qurt6nec48uc6uehj3492rlmlr74ghtazetdrt9
+`;
+        appendBlock(body, mission, 'whitespace-pre-wrap text-sm leading-relaxed text-slate-200 mt-2');
       },
     });
   }
@@ -12091,6 +12167,8 @@
       await setTheme(settingThemeSelect.value);
     });
   }
+
+  renderThemeGrid();
 
   if (btnTopbarToggle) {
     btnTopbarToggle.addEventListener('click', async (e) => {
