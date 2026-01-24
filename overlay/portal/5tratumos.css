@@ -192,6 +192,16 @@ body[data-theme='donut'] .forgeos-bg-watermark {
   filter: saturate(1.1) contrast(1.05);
 }
 
+/* Donut theme: donuts.png has extra transparent padding, so scale it up to match the
+   perceived size of the normal wordmark in the top bar. */
+body[data-theme='donut'] .forgeos-desktop-topbar__brand-mark {
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(1.5);
+}
+
+body.forgeos-topbar-open[data-theme='donut'] .forgeos-desktop-topbar__brand-mark {
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(1.25);
+}
+
 /* Donut rain (only used when triggered by JS). */
 .forgeos-donut-rain {
   position: fixed;
