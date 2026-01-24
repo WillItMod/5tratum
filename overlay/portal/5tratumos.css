@@ -183,23 +183,24 @@ body {
   line-height: 1.2;
 }
 
-/* Donut theme: use donuts watermark instead of the default mark (stronger but subtle). */
-body[data-theme='donut'] .forgeos-bg-watermark {
+/* Donut theme: swap the watermark to donuts.png (the watermark is rendered via .forgeos-content::after). */
+body[data-theme='donut'] .forgeos-content::after {
   background-image: url("/assets/New%20Logos/donuts.png");
   background-position: center 78%;
   background-size: min(94vmin, 1040px);
-  opacity: 0.18;
-  filter: saturate(1.1) contrast(1.05);
+  opacity: 0.16;
+  mix-blend-mode: normal;
+  filter: saturate(1.12) contrast(1.08);
 }
 
 /* Donut theme: donuts.png has extra transparent padding, so scale it up to match the
    perceived size of the normal wordmark in the top bar. */
 body[data-theme='donut'] .forgeos-desktop-topbar__brand-mark {
-  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(1.5);
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(2.2);
 }
 
 body.forgeos-topbar-open[data-theme='donut'] .forgeos-desktop-topbar__brand-mark {
-  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(1.25);
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(1.6);
 }
 
 /* Donut rain (only used when triggered by JS). */

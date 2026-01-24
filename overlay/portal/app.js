@@ -1349,7 +1349,15 @@
     return allowed.has(v) ? v : 'default';
   }
 
+  const THEME_KEY = '5tratumos.theme.v1';
+
   function getThemeId() {
+    // Prefer localStorage so themes persist even if /api/v0/system/ui is unavailable
+    // or doesn't include theme config yet.
+    try {
+      const raw = window.localStorage.getItem(THEME_KEY);
+      if (raw) return normalizeThemeId(raw);
+    } catch {}
     const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
     return normalizeThemeId(cfg.theme);
   }
@@ -12247,6 +12255,9 @@ digibyte:dgb1qurt6nec48uc6uehj3492rlmlr74ghtazetdrt9
     uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), theme };
     if (settingThemeSelect) settingThemeSelect.value = theme;
     applyTheme();
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {}
     try {
       await saveUiConfig({ theme });
       showToast('Theme saved', null);
