@@ -2175,7 +2175,8 @@
     const pending = id ? pendingKindFor(id) : '';
     const raw = installed && typeof installed === 'object' ? installed.status : '';
     const s = String(raw || '').trim().toLowerCase();
-    const stoppedLike = s === 'not-created' || s === 'not_created' || s === 'not created' || s === 'stopped' || s === 'exited' || s === 'dead';
+    const notCreated = s === 'not-created' || s === 'not_created' || s === 'not created';
+    const stoppedLike = notCreated || s === 'stopped' || s === 'exited' || s === 'dead';
     const runningLike = s === 'running';
 
     // Guard against stale pending UI states: if the daemon already reports a stable state,
@@ -2187,7 +2188,7 @@
       }
       if (pending === 'down' && stoppedLike) {
         pendingAppActions.delete(id);
-        return 'stopped';
+        return notCreated ? 'not running' : 'stopped';
       }
       const ageMs = pendingAgeMsFor(id);
       if (ageMs > 2 * 60 * 1000) pendingAppActions.delete(id);
@@ -2198,7 +2199,7 @@
     if (pending === 'down') return 'stopping';
     if (pending === 'redeploy') return 'redeploying';
     if (!s) return 'installed';
-    if (s === 'not-created' || s === 'not_created' || s === 'not created') return 'stopped';
+    if (notCreated) return 'not running';
     if (s === 'created') return 'starting';
     if (s === 'exited' || s === 'dead') return 'stopped';
     return s;
@@ -2469,6 +2470,7 @@
   function statusKeyForUi(text) {
     const t = String(text || '').trim().toLowerCase();
     if (!t) return 'starting';
+    if (t.includes('not running')) return 'offline';
     if (t.includes('online') || t.includes('running') || t.includes('ready')) return 'online';
     if (t.includes('start') || t.includes('init') || t.includes('boot')) return 'starting';
     if (t.includes('offline') || t.includes('down') || t.includes('error') || t.includes('fail')) return 'offline';
