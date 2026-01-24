@@ -88,7 +88,8 @@ body[data-theme='ice'] {
 }
 
 body[data-theme='donut'] {
-  --forgeos-bg: #0a0613;
+  /* Donut: slightly softer purple-black base. */
+  --forgeos-bg: #090613;
   --forgeos-text: rgba(240, 233, 255, 0.9);
   --forgeos-text-muted: rgba(216, 180, 254, 0.72);
   --forgeos-sidebar: rgba(0, 0, 0, 0.56);
@@ -116,6 +117,45 @@ body {
 body {
   background: var(--forgeos-bg);
   color: var(--forgeos-text);
+}
+
+/* Theme-specific background overlays (subtle, behind everything). */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+}
+
+/* Donut theme: cartoon-ish donut ring + sprinkles (CSS only). */
+body[data-theme='donut']::before {
+  opacity: 0.35;
+  background:
+    /* donut ring */
+    radial-gradient(circle at 70% 22%, rgba(251, 113, 133, 0.22) 0 10%, rgba(251, 113, 133, 0) 10.2%),
+    radial-gradient(circle at 70% 22%,
+      rgba(255, 255, 255, 0.08) 0 7%,
+      rgba(255, 255, 255, 0) 7.2% 12.5%,
+      rgba(251, 113, 133, 0.16) 12.6% 18.5%,
+      rgba(251, 113, 133, 0) 18.6% 24%,
+      rgba(0, 0, 0, 0) 24%),
+    radial-gradient(circle at 70% 22%,
+      rgba(0, 0, 0, 0) 0 26%,
+      rgba(255, 255, 255, 0.06) 26.1% 26.7%,
+      rgba(0, 0, 0, 0) 26.8%),
+    /* sprinkles */
+    radial-gradient(circle at 62% 16%, rgba(56, 189, 248, 0.22) 0 0.6%, rgba(0, 0, 0, 0) 0.7%),
+    radial-gradient(circle at 78% 15%, rgba(250, 204, 21, 0.22) 0 0.6%, rgba(0, 0, 0, 0) 0.7%),
+    radial-gradient(circle at 74% 30%, rgba(34, 197, 94, 0.22) 0 0.55%, rgba(0, 0, 0, 0) 0.65%),
+    radial-gradient(circle at 66% 28%, rgba(167, 139, 250, 0.22) 0 0.55%, rgba(0, 0, 0, 0) 0.65%),
+    radial-gradient(circle at 80% 26%, rgba(251, 113, 133, 0.22) 0 0.55%, rgba(0, 0, 0, 0) 0.65%),
+    radial-gradient(circle at 68% 20%, rgba(34, 211, 238, 0.22) 0 0.5%, rgba(0, 0, 0, 0) 0.6%),
+    radial-gradient(circle at 75% 20%, rgba(216, 180, 254, 0.22) 0 0.5%, rgba(0, 0, 0, 0) 0.6%),
+    /* subtle vignette */
+    radial-gradient(closest-side at 60% 40%, rgba(0, 0, 0, 0) 0 55%, rgba(0, 0, 0, 0.6) 100%);
+  filter: blur(0.2px);
 }
 
 /* Theme picker (Settings → Appearance). */
@@ -168,12 +208,12 @@ body {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: rgba(226, 232, 240, 0.92);
+  color: var(--forgeos-text);
 }
 
 .forgeos-theme-btn__hint {
   font-size: 11px;
-  color: rgba(148, 163, 184, 0.92);
+  color: var(--forgeos-text-muted);
   line-height: 1.2;
 }
 
