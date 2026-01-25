@@ -4945,7 +4945,7 @@ def list_app_widgets() -> dict:
         return {"ok": True, "time": _now_iso(), "apps": cache.get("apps") or []}
 
     apps_out: list[dict] = []
-    widget_tasks: list[tuple[concurrent.futures.Future, dict]] = []
+    widget_tasks: list[tuple[concurrent.futures.Future, dict, dict]] = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         # Mining Overview is currently intended for AxeSuite apps.
@@ -4972,7 +4972,9 @@ def list_app_widgets() -> dict:
                 "widgets": [],
             }
 
-            fetchable = status == "running" and port is not None
+            # Compose status detection can be brittle on older installs (project name drift).
+            # Prefer "can we actually reach the app's local widget endpoints?" over a hard gate on compose status.
+            fetchable = port is not None
 
             for item in widgets[:8]:
                 if not isinstance(item, dict):
@@ -4988,14 +4990,17 @@ def list_app_widgets() -> dict:
                 }
                 path = _widget_endpoint_path(endpoint)
                 if not fetchable or not path:
-                    w["error"] = "not running" if status != "running" else "missing endpoint"
+                    if port is None:
+                        w["error"] = "missing port"
+                    else:
+                        w["error"] = "missing endpoint"
                     app_entry["widgets"].append(w)
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
                 # Keep widget aggregation snappy; use short timeouts and return partial results.
                 timeout_s = 1.0 if wid == "sync" else 2.6 if wid == "pool" else 1.5
                 fut = pool.submit(_fetch_json, url, timeout_s=timeout_s, headers=_internal_auth_headers())
-                widget_tasks.append((fut, w))
+                widget_tasks.append((fut, w, app_entry))
                 app_entry["widgets"].append(w)
 
             apps_out.append(app_entry)
@@ -5006,16 +5011,22 @@ def list_app_widgets() -> dict:
                 timeout=2.9,
                 return_when=concurrent.futures.ALL_COMPLETED,
             )
-            for fut, widget in widget_tasks:
+            for fut, widget, app_entry in widget_tasks:
                 if fut in done:
                     try:
                         widget["data"] = fut.result()
                         widget["ok"] = True
+                        app_entry["_any_widget_ok"] = True
                     except Exception as e:
                         widget["error"] = str(e)
                 else:
                     widget["error"] = "timeout"
                     fut.cancel()
+
+    # If any widget endpoint was reachable, treat the app as running for the Mining Overview UX.
+    for app in apps_out:
+        if app.pop("_any_widget_ok", False) and str(app.get("status") or "") != "running":
+            app["status"] = "running"
 
     _WIDGET_CACHE["widgets"] = {"time": now, "apps": apps_out}
     return {"ok": True, "time": _now_iso(), "apps": apps_out}
