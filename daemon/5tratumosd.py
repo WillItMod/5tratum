@@ -6513,9 +6513,20 @@ def summarize_project_status(project: str) -> dict:
 def summarize_project_status_from_containers(containers: list[dict]) -> dict:
     if not containers:
         return {"status": "not-created", "containers": []}
-    # Many apps use a short-lived `init` service that exits 0 after generating config.
-    # Treat that as normal; otherwise every app would look "degraded" forever.
-    scan = [c for c in containers if "-init-" not in str(c.get("Names") or "")]
+
+    def _is_init_like(c: dict) -> bool:
+        name = str(c.get("Names") or "").strip().lower()
+        if "-init-" in name:
+            return True
+        labels = _parse_docker_labels(str(c.get("Labels") or ""))
+        svc = str(labels.get("com.docker.compose.service") or "").strip().lower()
+        # Many apps use short-lived "init" helpers such as:
+        # - init
+        # - init_permissions / init-permissions
+        # Treat these as normal; otherwise projects look "degraded" forever.
+        return bool(svc) and svc.startswith("init")
+
+    scan = [c for c in containers if not _is_init_like(c)]
     if not scan:
         scan = containers
     any_running = False
