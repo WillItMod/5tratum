@@ -2153,6 +2153,80 @@ def _watchdog_loop() -> None:
 _NOTIFY_LOCK = threading.Lock()
 _NOTIFY_STATE: dict[str, dict] = {"apps": {}, "update": {}}
 _NOTIFY_POLL_S = 30
+_NOTIFY_GATES: dict[str, dict] = {}
+
+
+def _gate_state(app_id: str) -> dict:
+    aid = str(app_id or "").strip().lower()
+    if not aid:
+        return {}
+    with _NOTIFY_LOCK:
+        st = _NOTIFY_GATES.get(aid)
+        if isinstance(st, dict):
+            return st
+        _NOTIFY_GATES[aid] = {}
+        return _NOTIFY_GATES[aid]
+
+
+def _gate_reset(app_id: str, key: str) -> None:
+    aid = str(app_id or "").strip().lower()
+    if not aid:
+        return
+    k = str(key or "").strip()
+    if not k:
+        return
+    with _NOTIFY_LOCK:
+        st = _NOTIFY_GATES.get(aid)
+        if isinstance(st, dict):
+            st.pop(k, None)
+
+
+def _gate_step(
+    *,
+    app_id: str,
+    key: str,
+    condition: bool,
+    baseline: float,
+    now: float,
+    window_s: float,
+    min_points: int,
+) -> tuple[bool, float]:
+    """
+    Returns (should_fire, baseline_used).
+    Gating is per-app per-key and requires the condition to persist for:
+      - at least `min_points` polls AND
+      - at least `window_s` seconds
+    """
+    aid = str(app_id or "").strip().lower()
+    k = str(key or "").strip()
+    if not aid or not k:
+        return False, baseline
+
+    if not condition:
+        _gate_reset(aid, k)
+        return False, baseline
+
+    st = _gate_state(aid)
+    g = st.get(k)
+    if not isinstance(g, dict):
+        g = {"since": now, "points": 1, "baseline": float(baseline), "fired": False}
+        with _NOTIFY_LOCK:
+            st[k] = g
+    else:
+        if "baseline" not in g:
+            g["baseline"] = float(baseline)
+        if "since" not in g:
+            g["since"] = now
+        g["points"] = int(g.get("points") or 0) + 1
+
+    baseline_used = float(g.get("baseline") or baseline)
+    fired = bool(g.get("fired"))
+    age = float(now) - float(g.get("since") or now)
+    points = int(g.get("points") or 0)
+    should_fire = (not fired) and points >= int(min_points) and age >= float(window_s)
+    if should_fire:
+        g["fired"] = True
+    return should_fire, baseline_used
 
 
 def _selected_notify_apps(cfg: dict, installed: list[str]) -> list[str]:
@@ -2318,6 +2392,11 @@ def _notify_loop() -> None:
             events_mqtt = mqtt_cfg.get("events") if isinstance(mqtt_cfg, dict) else {}
             events_discord = discord_cfg.get("events") if isinstance(discord_cfg, dict) else {}
             drop_pct = int(discord_cfg.get("hashrate_drop_pct") or 50) if isinstance(discord_cfg, dict) else 50
+            drop_window_s = float(discord_cfg.get("hashrate_drop_window_s") or 300) if isinstance(discord_cfg, dict) else 300.0
+            drop_min_points = int(discord_cfg.get("hashrate_drop_min_points") or 5) if isinstance(discord_cfg, dict) else 5
+            worker_drop_window_s = float(discord_cfg.get("worker_drop_window_s") or 300) if isinstance(discord_cfg, dict) else 300.0
+            worker_drop_min_points = int(discord_cfg.get("worker_drop_min_points") or 5) if isinstance(discord_cfg, dict) else 5
+            now_ts = time.time()
 
             summary = axe_fleet_summary(limit_workers=0)
             pools = summary.get("pools") if isinstance(summary, dict) else []
@@ -2391,32 +2470,56 @@ def _notify_loop() -> None:
                     and hashrate <= prev_hashrate * (1 - (drop_pct / 100.0))
                     and (events_mqtt.get("hashrate_drop") or events_discord.get("hashrate_drop"))
                 ):
-                    detail = f"hashrate dropped to {hashrate:.2f} TH/s (was {prev_hashrate:.2f})"
-                    _emit_notify_event(
+                    fire, baseline = _gate_step(
                         app_id=app_id,
-                        app_name=app_name,
-                        event="hashrate_drop",
-                        detail=detail,
-                        extra={"hashrate_ths": hashrate, "prev_hashrate_ths": prev_hashrate},
-                        mqtt_cfg=mqtt_cfg,
-                        discord_cfg=discord_cfg,
-                        mqtt_apps=mqtt_apps,
-                        discord_apps=discord_apps,
+                        key="hashrate_drop",
+                        condition=True,
+                        baseline=prev_hashrate,
+                        now=now_ts,
+                        window_s=drop_window_s,
+                        min_points=drop_min_points,
                     )
+                    if fire:
+                        detail = f"hashrate dropped to {hashrate:.2f} TH/s (was {baseline:.2f})"
+                        _emit_notify_event(
+                            app_id=app_id,
+                            app_name=app_name,
+                            event="hashrate_drop",
+                            detail=detail,
+                            extra={"hashrate_ths": hashrate, "prev_hashrate_ths": baseline},
+                            mqtt_cfg=mqtt_cfg,
+                            discord_cfg=discord_cfg,
+                            mqtt_apps=mqtt_apps,
+                            discord_apps=discord_apps,
+                        )
+                else:
+                    _gate_reset(app_id, "hashrate_drop")
 
                 if prev_workers > 0 and workers < prev_workers and (events_mqtt.get("worker_offline") or events_discord.get("worker_offline")):
-                    detail = f"workers dropped to {workers} (was {prev_workers})"
-                    _emit_notify_event(
+                    fire, baseline = _gate_step(
                         app_id=app_id,
-                        app_name=app_name,
-                        event="worker_offline",
-                        detail=detail,
-                        extra={"workers": workers, "prev_workers": prev_workers},
-                        mqtt_cfg=mqtt_cfg,
-                        discord_cfg=discord_cfg,
-                        mqtt_apps=mqtt_apps,
-                        discord_apps=discord_apps,
+                        key="worker_offline",
+                        condition=True,
+                        baseline=float(prev_workers),
+                        now=now_ts,
+                        window_s=worker_drop_window_s,
+                        min_points=worker_drop_min_points,
                     )
+                    if fire:
+                        detail = f"workers dropped to {workers} (was {int(baseline)})"
+                        _emit_notify_event(
+                            app_id=app_id,
+                            app_name=app_name,
+                            event="worker_offline",
+                            detail=detail,
+                            extra={"workers": workers, "prev_workers": int(baseline)},
+                            mqtt_cfg=mqtt_cfg,
+                            discord_cfg=discord_cfg,
+                            mqtt_apps=mqtt_apps,
+                            discord_apps=discord_apps,
+                        )
+                else:
+                    _gate_reset(app_id, "worker_offline")
 
                 if block_sig and prev_block and block_sig != prev_block and (
                     events_mqtt.get("block_found") or events_discord.get("block_found")
