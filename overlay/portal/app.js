@@ -3681,12 +3681,19 @@
     contextMenuEl.classList.add('hidden');
     contextMenuEl.setAttribute('aria-hidden', 'true');
     contextMenuEl.innerHTML = '';
+    // Clear any temporary UI holds created while the menu was open.
+    document.body.classList.remove('forgeos-sidebar-hold-open');
   }
 
-  function openContextMenu(items, x, y) {
+  function openContextMenu(items, x, y, opts) {
     if (!contextMenuEl) return;
     const list = Array.isArray(items) ? items : [];
     if (!list.length) return;
+
+    const options = opts && typeof opts === 'object' ? opts : {};
+    if (options.holdSidebarOpen === true) {
+      document.body.classList.add('forgeos-sidebar-hold-open');
+    }
 
     contextMenuEl.innerHTML = '';
 
@@ -9032,7 +9039,7 @@
     }
   }
 
-  function openInstalledAppMenu(app, x, y) {
+  function openInstalledAppMenu(app, x, y, originEl) {
     const id = String(app && app.id ? app.id : '').trim();
     if (!id) return;
     selectedAppId = id;
@@ -9045,6 +9052,8 @@
     const isOpen = isAppOpen(id);
     const launchable = isAppLaunchable(id);
     const isPinned = isPinnedToDrawer(id);
+    const holdSidebarOpen =
+      document.body.classList.contains('forgeos-sidebar-auto') && originEl instanceof Element && !!originEl.closest('.forgeos-sidebar');
 
     if (isVirtual) {
       const items = [
@@ -9081,7 +9090,7 @@
         },
       ];
 
-      openContextMenu(items, x, y);
+      openContextMenu(items, x, y, { holdSidebarOpen });
       return;
     }
 
@@ -9149,7 +9158,7 @@
       },
     ];
 
-    openContextMenu(items, x, y);
+    openContextMenu(items, x, y, { holdSidebarOpen });
   }
 
   async function uninstallAppFlow(appId, opts) {
@@ -9572,7 +9581,7 @@
       btn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        openInstalledAppMenu(app, e.clientX, e.clientY);
+        openInstalledAppMenu(app, e.clientX, e.clientY, btn);
       });
 
       btn.addEventListener('dblclick', (e) => {
@@ -9634,7 +9643,7 @@
       btn.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        openInstalledAppMenu(app, e.clientX, e.clientY);
+        openInstalledAppMenu(app, e.clientX, e.clientY, btn);
       });
 
       const top = document.createElement('div');
@@ -11877,6 +11886,7 @@
       ],
       e.clientX,
       e.clientY,
+      { holdSidebarOpen: document.body.classList.contains('forgeos-sidebar-auto') },
     );
   });
 
