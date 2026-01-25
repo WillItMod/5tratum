@@ -5584,13 +5584,41 @@ def system_metrics() -> dict:
 
     rx_bytes, tx_bytes = read_netdev_bytes()
 
+    storage_cfg = storage_config_get().get("config") if isinstance(storage_config_get(), dict) else None
+    storage_cfg = storage_cfg if isinstance(storage_cfg, dict) else {}
+    default_mount = _normalize_mountpoint(str(storage_cfg.get("default_mount") or ""))
+    mounts_raw = storage_cfg.get("mounts") if isinstance(storage_cfg.get("mounts"), list) else []
+    label_by_mp = {
+        _normalize_mountpoint(str(m.get("mountpoint") or "")): str(m.get("label") or "").strip()
+        for m in mounts_raw
+        if isinstance(m, dict) and str(m.get("mountpoint") or "").strip()
+    }
+
+    primary_disk_path = default_mount or _normalize_mountpoint(DATA_DIR) or "/"
+
     disks: list[dict] = []
-    for p in ["/", DATA_DIR]:
+    disk_candidates: list[tuple[str, str, str]] = []
+    disk_candidates.append(("/", "OS disk (system)", "os"))
+    data_mp = _normalize_mountpoint(DATA_DIR)
+    if data_mp:
+        disk_candidates.append((data_mp, label_by_mp.get(data_mp) or "Internal", "data"))
+    if default_mount and default_mount not in {"/", data_mp}:
+        disk_candidates.append((default_mount, label_by_mp.get(default_mount) or "Default storage", "default"))
+    for mp, lbl in sorted(label_by_mp.items(), key=lambda it: it[0]):
+        if not mp or mp in {"/", data_mp, default_mount}:
+            continue
+        disk_candidates.append((mp, lbl or "External drive", "external"))
+
+    seen_paths: set[str] = set()
+    for p, label, kind in disk_candidates:
+        if not p or p in seen_paths:
+            continue
+        seen_paths.add(p)
         du = disk_usage(p)
         if not du:
             continue
-        if any(d.get("path") == du.get("path") for d in disks):
-            continue
+        du["label"] = label
+        du["kind"] = kind
         disks.append(du)
 
     return {
@@ -5614,6 +5642,8 @@ def system_metrics() -> dict:
             "rx_bytes": rx_bytes,
             "tx_bytes": tx_bytes,
         },
+        "data_dir": DATA_DIR,
+        "primary_disk_path": primary_disk_path,
         "disks": disks,
     }
 

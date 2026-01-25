@@ -4448,8 +4448,12 @@
     if (metricMemSub) metricMemSub.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
 
     const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
+    const primaryPath = String(metrics.primary_disk_path || '').trim();
     const preferred =
-      disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
+      (primaryPath && disks.find((d) => d && d.path === primaryPath)) ||
+      disks.find((d) => d && d.path === '/srv/5tratumos-data') ||
+      disks.find((d) => d && d.path === '/') ||
+      null;
     if (preferred && metricDisk) {
       const dTotal = Number(preferred.total_bytes) || 0;
       const dUsed = Number(preferred.used_bytes) || 0;
@@ -10310,8 +10314,12 @@
       const memPct = total > 0 ? Math.max(0, Math.round((used / total) * 100)) : 0;
 
       const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
+      const primaryPath = String(metrics.primary_disk_path || '').trim();
       const preferred =
-        disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
+        (primaryPath && disks.find((d) => d && d.path === primaryPath)) ||
+        disks.find((d) => d && d.path === '/srv/5tratumos-data') ||
+        disks.find((d) => d && d.path === '/') ||
+        null;
       const diskText = preferred
         ? `${preferred.path} ${Math.round((Number(preferred.used_bytes || 0) / Math.max(1, Number(preferred.total_bytes || 0))) * 100)}%`
         : '-';
@@ -10568,7 +10576,12 @@
         const memPct = total > 0 ? Math.max(0, Math.round((used / total) * 100)) : 0;
 
         const disks = Array.isArray(m.disks) ? m.disks : [];
-        const preferred = disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
+        const primaryPath = String(m.primary_disk_path || '').trim();
+        const preferred =
+          (primaryPath && disks.find((d) => d && d.path === primaryPath)) ||
+          disks.find((d) => d && d.path === '/srv/5tratumos-data') ||
+          disks.find((d) => d && d.path === '/') ||
+          null;
         const diskPct =
           preferred && Number(preferred.total_bytes) > 0
             ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
