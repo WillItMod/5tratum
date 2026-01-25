@@ -41,10 +41,11 @@
     const metricCpuSub = document.getElementById('metric-cpu-sub');
     const metricCpuCores = document.getElementById('metric-cpu-cores');
     const metricCpuBar = document.getElementById('metric-cpu-bar');
-    const metricMemBar = document.getElementById('metric-mem-bar');
-    const metricMemSub = document.getElementById('metric-mem-sub');
-    const metricDiskBar = document.getElementById('metric-disk-bar');
+  const metricMemBar = document.getElementById('metric-mem-bar');
+  const metricMemSub = document.getElementById('metric-mem-sub');
+  const metricDiskBar = document.getElementById('metric-disk-bar');
   const metricDiskSub = document.getElementById('metric-disk-sub');
+  const metricDiskKeyEl = document.querySelector('#metric-card-disk .forgeos-desktop-metric__k');
 	  const dashboardAppsEl = document.getElementById('dashboard-apps');
 	  const dashboardAppsEmptyEl = document.getElementById('dashboard-apps-empty');
 	  const dashboardWidgetsEl = document.getElementById('dashboard-widgets');
@@ -4421,6 +4422,34 @@
     return { total, used, pct };
   }
 
+  function diskDisplayName(d) {
+    if (!d || typeof d !== 'object') return 'DISK';
+    const lbl = String(d.label || '').trim();
+    if (lbl) return lbl;
+    const p = String(d.path || '').trim();
+    if (!p) return 'DISK';
+    if (p === '/') return 'OS';
+    return p;
+  }
+
+  function diskCycleList(disks) {
+    const list = Array.isArray(disks) ? disks : [];
+    const nonOs = list.filter((d) => d && d.kind !== 'os');
+    const os = list.filter((d) => d && d.kind === 'os');
+    const out = [...nonOs, ...os];
+    const seen = new Set();
+    return out.filter((d) => {
+      const p = String(d && d.path ? d.path : '').trim();
+      if (!p) return false;
+      if (seen.has(p)) return false;
+      seen.add(p);
+      return true;
+    });
+  }
+
+  let diskCycleIdx = 0;
+  let diskCycleNextAt = 0;
+
   const _VERSION_RE = /^\s*v?(\d+(?:\.\d+)*)(?:[-+](.*))?\s*$/i;
 
   function versionKey(value) {
@@ -4543,28 +4572,32 @@
     if (metricMemSub) metricMemSub.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
 
     const disks = Array.isArray(metrics.disks) ? metrics.disks : [];
-    const primaryPath = String(metrics.primary_disk_path || '').trim();
-    const preferred =
-      (primaryPath && disks.find((d) => d && d.path === primaryPath)) ||
-      disks.find((d) => d && d.path === '/srv/5tratumos-data') ||
-      disks.find((d) => d && d.path === '/') ||
-      null;
-    if (preferred && metricDisk) {
-      const nonOs = disks.filter((d) => d && d.kind !== 'os');
-      const aggList = nonOs.length ? nonOs : disks;
-      const showCombined = aggList.length > 1;
-      const agg = showCombined ? aggregateDiskUsage(aggList) : null;
+    const cycle = diskCycleList(disks);
+    if (cycle.length) {
+      const now = Date.now();
+      if (!diskCycleNextAt) diskCycleNextAt = now + 5000;
+      if (now >= diskCycleNextAt) {
+        diskCycleIdx = (diskCycleIdx + 1) % cycle.length;
+        diskCycleNextAt = now + 5000;
+      }
 
-      const dTotal = showCombined ? Number(agg.total) || 0 : Number(preferred.total_bytes) || 0;
-      const dUsed = showCombined ? Number(agg.used) || 0 : Number(preferred.used_bytes) || 0;
+      const d = cycle[diskCycleIdx] || cycle[0];
+      const dTotal = Number(d.total_bytes) || 0;
+      const dUsed = Number(d.used_bytes) || 0;
+      const dAvail = Number(d.avail_bytes) || 0;
       const pctExact = dTotal > 0 ? (dUsed / dTotal) * 100 : 0;
 
-      metricDisk.textContent = formatPctCompact(pctExact);
+      if (metricDisk) metricDisk.textContent = formatPctCompact(pctExact);
       if (metricDiskBar) setMaskedGradientBar(metricDiskBar, pctForBar(pctExact));
 
-      const label = showCombined ? 'Storage' : String(preferred.path || 'disk');
-      metricDisk.title = `${label}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
-      if (metricDiskSub) metricDiskSub.textContent = `${label}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
+      const name = diskDisplayName(d);
+      if (metricDiskKeyEl) metricDiskKeyEl.textContent = `DISK: ${name}`;
+
+      const sub = `${formatBytes(dUsed)} / ${formatBytes(dTotal)} \u2022 Avail ${formatBytes(dAvail)}`;
+      if (metricDiskSub) metricDiskSub.textContent = sub;
+      if (metricDisk) metricDisk.title = `${name}: ${sub}`;
+    } else {
+      if (metricDiskKeyEl) metricDiskKeyEl.textContent = 'DISK';
     }
 
     if (metricNetBar || metricNetSub) {

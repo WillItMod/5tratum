@@ -915,6 +915,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-list {
   border-radius: 14px;
   padding: 8px 10px;
   transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
+  min-height: 76px;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-item,
@@ -1038,23 +1039,24 @@ body.forgeos-sidebar-auto .forgeos-app-item__logo {
 /* Collapsed app drawer: icon-only tiles that fill the card */
 body.forgeos-sidebar-collapsed .forgeos-app-item,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item {
-  padding: 0;
-  aspect-ratio: 1 / 1;
-  min-height: var(--forgeos-footer-tile);
-  overflow: hidden;
+  /* Keep the same row height/spacing as expanded so items don't shift vertically. */
+  padding: 8px 10px;
+  min-height: 76px;
+  aspect-ratio: auto;
+  overflow: visible;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-item__top,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__top {
-  display: block;
-  height: 100%;
+  display: flex;
+  height: auto;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-item__brand,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__brand {
-  display: block;
-  width: 100%;
-  height: 100%;
+  display: flex;
+  width: auto;
+  height: auto;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-item__right,
@@ -1065,14 +1067,14 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__right 
 body.forgeos-sidebar-collapsed .forgeos-app-item__logo,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item__logo {
   display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  border: 0;
-  background: transparent;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.18);
   object-fit: cover;
   object-position: center;
-  transform: scale(1.16);
+  transform: none;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-item--running,
@@ -1089,6 +1091,9 @@ body.forgeos-sidebar-auto .forgeos-app-item__top {
 body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__top {
   justify-content: space-between;
 }
+body.forgeos-sidebar-auto.forgeos-sidebar-hold-open .forgeos-app-item__top {
+  justify-content: space-between;
+}
 
 body.forgeos-sidebar-collapsed .forgeos-app-item .axe-pill,
 body.forgeos-sidebar-auto .forgeos-app-item .axe-pill {
@@ -1096,6 +1101,9 @@ body.forgeos-sidebar-auto .forgeos-app-item .axe-pill {
 }
 
 body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item .axe-pill {
+  display: inline-flex;
+}
+body.forgeos-sidebar-auto.forgeos-sidebar-hold-open .forgeos-app-item .axe-pill {
   display: inline-flex;
 }
 
@@ -1122,6 +1130,9 @@ body.forgeos-sidebar-auto .forgeos-app-item__stats {
 }
 
 body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__stats {
+  display: flex;
+}
+body.forgeos-sidebar-auto.forgeos-sidebar-hold-open .forgeos-app-item__stats {
   display: flex;
 }
 
