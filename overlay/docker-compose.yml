@@ -6,4 +6,6 @@ services:
     volumes:
       - ./portal:/usr/share/nginx/html:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - /opt/5tratumos/store:/opt/5tratumos/store:ro
+      # Use a relative path so the portal can serve store assets regardless of the host install root.
+      # (e.g. legacy installs may live under /opt/forgeos instead of /opt/5tratumos.)
+      - ../store:/opt/5tratumos/store:ro
