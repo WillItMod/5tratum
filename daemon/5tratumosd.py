@@ -1802,6 +1802,18 @@ AXE_SUITE_POOL_APP_IDS = {
     "axemig",
 }
 
+AXE_WIDGET_APP_IDS = {
+    "axebch",
+    "axedgb",
+    "axebtc",
+    "axebsv",
+}
+
+AXE_WIDGET_DEFS = [
+    {"id": "sync", "type": "text-with-progress", "refresh": "5s", "endpoint": "/api/widget/sync"},
+    {"id": "pool", "type": "three-stats", "refresh": "30s", "endpoint": "/api/widget/pool"},
+]
+
 APP_DISPLAY_NAME_OVERRIDES = {
     # Legacy store metadata may still expose "AxeBTCF" for the axebtc app id.
     "axebtc": "AxeBTC",
@@ -1815,6 +1827,16 @@ def _display_app_name(app_id: str, store_name: str | None) -> str:
         return override
     name = str(store_name or aid).strip()
     return name or aid
+
+
+def _axesuite_default_name(app_id: str) -> str:
+    aid = str(app_id or "").strip().lower()
+    override = APP_DISPLAY_NAME_OVERRIDES.get(aid)
+    if override:
+        return override
+    if aid.startswith("axe") and len(aid) > 3:
+        return f"Axe{aid[3:].upper()}"
+    return aid or "app"
 
 
 def _read_notify_config() -> dict:
@@ -4859,8 +4881,13 @@ def list_app_widgets() -> dict:
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         for app_id in list_installed_app_ids():
-            store_meta = store_app_by_id(app_id) or {}
-            widgets = store_meta.get("widgets") or []
+            store_meta = {}
+            widgets: list = []
+            if app_id in AXE_WIDGET_APP_IDS:
+                widgets = list(AXE_WIDGET_DEFS)
+            else:
+                store_meta = store_app_by_id(app_id) or {}
+                widgets = store_meta.get("widgets") or []
             if not isinstance(widgets, list) or not widgets:
                 continue
 
@@ -4868,14 +4895,13 @@ def list_app_widgets() -> dict:
             st = summarize_project_status(project)
             status = str(st.get("status") or "unknown")
 
+            # For known AxeSuite widgets, avoid expensive docker port probing.
             store_port = _store_declared_ui_port(app_id, store_meta)
-            port = store_port
-            if status == "running":
-                port = _detect_ui_port(app_id, store_port, require_http=True)
+            port = store_port if store_port else default_ui_ports(app_id)
 
             app_entry = {
                 "id": app_id,
-                "name": _display_app_name(app_id, store_meta.get("name")),
+                "name": _display_app_name(app_id, store_meta.get("name")) if store_meta else _axesuite_default_name(app_id),
                 "status": status,
                 "port": port,
                 "widgets": [],
@@ -4887,6 +4913,7 @@ def list_app_widgets() -> dict:
                 if not isinstance(item, dict):
                     continue
                 endpoint = _safe_str(item.get("endpoint")).strip()
+                wid = _safe_str(item.get("id")).strip().lower()
                 w = {
                     "id": _safe_str(item.get("id")).strip(),
                     "type": _safe_str(item.get("type")).strip(),
@@ -4901,7 +4928,8 @@ def list_app_widgets() -> dict:
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
                 # Keep widget aggregation snappy; use short timeouts and return partial results.
-                fut = pool.submit(_fetch_json, url, timeout_s=1, headers=_internal_auth_headers())
+                timeout_s = 1.0 if wid == "sync" else 3.0 if wid == "pool" else 1.5
+                fut = pool.submit(_fetch_json, url, timeout_s=int(timeout_s), headers=_internal_auth_headers())
                 widget_tasks.append((fut, w))
                 app_entry["widgets"].append(w)
 
@@ -4910,7 +4938,7 @@ def list_app_widgets() -> dict:
         if widget_tasks:
             done, pending = concurrent.futures.wait(
                 [t[0] for t in widget_tasks],
-                timeout=1.5,
+                timeout=3.4,
                 return_when=concurrent.futures.ALL_COMPLETED,
             )
             for fut, widget in widget_tasks:
@@ -4996,6 +5024,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
 
         pool_url = f"http://127.0.0.1:{port}/api/pool"
         workers_url = f"http://127.0.0.1:{port}/api/pool/workers"
+        widget_pool_url = f"http://127.0.0.1:{port}/api/widget/pool"
 
         pool_data: dict | None = None
         workers_data: dict | None = None
@@ -5016,6 +5045,41 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
         except Exception as e:
             entry["pool_error"] = str(e)
 
+        # Fallback: some apps have a slow /api/pool but a much faster /api/widget/pool.
+        # Use it to avoid UI timeouts and reduce "offline" flapping.
+        if pool_data is None:
+            try:
+                widget_raw = _fetch_json(widget_pool_url, timeout_s=3, headers=_internal_auth_headers())
+                if isinstance(widget_raw, dict) and isinstance(widget_raw.get("items"), list):
+                    hr = 0.0
+                    wk = 0
+                    best = None
+                    for it in widget_raw.get("items") or []:
+                        if not isinstance(it, dict):
+                            continue
+                        title = str(it.get("title") or "").strip().lower()
+                        text = str(it.get("text") or "").strip()
+                        sub = str(it.get("subtext") or "").strip().lower()
+                        if "hashrate" in title:
+                            try:
+                                hr = float(text) if text not in {"-", ""} else 0.0
+                            except Exception:
+                                hr = 0.0
+                            # If subtext looks like TH/s, we already have TH/s units.
+                        elif "worker" in title:
+                            try:
+                                wk = int(float(text)) if text not in {"-", ""} else 0
+                            except Exception:
+                                wk = 0
+                        elif "best" in title:
+                            best = text if text else best
+                    pool_data = {"hashrate_ths": float(hr), "workers": int(wk)}
+                    if best is not None:
+                        pool_data["best_share"] = best
+                    entry["pool_widget_fallback"] = True
+            except Exception:
+                pass
+
         if include_workers:
             try:
                 workers_raw = _fetch_json(workers_url, timeout_s=1, headers=_internal_auth_headers())
@@ -5026,21 +5090,26 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             except Exception as e:
                 entry["workers_error"] = str(e)
 
-        # Mark app status based on reachability instead of relying on Docker inspection here.
-        if pool_data is not None or (include_workers and workers_data is not None):
-            entry["status"] = "running"
-        else:
-            entry["status"] = "offline"
-
         # Use last-known-good values to avoid transient timeouts collapsing totals/graphs.
         if pool_data is None and cached_fresh and isinstance(cached.get("pool"), dict):
             pool_data = dict(cached.get("pool") or {})
-            entry["pool_stale"] = True
-            entry["stale"] = True
+            # Consider very recent cached values acceptable and don't mark them as unreachable.
+            if cached_age_s is not None and cached_age_s <= float(FLEET_HISTORY_SAMPLE_S) * 2:
+                entry["sample_ok"] = True
+            else:
+                entry["pool_stale"] = True
+                entry["stale"] = True
+                entry["sample_ok"] = False
+            entry.pop("pool_error", None)
         if include_workers and workers_data is None and cached_fresh and isinstance(cached.get("workers"), dict):
             workers_data = dict(cached.get("workers") or {})
-            entry["workers_stale"] = True
-            entry["stale"] = True
+            if cached_age_s is not None and cached_age_s <= float(FLEET_HISTORY_SAMPLE_S) * 2:
+                entry["sample_ok"] = True
+            else:
+                entry["workers_stale"] = True
+                entry["stale"] = True
+                entry["sample_ok"] = False
+            entry.pop("workers_error", None)
 
         if isinstance(pool_data, dict):
             pool_data["hashrate_ths"] = _pool_hashrate_ths(pool_data)
@@ -5048,6 +5117,12 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
                 pool_data["workers"] = int(pool_data.get("workers") or 0)
             except Exception:
                 pool_data["workers"] = 0
+
+        # Mark app status based on reachability/cached data, not Docker inspection.
+        if pool_data is not None or (include_workers and workers_data is not None):
+            entry["status"] = "running"
+        else:
+            entry["status"] = "offline"
 
         if pool_data is not None:
             entry["pool"] = pool_data
