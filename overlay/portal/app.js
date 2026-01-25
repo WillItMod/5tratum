@@ -4326,6 +4326,34 @@
     el.style.backgroundPosition = 'left center';
   }
 
+  function formatPctCompact(pctRaw) {
+    const pct = Number(pctRaw) || 0;
+    if (pct > 0 && pct < 1) return '<1%';
+    return `${Math.max(0, Math.round(pct))}%`;
+  }
+
+  function pctForBar(pctRaw) {
+    const pct = Number(pctRaw) || 0;
+    if (pct > 0 && pct < 1) return 1;
+    return Math.max(0, Math.min(100, Math.round(pct)));
+  }
+
+  function aggregateDiskUsage(disks) {
+    const list = Array.isArray(disks) ? disks : [];
+    let total = 0;
+    let used = 0;
+    for (const d of list) {
+      if (!d || typeof d !== 'object') continue;
+      const t = Number(d.total_bytes) || 0;
+      const u = Number(d.used_bytes) || 0;
+      if (t <= 0) continue;
+      total += t;
+      used += Math.max(0, Math.min(u, t));
+    }
+    const pct = total > 0 ? (used / total) * 100 : 0;
+    return { total, used, pct };
+  }
+
   const _VERSION_RE = /^\s*v?(\d+(?:\.\d+)*)(?:[-+](.*))?\s*$/i;
 
   function versionKey(value) {
@@ -4455,13 +4483,21 @@
       disks.find((d) => d && d.path === '/') ||
       null;
     if (preferred && metricDisk) {
-      const dTotal = Number(preferred.total_bytes) || 0;
-      const dUsed = Number(preferred.used_bytes) || 0;
-      const diskPct = dTotal > 0 ? Math.max(0, Math.round((dUsed / dTotal) * 100)) : 0;
-      metricDisk.textContent = `${diskPct}%`;
-      metricDisk.title = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
-      if (metricDiskBar) setMaskedGradientBar(metricDiskBar, diskPct);
-      if (metricDiskSub) metricDiskSub.textContent = `${preferred.path}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
+      const nonOs = disks.filter((d) => d && d.kind !== 'os');
+      const aggList = nonOs.length ? nonOs : disks;
+      const showCombined = aggList.length > 1;
+      const agg = showCombined ? aggregateDiskUsage(aggList) : null;
+
+      const dTotal = showCombined ? Number(agg.total) || 0 : Number(preferred.total_bytes) || 0;
+      const dUsed = showCombined ? Number(agg.used) || 0 : Number(preferred.used_bytes) || 0;
+      const pctExact = dTotal > 0 ? (dUsed / dTotal) * 100 : 0;
+
+      metricDisk.textContent = formatPctCompact(pctExact);
+      if (metricDiskBar) setMaskedGradientBar(metricDiskBar, pctForBar(pctExact));
+
+      const label = showCombined ? 'Storage' : String(preferred.path || 'disk');
+      metricDisk.title = `${label}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
+      if (metricDiskSub) metricDiskSub.textContent = `${label}: ${formatBytes(dUsed)} / ${formatBytes(dTotal)}`;
     }
 
     if (metricNetBar || metricNetSub) {
@@ -10504,7 +10540,7 @@
 
     const thead = document.createElement('thead');
     const trh = document.createElement('tr');
-    for (const label of ['MOUNT', 'USED', 'TOTAL', 'PCT']) {
+    for (const label of ['MOUNT', 'USED', 'TOTAL', 'USAGE']) {
       const th = document.createElement('th');
       th.textContent = label;
       trh.appendChild(th);
@@ -10518,14 +10554,43 @@
       const path = String(d.path || d.mount || '-') || '-';
       const used = Number(d.used_bytes);
       const total = Number(d.total_bytes);
-      const pct = total > 0 ? Math.round((Math.max(0, used) / total) * 100) : NaN;
-      const cols = [path, Number.isFinite(used) ? formatBytes(used) : '-', Number.isFinite(total) ? formatBytes(total) : '-', Number.isFinite(pct) ? `${pct}%` : '-'];
+      const pctExact = total > 0 ? (Math.max(0, used) / total) * 100 : NaN;
+
       const tr = document.createElement('tr');
-      for (const c of cols) {
-        const td = document.createElement('td');
-        td.textContent = c;
-        tr.appendChild(td);
+
+      const tdPath = document.createElement('td');
+      tdPath.textContent = path;
+      tr.appendChild(tdPath);
+
+      const tdUsed = document.createElement('td');
+      tdUsed.textContent = Number.isFinite(used) ? formatBytes(used) : '-';
+      tr.appendChild(tdUsed);
+
+      const tdTotal = document.createElement('td');
+      tdTotal.textContent = Number.isFinite(total) ? formatBytes(total) : '-';
+      tr.appendChild(tdTotal);
+
+      const tdUsage = document.createElement('td');
+      if (Number.isFinite(pctExact)) {
+        const label = document.createElement('div');
+        label.className = 'forgeos-mono';
+        label.textContent = formatPctCompact(pctExact);
+
+        const prog = document.createElement('div');
+        prog.className = 'forgeos-progress';
+        prog.style.marginTop = '6px';
+        const bar = document.createElement('div');
+        bar.className = 'forgeos-progress__bar';
+        setMaskedGradientBar(bar, pctForBar(pctExact));
+        prog.appendChild(bar);
+
+        tdUsage.appendChild(label);
+        tdUsage.appendChild(prog);
+      } else {
+        tdUsage.textContent = '-';
       }
+      tr.appendChild(tdUsage);
+
       tbody.appendChild(tr);
     }
     table.appendChild(tbody);
@@ -10582,17 +10647,20 @@
           disks.find((d) => d && d.path === '/srv/5tratumos-data') ||
           disks.find((d) => d && d.path === '/') ||
           null;
-        const diskPct =
-          preferred && Number(preferred.total_bytes) > 0
-            ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
-            : null;
+        const nonOs = disks.filter((d) => d && d.kind !== 'os');
+        const aggList = nonOs.length ? nonOs : disks;
+        const showCombined = aggList.length > 1;
+        const agg = showCombined ? aggregateDiskUsage(aggList) : null;
+        const dTotal = showCombined ? Number(agg.total) || 0 : Number(preferred && preferred.total_bytes) || 0;
+        const dUsed = showCombined ? Number(agg.used) || 0 : Number(preferred && preferred.used_bytes) || 0;
+        const diskPctExact = dTotal > 0 ? (dUsed / dTotal) * 100 : NaN;
 
         const uptime = formatUptime(m.uptime_s);
         let line = '';
         if (mode === 'mem') line = `Used ${formatBytes(used)} / ${formatBytes(total)} (${memPct}%) \u2022 Uptime ${uptime}`;
         else if (mode === 'disk')
           line = preferred
-            ? `${preferred.path} ${formatBytes(Number(preferred.used_bytes || 0))} / ${formatBytes(Number(preferred.total_bytes || 0))} (${diskPct ?? '-'}%) \u2022 Uptime ${uptime}`
+            ? `${showCombined ? 'Storage' : preferred.path} ${formatBytes(dUsed)} / ${formatBytes(dTotal)} (${Number.isFinite(diskPctExact) ? formatPctCompact(diskPctExact) : '-'}) \u2022 Uptime ${uptime}`
             : `Uptime ${uptime}`;
         else line = `Total ${cpuPct}% \u2022 ${cores} cores \u2022 load1 ${load1.toFixed(2)} \u2022 Uptime ${uptime}`;
 
