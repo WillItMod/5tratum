@@ -4928,8 +4928,8 @@ def list_app_widgets() -> dict:
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
                 # Keep widget aggregation snappy; use short timeouts and return partial results.
-                timeout_s = 1.0 if wid == "sync" else 3.0 if wid == "pool" else 1.5
-                fut = pool.submit(_fetch_json, url, timeout_s=int(timeout_s), headers=_internal_auth_headers())
+                timeout_s = 1.0 if wid == "sync" else 2.6 if wid == "pool" else 1.5
+                fut = pool.submit(_fetch_json, url, timeout_s=timeout_s, headers=_internal_auth_headers())
                 widget_tasks.append((fut, w))
                 app_entry["widgets"].append(w)
 
@@ -4938,7 +4938,7 @@ def list_app_widgets() -> dict:
         if widget_tasks:
             done, pending = concurrent.futures.wait(
                 [t[0] for t in widget_tasks],
-                timeout=3.4,
+                timeout=2.9,
                 return_when=concurrent.futures.ALL_COMPLETED,
             )
             for fut, widget in widget_tasks:
@@ -5029,27 +5029,12 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
         pool_data: dict | None = None
         workers_data: dict | None = None
 
-        try:
-            pool_raw = _fetch_json(pool_url, timeout_s=1, headers=_internal_auth_headers())
-            if isinstance(pool_raw, dict):
-                pool_data = pool_raw
-                # Normalize core fields so the UI + totals stay consistent across apps.
-                # Some pool APIs return different keys (e.g. "hashrate") or None.
-                pool_data["hashrate_ths"] = _pool_hashrate_ths(pool_data)
-                try:
-                    pool_data["workers"] = int(pool_data.get("workers") or 0)
-                except Exception:
-                    pool_data["workers"] = 0
-            else:
-                entry["pool_error"] = "invalid pool response"
-        except Exception as e:
-            entry["pool_error"] = str(e)
+        # Some apps (notably AxeBSV) can be very slow on /api/pool; prefer the widget endpoint.
+        prefer_widget = app_id == "axebsv"
 
-        # Fallback: some apps have a slow /api/pool but a much faster /api/widget/pool.
-        # Use it to avoid UI timeouts and reduce "offline" flapping.
-        if pool_data is None:
+        if prefer_widget:
             try:
-                widget_raw = _fetch_json(widget_pool_url, timeout_s=3, headers=_internal_auth_headers())
+                widget_raw = _fetch_json(widget_pool_url, timeout_s=2.6, headers=_internal_auth_headers())
                 if isinstance(widget_raw, dict) and isinstance(widget_raw.get("items"), list):
                     hr = 0.0
                     wk = 0
@@ -5079,6 +5064,55 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
                     entry["pool_widget_fallback"] = True
             except Exception:
                 pass
+        else:
+            try:
+                pool_raw = _fetch_json(pool_url, timeout_s=0.8, headers=_internal_auth_headers())
+                if isinstance(pool_raw, dict):
+                    pool_data = pool_raw
+                    # Normalize core fields so the UI + totals stay consistent across apps.
+                    # Some pool APIs return different keys (e.g. "hashrate") or None.
+                    pool_data["hashrate_ths"] = _pool_hashrate_ths(pool_data)
+                    try:
+                        pool_data["workers"] = int(pool_data.get("workers") or 0)
+                    except Exception:
+                        pool_data["workers"] = 0
+                else:
+                    entry["pool_error"] = "invalid pool response"
+            except Exception as e:
+                entry["pool_error"] = str(e)
+
+            # Fallback: some apps have a slow /api/pool but a much faster /api/widget/pool.
+            # Use it to avoid UI timeouts and reduce "offline" flapping.
+            if pool_data is None:
+                try:
+                    widget_raw = _fetch_json(widget_pool_url, timeout_s=2.6, headers=_internal_auth_headers())
+                    if isinstance(widget_raw, dict) and isinstance(widget_raw.get("items"), list):
+                        hr = 0.0
+                        wk = 0
+                        best = None
+                        for it in widget_raw.get("items") or []:
+                            if not isinstance(it, dict):
+                                continue
+                            title = str(it.get("title") or "").strip().lower()
+                            text = str(it.get("text") or "").strip()
+                            if "hashrate" in title:
+                                try:
+                                    hr = float(text) if text not in {"-", ""} else 0.0
+                                except Exception:
+                                    hr = 0.0
+                            elif "worker" in title:
+                                try:
+                                    wk = int(float(text)) if text not in {"-", ""} else 0
+                                except Exception:
+                                    wk = 0
+                            elif "best" in title:
+                                best = text if text else best
+                        pool_data = {"hashrate_ths": float(hr), "workers": int(wk)}
+                        if best is not None:
+                            pool_data["best_share"] = best
+                        entry["pool_widget_fallback"] = True
+                except Exception:
+                    pass
 
         if include_workers:
             try:
@@ -5388,7 +5422,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             futures,
             # Worst case per pool is two 1s HTTP calls + JSON parsing. Keep above 2s so we don't
             # regularly drop all results and show 0/0 totals.
-            timeout=3.2,
+            timeout=2.9,
             return_when=concurrent.futures.ALL_COMPLETED,
         )
         for fut in done:
