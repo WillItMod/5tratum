@@ -84,6 +84,7 @@ UI_CONFIG_FILE = str(_env("UI_CONFIG_FILE", "/etc/5tratumos/ui.json") or "/etc/5
 API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
+UPDATE_ALLOW_CHANNEL_MISMATCH = str(_env("UPDATE_ALLOW_CHANNEL_MISMATCH", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
 # Workers with 0 hashrate and a last-share older than this are considered stale and are hidden
@@ -3261,6 +3262,16 @@ def system_update_apply(channel: str | None = None) -> dict:
                 stage_daemon = _coalesce_nested_dir(root=stage_root / "daemon", nested_name="daemon", marker="5tratumosd.py")
                 stage_systemd = stage_root / "systemd"
                 stage_bin = stage_root / "bin" / "5tratumos"
+                stage_build = _read_json(str(stage_root / "bootstrap" / "build.json"))
+                bundle_ch = str(stage_build.get("channel") or "").strip().lower() if isinstance(stage_build, dict) else ""
+                if bundle_ch and bundle_ch != ch and not UPDATE_ALLOW_CHANNEL_MISMATCH:
+                    update_status_write(
+                        "error",
+                        target_tag=target_tag,
+                        error=f"channel mismatch: bundle={bundle_ch} requested={ch}",
+                        progress=100,
+                    )
+                    return
 
                 cur_overlay = Path(ROOT_DIR) / "overlay"
                 cur_daemon = Path(ROOT_DIR) / "daemon"
