@@ -4457,6 +4457,25 @@ _FLEET_CACHE: dict[str, dict] = {}
 _FLEET_POOL_CACHE_LOCK = threading.Lock()
 _FLEET_POOL_CACHE: dict[str, dict] = {}
 
+FLEET_POOL_CACHE_FILE = str(
+    _env("FLEET_POOL_CACHE_FILE", os.path.join(STATE_DIR, "fleet_pool_cache.json"))
+    or os.path.join(STATE_DIR, "fleet_pool_cache.json")
+)
+FLEET_POOL_CACHE_SAVE_EVERY_S = float(str(_env("FLEET_POOL_CACHE_SAVE_EVERY_S", "30") or "30").strip() or "30")
+_FLEET_POOL_CACHE_LAST_SAVE = 0.0
+
+_WIDGET_ENDPOINT_CACHE_LOCK = threading.Lock()
+_WIDGET_ENDPOINT_CACHE: dict[str, dict] = {}
+WIDGET_ENDPOINT_CACHE_FILE = str(
+    _env("WIDGET_ENDPOINT_CACHE_FILE", os.path.join(STATE_DIR, "widget_endpoint_cache.json"))
+    or os.path.join(STATE_DIR, "widget_endpoint_cache.json")
+)
+WIDGET_ENDPOINT_CACHE_SAVE_EVERY_S = float(
+    str(_env("WIDGET_ENDPOINT_CACHE_SAVE_EVERY_S", "30") or "30").strip() or "30"
+)
+WIDGET_ENDPOINT_STALE_S = float(str(_env("WIDGET_ENDPOINT_STALE_S", "600") or "600").strip() or "600")
+_WIDGET_ENDPOINT_CACHE_LAST_SAVE = 0.0
+
 _DASHBOARD_CACHE_LOCK = threading.Lock()
 _DASHBOARD_CACHE: dict[str, dict] = {}
 
@@ -4573,6 +4592,57 @@ def _fleet_pool_cache_get(app_id: str) -> dict | None:
     return None
 
 
+def _fleet_pool_cache_load() -> None:
+    try:
+        path = Path(FLEET_POOL_CACHE_FILE)
+        if not path.is_file():
+            return
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+        cleaned: dict[str, dict] = {}
+        for aid, item in raw.items():
+            if not isinstance(item, dict):
+                continue
+            aid_norm = str(aid or "").strip().lower()
+            if not aid_norm:
+                continue
+            try:
+                t = float(item.get("time") or 0.0)
+            except Exception:
+                t = 0.0
+            if t <= 0:
+                continue
+            entry: dict = {"time": t}
+            if isinstance(item.get("pool"), dict):
+                entry["pool"] = item.get("pool")
+            if isinstance(item.get("workers"), dict):
+                entry["workers"] = item.get("workers")
+            cleaned[aid_norm] = entry
+        with _FLEET_POOL_CACHE_LOCK:
+            _FLEET_POOL_CACHE.clear()
+            _FLEET_POOL_CACHE.update(cleaned)
+    except Exception:
+        return
+
+
+def _fleet_pool_cache_save(*, force: bool = False) -> None:
+    global _FLEET_POOL_CACHE_LAST_SAVE
+    try:
+        now = time.time()
+        if not force and now - float(_FLEET_POOL_CACHE_LAST_SAVE) < float(FLEET_POOL_CACHE_SAVE_EVERY_S):
+            return
+        with _FLEET_POOL_CACHE_LOCK:
+            snapshot = dict(_FLEET_POOL_CACHE)
+        if not snapshot:
+            return
+        os.makedirs(os.path.dirname(FLEET_POOL_CACHE_FILE), exist_ok=True)
+        _write_json_atomic(FLEET_POOL_CACHE_FILE, snapshot)
+        _FLEET_POOL_CACHE_LAST_SAVE = now
+    except Exception:
+        return
+
+
 def _fleet_pool_cache_set(app_id: str, *, pool: dict | None, workers: dict | None) -> None:
     aid = str(app_id or "").strip().lower()
     if not aid:
@@ -4584,6 +4654,77 @@ def _fleet_pool_cache_set(app_id: str, *, pool: dict | None, workers: dict | Non
         entry["workers"] = workers
     with _FLEET_POOL_CACHE_LOCK:
         _FLEET_POOL_CACHE[aid] = entry
+    _fleet_pool_cache_save()
+
+
+def _widget_endpoint_cache_key(app_id: str, widget_id: str) -> str:
+    return f"{str(app_id or '').strip().lower()}:{str(widget_id or '').strip().lower()}"
+
+
+def _widget_endpoint_cache_get(app_id: str, widget_id: str) -> dict | None:
+    key = _widget_endpoint_cache_key(app_id, widget_id)
+    if key == ":":
+        return None
+    with _WIDGET_ENDPOINT_CACHE_LOCK:
+        v = _WIDGET_ENDPOINT_CACHE.get(key)
+        if isinstance(v, dict):
+            return dict(v)
+    return None
+
+
+def _widget_endpoint_cache_set(app_id: str, widget_id: str, data: dict | list | str | int | float | bool | None) -> None:
+    key = _widget_endpoint_cache_key(app_id, widget_id)
+    if key == ":":
+        return
+    entry = {"time": time.time(), "data": data}
+    with _WIDGET_ENDPOINT_CACHE_LOCK:
+        _WIDGET_ENDPOINT_CACHE[key] = entry
+    _widget_endpoint_cache_save()
+
+
+def _widget_endpoint_cache_load() -> None:
+    try:
+        path = Path(WIDGET_ENDPOINT_CACHE_FILE)
+        if not path.is_file():
+            return
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+        cleaned: dict[str, dict] = {}
+        for k, item in raw.items():
+            if not isinstance(k, str) or ":" not in k:
+                continue
+            if not isinstance(item, dict):
+                continue
+            try:
+                t = float(item.get("time") or 0.0)
+            except Exception:
+                t = 0.0
+            if t <= 0:
+                continue
+            cleaned[k] = {"time": t, "data": item.get("data")}
+        with _WIDGET_ENDPOINT_CACHE_LOCK:
+            _WIDGET_ENDPOINT_CACHE.clear()
+            _WIDGET_ENDPOINT_CACHE.update(cleaned)
+    except Exception:
+        return
+
+
+def _widget_endpoint_cache_save(*, force: bool = False) -> None:
+    global _WIDGET_ENDPOINT_CACHE_LAST_SAVE
+    try:
+        now = time.time()
+        if not force and now - float(_WIDGET_ENDPOINT_CACHE_LAST_SAVE) < float(WIDGET_ENDPOINT_CACHE_SAVE_EVERY_S):
+            return
+        with _WIDGET_ENDPOINT_CACHE_LOCK:
+            snapshot = dict(_WIDGET_ENDPOINT_CACHE)
+        if not snapshot:
+            return
+        os.makedirs(os.path.dirname(WIDGET_ENDPOINT_CACHE_FILE), exist_ok=True)
+        _write_json_atomic(WIDGET_ENDPOINT_CACHE_FILE, snapshot)
+        _WIDGET_ENDPOINT_CACHE_LAST_SAVE = now
+    except Exception:
+        return
 
 
 def _fleet_sampler_loop() -> None:
@@ -4982,6 +5123,28 @@ def _fetch_json(
     return json.loads(raw)
 
 
+_REFRESH_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([smh]?)\s*$", re.IGNORECASE)
+
+
+def _parse_refresh_s(value: object, *, default: float = 10.0) -> float:
+    raw = str(value or "").strip()
+    if not raw:
+        return float(default)
+    m = _REFRESH_RE.match(raw)
+    if not m:
+        return float(default)
+    try:
+        n = float(m.group(1))
+    except Exception:
+        return float(default)
+    unit = (m.group(2) or "s").lower()
+    if unit == "m":
+        return n * 60.0
+    if unit == "h":
+        return n * 3600.0
+    return n
+
+
 def list_app_widgets() -> dict:
     cache = _WIDGET_CACHE.get("widgets") or {}
     now = time.time()
@@ -4991,7 +5154,7 @@ def list_app_widgets() -> dict:
         return {"ok": True, "time": _now_iso(), "apps": cache.get("apps") or []}
 
     apps_out: list[dict] = []
-    widget_tasks: list[tuple[concurrent.futures.Future, dict, dict]] = []
+    widget_tasks: list[tuple[concurrent.futures.Future, dict, dict, str, str, dict | None]] = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         # Mining Overview is currently intended for AxeSuite apps.
@@ -5027,6 +5190,7 @@ def list_app_widgets() -> dict:
                     continue
                 endpoint = _safe_str(item.get("endpoint")).strip()
                 wid = _safe_str(item.get("id")).strip().lower()
+                refresh_s = _parse_refresh_s(item.get("refresh"), default=10.0)
                 w = {
                     "id": _safe_str(item.get("id")).strip(),
                     "type": _safe_str(item.get("type")).strip(),
@@ -5043,31 +5207,53 @@ def list_app_widgets() -> dict:
                     app_entry["widgets"].append(w)
                     continue
                 url = f"http://127.0.0.1:{port}{path}"
-                # Keep widget aggregation snappy; use short timeouts and return partial results.
-                timeout_s = 1.0 if wid == "sync" else 2.6 if wid == "pool" else 1.5
+                cached = _widget_endpoint_cache_get(app_id, wid)
+                cached_age_s = None
+                if isinstance(cached, dict) and cached.get("time"):
+                    try:
+                        cached_age_s = now - float(cached.get("time") or 0.0)
+                    except Exception:
+                        cached_age_s = None
+                # Respect widget refresh hints to reduce load (especially for slow endpoints).
+                if cached_age_s is not None and cached_age_s >= 0 and cached_age_s <= float(refresh_s):
+                    w["data"] = cached.get("data")
+                    w["ok"] = True
+                    app_entry["_any_widget_ok"] = True
+                    app_entry["widgets"].append(w)
+                    continue
+
+                # Keep widget aggregation snappy: use short timeouts but fall back to cached values.
+                timeout_s = 1.5 if wid == "sync" else 4.8 if wid == "pool" and app_id == "axebsv" else 2.6 if wid == "pool" else 1.8
                 fut = pool.submit(_fetch_json, url, timeout_s=timeout_s, headers=_internal_auth_headers())
-                widget_tasks.append((fut, w, app_entry))
+                widget_tasks.append((fut, w, app_entry, app_id, wid, cached))
                 app_entry["widgets"].append(w)
 
             apps_out.append(app_entry)
 
         if widget_tasks:
-            done, pending = concurrent.futures.wait(
-                [t[0] for t in widget_tasks],
-                timeout=2.9,
-                return_when=concurrent.futures.ALL_COMPLETED,
-            )
-            for fut, widget, app_entry in widget_tasks:
-                if fut in done:
-                    try:
-                        widget["data"] = fut.result()
+            for fut, widget, app_entry, aid, wid, cached in widget_tasks:
+                try:
+                    data = fut.result()
+                    widget["data"] = data
+                    widget["ok"] = True
+                    app_entry["_any_widget_ok"] = True
+                    _widget_endpoint_cache_set(aid, wid, data)
+                except Exception as e:
+                    err = str(e) or "error"
+                    widget["error"] = err
+                    # Use last-known-good values to avoid "offline/online" flapping.
+                    cached_age_s = None
+                    if isinstance(cached, dict) and cached.get("time"):
+                        try:
+                            cached_age_s = now - float(cached.get("time") or 0.0)
+                        except Exception:
+                            cached_age_s = None
+                    if cached_age_s is not None and cached_age_s >= 0 and cached_age_s <= float(WIDGET_ENDPOINT_STALE_S):
+                        widget["data"] = cached.get("data")
                         widget["ok"] = True
+                        widget["stale"] = True
+                        widget["stale_age_s"] = int(cached_age_s)
                         app_entry["_any_widget_ok"] = True
-                    except Exception as e:
-                        widget["error"] = str(e)
-                else:
-                    widget["error"] = "timeout"
-                    fut.cancel()
 
     # If any widget endpoint was reachable, treat the app as running for the Mining Overview UX.
     for app in apps_out:
@@ -5151,48 +5337,74 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
         pool_data: dict | None = None
         workers_data: dict | None = None
 
-        # Some apps (notably AxeBSV) can be very slow on /api/pool; prefer the widget endpoint.
-        prefer_widget = app_id == "axebsv"
-
-        if prefer_widget:
+        # Prefer widget endpoints (fast + stable) and use cached values to avoid offline/online flapping.
+        widget_timeout_s = 4.8 if aid == "axebsv" else 2.6
+        widget_max_age_s = max(5.0, float(FLEET_HISTORY_SAMPLE_S))
+        widget_cached = _widget_endpoint_cache_get(aid, "pool")
+        widget_cached_age_s = None
+        if isinstance(widget_cached, dict) and widget_cached.get("time"):
             try:
-                widget_raw = _fetch_json(widget_pool_url, timeout_s=2.6, headers=_internal_auth_headers())
-                if isinstance(widget_raw, dict) and isinstance(widget_raw.get("items"), list):
-                    hr = 0.0
-                    wk = 0
-                    best = None
-                    for it in widget_raw.get("items") or []:
-                        if not isinstance(it, dict):
-                            continue
-                        title = str(it.get("title") or "").strip().lower()
-                        text = str(it.get("text") or "").strip()
-                        sub = str(it.get("subtext") or "").strip().lower()
-                        if "hashrate" in title:
-                            try:
-                                hr = float(text) if text not in {"-", ""} else 0.0
-                            except Exception:
-                                hr = 0.0
-                            # If subtext looks like TH/s, we already have TH/s units.
-                        elif "worker" in title:
-                            try:
-                                wk = int(float(text)) if text not in {"-", ""} else 0
-                            except Exception:
-                                wk = 0
-                        elif "best" in title:
-                            best = text if text else best
-                    pool_data = {"hashrate_ths": float(hr), "workers": int(wk)}
-                    if best is not None:
-                        pool_data["best_share"] = best
-                    entry["pool_widget_fallback"] = True
+                widget_cached_age_s = time.time() - float(widget_cached.get("time") or 0.0)
             except Exception:
-                pass
-        else:
+                widget_cached_age_s = None
+
+        widget_raw: dict | None = None
+        used_widget_cache = False
+        if widget_cached_age_s is not None and widget_cached_age_s >= 0 and widget_cached_age_s <= float(widget_max_age_s):
+            widget_raw = widget_cached.get("data") if isinstance(widget_cached.get("data"), dict) else None
+            used_widget_cache = widget_raw is not None
+        if widget_raw is None:
+            try:
+                fetched = _fetch_json(widget_pool_url, timeout_s=widget_timeout_s, headers=_internal_auth_headers())
+                if isinstance(fetched, dict):
+                    widget_raw = fetched
+                    _widget_endpoint_cache_set(aid, "pool", fetched)
+            except Exception as e:
+                entry["pool_error"] = str(e)
+                if (
+                    widget_cached_age_s is not None
+                    and widget_cached_age_s >= 0
+                    and widget_cached_age_s <= float(WIDGET_ENDPOINT_STALE_S)
+                ):
+                    widget_raw = widget_cached.get("data") if isinstance(widget_cached.get("data"), dict) else None
+                    if widget_raw is not None:
+                        used_widget_cache = True
+                        entry["pool_widget_stale"] = True
+
+        if isinstance(widget_raw, dict) and isinstance(widget_raw.get("items"), list):
+            hr = 0.0
+            wk = 0
+            best = None
+            for it in widget_raw.get("items") or []:
+                if not isinstance(it, dict):
+                    continue
+                title = str(it.get("title") or "").strip().lower()
+                text = str(it.get("text") or "").strip()
+                if "hashrate" in title:
+                    try:
+                        hr = float(text) if text not in {"-", ""} else 0.0
+                    except Exception:
+                        hr = 0.0
+                elif "worker" in title:
+                    try:
+                        wk = int(float(text)) if text not in {"-", ""} else 0
+                    except Exception:
+                        wk = 0
+                elif "best" in title:
+                    best = text if text else best
+            pool_data = {"hashrate_ths": float(hr), "workers": int(wk)}
+            if best is not None:
+                pool_data["best_share"] = best
+            entry["pool_widget_fallback"] = True
+            if used_widget_cache:
+                entry["pool_widget_cached"] = True
+
+        # Compatibility fallback for any pool that doesn't expose widget stats.
+        if pool_data is None:
             try:
                 pool_raw = _fetch_json(pool_url, timeout_s=0.8, headers=_internal_auth_headers())
                 if isinstance(pool_raw, dict):
                     pool_data = pool_raw
-                    # Normalize core fields so the UI + totals stay consistent across apps.
-                    # Some pool APIs return different keys (e.g. "hashrate") or None.
                     pool_data["hashrate_ths"] = _pool_hashrate_ths(pool_data)
                     try:
                         pool_data["workers"] = int(pool_data.get("workers") or 0)
@@ -5201,50 +5413,29 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
                 else:
                     entry["pool_error"] = "invalid pool response"
             except Exception as e:
-                entry["pool_error"] = str(e)
-
-            # Fallback: some apps have a slow /api/pool but a much faster /api/widget/pool.
-            # Use it to avoid UI timeouts and reduce "offline" flapping.
-            if pool_data is None:
-                try:
-                    widget_raw = _fetch_json(widget_pool_url, timeout_s=2.6, headers=_internal_auth_headers())
-                    if isinstance(widget_raw, dict) and isinstance(widget_raw.get("items"), list):
-                        hr = 0.0
-                        wk = 0
-                        best = None
-                        for it in widget_raw.get("items") or []:
-                            if not isinstance(it, dict):
-                                continue
-                            title = str(it.get("title") or "").strip().lower()
-                            text = str(it.get("text") or "").strip()
-                            if "hashrate" in title:
-                                try:
-                                    hr = float(text) if text not in {"-", ""} else 0.0
-                                except Exception:
-                                    hr = 0.0
-                            elif "worker" in title:
-                                try:
-                                    wk = int(float(text)) if text not in {"-", ""} else 0
-                                except Exception:
-                                    wk = 0
-                            elif "best" in title:
-                                best = text if text else best
-                        pool_data = {"hashrate_ths": float(hr), "workers": int(wk)}
-                        if best is not None:
-                            pool_data["best_share"] = best
-                        entry["pool_widget_fallback"] = True
-                except Exception:
-                    pass
+                entry.setdefault("pool_error", str(e))
 
         if include_workers:
-            try:
-                workers_raw = _fetch_json(workers_url, timeout_s=1, headers=_internal_auth_headers())
-                if isinstance(workers_raw, dict):
-                    workers_data = workers_raw
-                else:
-                    entry["workers_error"] = "invalid workers response"
-            except Exception as e:
-                entry["workers_error"] = str(e)
+            # Avoid hammering /api/pool/workers (can be expensive on some apps).
+            workers_refresh_s = max(10.0, float(FLEET_HISTORY_SAMPLE_S) * 2)
+            if (
+                cached_age_s is not None
+                and cached_age_s >= 0
+                and cached_age_s <= float(workers_refresh_s)
+                and isinstance(cached.get("workers"), dict)
+            ):
+                workers_data = dict(cached.get("workers") or {})
+                entry["workers_cached"] = True
+            else:
+                try:
+                    timeout_s = 2.0 if aid == "axebsv" else 1.2
+                    workers_raw = _fetch_json(workers_url, timeout_s=timeout_s, headers=_internal_auth_headers())
+                    if isinstance(workers_raw, dict):
+                        workers_data = workers_raw
+                    else:
+                        entry["workers_error"] = "invalid workers response"
+                except Exception as e:
+                    entry["workers_error"] = str(e)
 
         # Use last-known-good values to avoid transient timeouts collapsing totals/graphs.
         if pool_data is None and cached_fresh and isinstance(cached.get("pool"), dict):
@@ -5540,15 +5731,11 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
     pool_app_ids = _fleet_pool_app_ids()
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
         futures = [pool.submit(_fetch_pool, app_id) for app_id in pool_app_ids]
-        done, pending = concurrent.futures.wait(
-            futures,
-            # Worst case per pool is two 1s HTTP calls + JSON parsing. Keep above 2s so we don't
-            # regularly drop all results and show 0/0 totals.
-            timeout=2.9,
-            return_when=concurrent.futures.ALL_COMPLETED,
-        )
-        for fut in done:
-            entry, details = fut.result()
+        for fut in futures:
+            try:
+                entry, details = fut.result()
+            except Exception:
+                continue
             if not entry:
                 continue
             pools.append(entry)
@@ -5559,8 +5746,6 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             for w in details:
                 if isinstance(w, dict):
                     workers_out.append(w)
-        for fut in pending:
-            fut.cancel()
 
     def worker_hashrate_key(w: dict) -> float:
         for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
@@ -7800,6 +7985,8 @@ def main() -> int:
 
     _installed_registry_bootstrap()
     _fleet_history_load()
+    _fleet_pool_cache_load()
+    _widget_endpoint_cache_load()
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(f"5tratumosd listening on http://{args.host}:{args.port}\n")
