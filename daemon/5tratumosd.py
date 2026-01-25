@@ -1779,14 +1779,41 @@ def system_storage_orphans_delete(body: dict) -> dict:
     return {"ok": True, "time": _now_iso(), "paths": deleted_paths, "containers": deleted_containers}
 
 
+# Apps that are part of the “AxeSuite” ecosystem.
+# NOTE: Keep pool apps in sync with AXE_SUITE_POOL_APP_IDS below.
 AXE_SUITE_APP_IDS = {
     "axebch",
     "axedgb",
     "axebtc",
+    "axebsv",
     "axelive",
     "axebench",
     "axemig",
 }
+
+# Subset: apps that expose a pool API used by Fleet.
+# (Do not include non-pool apps like axebench/axelive here.)
+AXE_SUITE_POOL_APP_IDS = {
+    "axebch",
+    "axedgb",
+    "axebtc",
+    "axebsv",
+    "axemig",
+}
+
+APP_DISPLAY_NAME_OVERRIDES = {
+    # Legacy store metadata may still expose "AxeBTCF" for the axebtc app id.
+    "axebtc": "AxeBTC",
+}
+
+
+def _display_app_name(app_id: str, store_name: str | None) -> str:
+    aid = str(app_id or "").strip().lower()
+    override = APP_DISPLAY_NAME_OVERRIDES.get(aid)
+    if override:
+        return override
+    name = str(store_name or aid).strip()
+    return name or aid
 
 
 def _read_notify_config() -> dict:
@@ -2795,10 +2822,15 @@ def _select_release(channel: str) -> dict:
                 continue
             if not rel.get("tag_name"):
                 continue
+            tag_name = str(rel.get("tag_name") or "").strip()
             prerelease = rel.get("prerelease") is True
-            if ch == "main" and prerelease:
+            # Guardrail: treat "-dev" tags as DEV-only even if a release was published without
+            # GitHub's prerelease flag (prevents DEV builds leaking into MAIN channel checks).
+            tag_is_dev = "-dev" in tag_name.lower()
+            is_dev_release = bool(prerelease or tag_is_dev)
+            if ch == "main" and is_dev_release:
                 continue
-            if ch == "dev" and not prerelease:
+            if ch == "dev" and not is_dev_release:
                 continue
             return {"ok": True, "release": rel}
 
@@ -4245,8 +4277,8 @@ _FLEET_POOL_CACHE: dict[str, dict] = {}
 _FLEET_HISTORY_LOCK = threading.Lock()
 _FLEET_HISTORY: list[dict] = []
 FLEET_HISTORY_FILE = str(_env("FLEET_HISTORY_FILE", os.path.join(STATE_DIR, "fleet_history.json")) or os.path.join(STATE_DIR, "fleet_history.json"))
-FLEET_HISTORY_MAX_POINTS = int(str(_env("FLEET_HISTORY_MAX_POINTS", "720") or "720").strip() or "720")
-FLEET_HISTORY_SAMPLE_S = float(str(_env("FLEET_HISTORY_SAMPLE_S", "30") or "30").strip() or "30")
+FLEET_HISTORY_MAX_POINTS = int(str(_env("FLEET_HISTORY_MAX_POINTS", "2160") or "2160").strip() or "2160")
+FLEET_HISTORY_SAMPLE_S = float(str(_env("FLEET_HISTORY_SAMPLE_S", "10") or "10").strip() or "10")
 FLEET_HISTORY_POOL_STALE_S = float(str(_env("FLEET_HISTORY_POOL_STALE_S", "600") or "600").strip() or "600")
 FLEET_HISTORY_SAVE_EVERY_S = float(str(_env("FLEET_HISTORY_SAVE_EVERY_S", "60") or "60").strip() or "60")
 
@@ -4718,21 +4750,18 @@ def list_app_widgets() -> dict:
             if not isinstance(widgets, list) or not widgets:
                 continue
 
-            port = default_ui_ports(app_id)
-            if port is None:
-                try:
-                    sp = int(str(store_meta.get("port") or "").strip() or "0")
-                except Exception:
-                    sp = 0
-                port = sp or None
-
             project = docker_compose_project(app_id)
             st = summarize_project_status(project)
             status = str(st.get("status") or "unknown")
 
+            store_port = _store_declared_ui_port(app_id, store_meta)
+            port = store_port
+            if status == "running":
+                port = _detect_ui_port(app_id, store_port, require_http=True)
+
             app_entry = {
                 "id": app_id,
-                "name": str(store_meta.get("name") or app_id),
+                "name": _display_app_name(app_id, store_meta.get("name")),
                 "status": status,
                 "port": port,
                 "widgets": [],
@@ -4801,39 +4830,54 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
     total_workers = 0
 
     def _fetch_pool(app_id: str) -> tuple[dict, list[dict]]:
-        store_meta = store_app_by_id(app_id) or {}
-        if not isinstance(store_meta, dict) or not _has_pool_widget(store_meta):
+        # Fleet polling runs frequently; avoid scanning the store (YAML) here.
+        # Pool apps are known (AXE_SUITE_POOL_APP_IDS) and expose stable endpoints.
+        aid = str(app_id or "").strip().lower()
+        if not aid:
             return {}, []
 
-        name = str(store_meta.get("name") or app_id).strip() or app_id
+        store_name = APP_DISPLAY_NAME_OVERRIDES.get(aid)
+        if not store_name and aid.startswith("axe") and len(aid) > 3:
+            store_name = f"Axe{aid[3:].upper()}"
+        name = _display_app_name(aid, store_name)
         coin = name[3:].strip().upper() if name.lower().startswith("axe") else name.strip().upper()
         if not coin:
-            coin = app_id.upper()
+            coin = aid.upper()
 
-        port = default_ui_ports(app_id)
-        if port is None:
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            port = sp or None
-
-        project = docker_compose_project(app_id)
-        st = summarize_project_status(project)
-        status = str(st.get("status") or "unknown")
+        store_port = _store_declared_ui_port(aid, {})
+        port = store_port
 
         entry: dict = {
-            "id": app_id,
+            "id": aid,
             "name": name,
             "coin": coin,
-            "status": status,
+            "status": "unknown",
             "port": port,
             "ok": False,
         }
 
-        if status != "running" or port is None:
-            entry["pool_error"] = "not running"
-            entry["workers_error"] = "not running"
+        cached = _fleet_pool_cache_get(aid) or {}
+        cached_age_s = None
+        try:
+            cached_age_s = time.time() - float(cached.get("time") or 0.0)
+        except Exception:
+            cached_age_s = None
+        cached_fresh = cached_age_s is not None and cached_age_s >= 0 and cached_age_s <= float(FLEET_HISTORY_POOL_STALE_S)
+
+        if port is None:
+            # If the app is temporarily missing metadata (e.g., store hiccup), avoid collapsing
+            # totals/graphs when we still have recent data.
+            if cached_fresh and isinstance(cached.get("pool"), dict):
+                entry["pool"] = dict(cached.get("pool") or {})
+                entry["pool_stale"] = True
+                entry["stale"] = True
+                entry["ok"] = True
+            if include_workers and cached_fresh and isinstance(cached.get("workers"), dict):
+                entry["workers"] = dict(cached.get("workers") or {})
+                entry["workers_stale"] = True
+                entry["stale"] = True
+            entry.setdefault("pool_error", "missing port")
+            entry.setdefault("workers_error", "missing port")
             return entry, []
 
         pool_url = f"http://127.0.0.1:{port}/api/pool"
@@ -4846,6 +4890,13 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             pool_raw = _fetch_json(pool_url, timeout_s=1, headers=_internal_auth_headers())
             if isinstance(pool_raw, dict):
                 pool_data = pool_raw
+                # Normalize core fields so the UI + totals stay consistent across apps.
+                # Some pool APIs return different keys (e.g. "hashrate") or None.
+                pool_data["hashrate_ths"] = _pool_hashrate_ths(pool_data)
+                try:
+                    pool_data["workers"] = int(pool_data.get("workers") or 0)
+                except Exception:
+                    pool_data["workers"] = 0
             else:
                 entry["pool_error"] = "invalid pool response"
         except Exception as e:
@@ -4861,14 +4912,13 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             except Exception as e:
                 entry["workers_error"] = str(e)
 
+        # Mark app status based on reachability instead of relying on Docker inspection here.
+        if pool_data is not None or (include_workers and workers_data is not None):
+            entry["status"] = "running"
+        else:
+            entry["status"] = "offline"
+
         # Use last-known-good values to avoid transient timeouts collapsing totals/graphs.
-        cached = _fleet_pool_cache_get(app_id) or {}
-        cached_age_s = None
-        try:
-            cached_age_s = time.time() - float(cached.get("time") or 0.0)
-        except Exception:
-            cached_age_s = None
-        cached_fresh = cached_age_s is not None and cached_age_s >= 0 and cached_age_s <= float(FLEET_HISTORY_POOL_STALE_S)
         if pool_data is None and cached_fresh and isinstance(cached.get("pool"), dict):
             pool_data = dict(cached.get("pool") or {})
             entry["pool_stale"] = True
@@ -4877,6 +4927,13 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             workers_data = dict(cached.get("workers") or {})
             entry["workers_stale"] = True
             entry["stale"] = True
+
+        if isinstance(pool_data, dict):
+            pool_data["hashrate_ths"] = _pool_hashrate_ths(pool_data)
+            try:
+                pool_data["workers"] = int(pool_data.get("workers") or 0)
+            except Exception:
+                pool_data["workers"] = 0
 
         if pool_data is not None:
             entry["pool"] = pool_data
@@ -5140,7 +5197,9 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
         futures = [pool.submit(_fetch_pool, app_id) for app_id in pool_app_ids]
         done, pending = concurrent.futures.wait(
             futures,
-            timeout=1.8,
+            # Worst case per pool is two 1s HTTP calls + JSON parsing. Keep above 2s so we don't
+            # regularly drop all results and show 0/0 totals.
+            timeout=3.2,
             return_when=concurrent.futures.ALL_COMPLETED,
         )
         for fut in done:
@@ -5149,14 +5208,9 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
                 continue
             pools.append(entry)
             if "pool" in entry:
-                try:
-                    total_hashrate_ths += float(entry["pool"].get("hashrate_ths") or 0.0)
-                except Exception:
-                    pass
-                try:
-                    total_workers += int(entry["pool"].get("workers") or 0)
-                except Exception:
-                    pass
+                pool_data = entry.get("pool") if isinstance(entry.get("pool"), dict) else None
+                total_hashrate_ths += _pool_hashrate_ths(pool_data)
+                total_workers += _pool_workers(pool_data)
             for w in details:
                 if isinstance(w, dict):
                     workers_out.append(w)
@@ -6125,10 +6179,15 @@ def _autoheal_degraded_projects_once() -> None:
 def _boot_reconcile_loop() -> None:
     # Give docker a moment on fresh boots.
     time.sleep(8)
+    last_proxy_repair = 0.0
     while True:
         try:
             _reconcile_container_restart_policies_once()
             _autoheal_degraded_projects_once()
+            now = time.time()
+            if now - last_proxy_repair > 10 * 60:
+                system_proxy_repair()
+                last_proxy_repair = now
         except Exception:
             pass
         # Re-run periodically to self-heal long-running hosts.
@@ -6141,10 +6200,81 @@ def default_ui_ports(app_id: str) -> int | None:
         "axelive": 5210,
         "axebench": 5000,
         "axedoom": 5300,
-        "axebtc": 21214,
+        "axebch": 21212,
+        "axebtc": 21215,
         "axebtcf": 21214,
+        "axebsv": 21216,
         "axedgb": 21213,
+        "axemig": 12150,
     }.get(app_id)
+
+
+def _docker_project_published_ports(app_id: str) -> list[int]:
+    project = docker_compose_project(app_id)
+    ports: set[int] = set()
+    for c in docker_containers_for_project(project):
+        raw = str(c.get("Ports") or "")
+        # Example: "0.0.0.0:21215->3000/tcp, [::]:21215->3000/tcp"
+        for m in re.finditer(r":(\d+)->\d+/(?:tcp|udp)", raw):
+            try:
+                ports.add(int(m.group(1)))
+            except Exception:
+                continue
+    return sorted(ports)
+
+
+def _port_speaks_http(port: int) -> bool:
+    p = int(port)
+    if p <= 0 or p > 65535:
+        return False
+    url = f"http://127.0.0.1:{p}/"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "5tratumosd"}, method="GET")
+        with urllib.request.urlopen(req, timeout=1.2) as resp:  # noqa: S310
+            _ = resp.status
+        return True
+    except urllib.error.HTTPError:
+        # Any HTTP response implies the upstream is reachable and speaking HTTP.
+        return True
+    except Exception:
+        return False
+
+
+def _store_declared_ui_port(app_id: str, store_meta: dict | None) -> int | None:
+    dp = default_ui_ports(app_id)
+    if dp:
+        return int(dp)
+    store_meta = store_meta or {}
+    try:
+        sp = int(str(store_meta.get("port") or "").strip() or "0")
+    except Exception:
+        sp = 0
+    return int(sp) if sp > 0 else None
+
+
+def _detect_ui_port(app_id: str, store_port: int | None, *, require_http: bool) -> int | None:
+    published = _docker_project_published_ports(app_id)
+    candidates: list[int] = []
+
+    if store_port and store_port in published:
+        candidates.append(int(store_port))
+
+    candidates.extend([int(p) for p in published if int(p) != int(store_port or 0)])
+
+    if store_port and int(store_port) not in candidates:
+        candidates.append(int(store_port))
+
+    dp = default_ui_ports(app_id)
+    if dp and int(dp) not in candidates:
+        candidates.append(int(dp))
+
+    if require_http:
+        for p in candidates:
+            if _port_speaks_http(p):
+                return int(p)
+        return None
+
+    return int(candidates[0]) if candidates else None
 
 
 def _nginx_proxy_block(app_id: str, port: int) -> str:
@@ -6199,68 +6329,6 @@ def system_proxy_repair() -> dict:
     if not conf_path.is_file():
         return {"ok": False, "error": f"nginx config not found: {conf_path}"}
 
-    def docker_project_published_ports(app_id: str) -> list[int]:
-        project = docker_compose_project(app_id)
-        ports: set[int] = set()
-        for c in docker_containers_for_project(project):
-            raw = str(c.get("Ports") or "")
-            # Example: "0.0.0.0:21214->3000/tcp, [::]:21214->3000/tcp"
-            for m in re.finditer(r":(\d+)->\d+/(?:tcp|udp)", raw):
-                try:
-                    ports.add(int(m.group(1)))
-                except Exception:
-                    continue
-        return sorted(ports)
-
-    def port_speaks_http(port: int) -> bool:
-        p = int(port)
-        if p <= 0 or p > 65535:
-            return False
-        url = f"http://127.0.0.1:{p}/"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "5tratumosd"}, method="GET")
-            with urllib.request.urlopen(req, timeout=1.2) as resp:  # noqa: S310
-                _ = resp.status
-            return True
-        except urllib.error.HTTPError:
-            # Any HTTP response implies the upstream is reachable and speaking HTTP.
-            return True
-        except Exception:
-            return False
-
-    def detect_ui_port(app_id: str, store_port: int | None) -> int | None:
-        candidates: list[int] = []
-        if store_port:
-            candidates.append(int(store_port))
-        # Prefer actual published host ports when they exist.
-        candidates.extend(docker_project_published_ports(app_id))
-        if not store_port:
-            dp = default_ui_ports(app_id)
-            if dp:
-                candidates.insert(0, int(dp))
-
-        seen: set[int] = set()
-        uniq: list[int] = []
-        for p in candidates:
-            try:
-                pp = int(p)
-            except Exception:
-                continue
-            if pp <= 0 or pp > 65535:
-                continue
-            if pp in seen:
-                continue
-            seen.add(pp)
-            uniq.append(pp)
-
-        for p in uniq:
-            if port_speaks_http(p):
-                return p
-        # Fall back to the store/default port when probing fails.
-        if store_port:
-            return int(store_port)
-        return uniq[0] if uniq else None
-
     installed: list[dict] = []
     for app_id in list_installed_app_ids():
         install_meta = read_app_install_meta(app_id)
@@ -6283,15 +6351,8 @@ def system_proxy_repair() -> dict:
                 store_meta = m
                 break
 
-        store_port: int | None = default_ui_ports(app_id)
-        if store_port is None:
-            try:
-                sp = int(str(store_meta.get("port") or "").strip() or "0")
-            except Exception:
-                sp = 0
-            store_port = sp or None
-
-        port = detect_ui_port(app_id, store_port)
+        store_port = _store_declared_ui_port(app_id, store_meta)
+        port = _detect_ui_port(app_id, store_port, require_http=True) or _detect_ui_port(app_id, store_port, require_http=False)
         if not port:
             continue
         installed.append({"id": app_id, "port": int(port), "store_port": int(store_port) if store_port else None})
@@ -6350,18 +6411,22 @@ def system_proxy_repair() -> dict:
         except Exception as e:
             return {"ok": False, "error": f"failed to write nginx config: {e}"}
 
-    proc = run_cmd(
-        ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
-        cwd=str(overlay_dir),
-        timeout_s=180,
-    )
-    ok = proc.returncode == 0
+    restart = {"ok": True, "skipped": True}
+    ok = True
+    if changed:
+        proc = run_cmd(
+            ["docker", "compose", "--project-name", "5tratumos-overlay", "restart", "portal"],
+            cwd=str(overlay_dir),
+            timeout_s=180,
+        )
+        ok = proc.returncode == 0
+        restart = {"ok": ok, "code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr}
     return {
         "ok": ok,
         "changed": bool(changed),
         "updated": updated,
         "added": added,
-        "restart": {"ok": ok, "code": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr},
+        "restart": restart,
     }
 
 
@@ -6732,13 +6797,10 @@ class Handler(BaseHTTPRequestHandler):
                 containers = containers_by_app.get(app_id, [])
                 st = summarize_project_status_from_containers(containers)
                 resources = summarize_resources_from_stats(containers, stats_by_name)
-                port = default_ui_ports(app_id)
-                if port is None:
-                    try:
-                        sp = int(str(store_meta.get("port") or "").strip() or "0")
-                    except Exception:
-                        sp = 0
-                    port = sp or None
+                store_port = _store_declared_ui_port(app_id, store_meta)
+                port = store_port
+                if str(st.get("status") or "") == "running":
+                    port = _detect_ui_port(app_id, store_port, require_http=True) or store_port
 
                 installed_version = str(install_meta.get("installed_version") or "").strip()
                 if not installed_version:
@@ -6760,7 +6822,7 @@ class Handler(BaseHTTPRequestHandler):
                 apps.append(
                     {
                         "id": app_id,
-                        "name": str(store_meta.get("name") or app_id),
+                        "name": _display_app_name(app_id, store_meta.get("name")),
                         "store": store_meta if store_meta else None,
                         "rollbacks": install_meta.get("rollbacks") if isinstance(install_meta.get("rollbacks"), list) else [],
                         "status": st["status"],
@@ -6799,7 +6861,7 @@ class Handler(BaseHTTPRequestHandler):
                 _api_cache_get_or_refresh(
                     cache_key="apps_widgets",
                     compute=_compute_widgets,
-                    max_age_s=30,
+                    max_age_s=5,
                 ),
             )
             return
@@ -6822,7 +6884,7 @@ class Handler(BaseHTTPRequestHandler):
                 _api_cache_get_or_refresh(
                     cache_key=f"fleet_summary_{limit_key}",
                     compute=_compute_fleet,
-                    max_age_s=30,
+                    max_age_s=3,
                 ),
             )
             return
@@ -7151,6 +7213,7 @@ class Handler(BaseHTTPRequestHandler):
                         ch = str(channel).strip().lower()
                         _update_app_install_meta_channel(app_id, ch)
                         _installed_registry_update_meta(app_id, {"channel": ch})
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7162,6 +7225,7 @@ class Handler(BaseHTTPRequestHandler):
                 res = stratumos_cmd(args, timeout_s=600)
                 if res.get("ok"):
                     _installed_registry_set(app_id, False)
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7175,6 +7239,8 @@ class Handler(BaseHTTPRequestHandler):
                 if res.get("ok") and channel:
                     _update_app_install_meta_channel(app_id, channel)
                     _installed_registry_update_meta(app_id, {"channel": channel})
+                if res.get("ok"):
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7185,11 +7251,15 @@ class Handler(BaseHTTPRequestHandler):
                 if version:
                     args += ["--to", version]
                 res = stratumos_cmd(args, timeout_s=1800)
+                if res.get("ok"):
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "up":
                 res = stratumos_cmd(["app", "up", app_id], timeout_s=1800)
+                if res.get("ok"):
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7197,11 +7267,14 @@ class Handler(BaseHTTPRequestHandler):
                 res = stratumos_cmd(["app", "down", app_id], timeout_s=600)
                 if res.get("ok"):
                     watchdog_note_manual_stop(app_id)
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
             if action == "pull":
                 res = stratumos_cmd(["app", "pull", app_id], timeout_s=1800)
+                if res.get("ok"):
+                    res["proxy"] = system_proxy_repair()
                 json_response(self, HTTPStatus.OK if res["ok"] else HTTPStatus.BAD_REQUEST, res)
                 return
 
@@ -7226,10 +7299,11 @@ class Handler(BaseHTTPRequestHandler):
                 steps.append({"step": "up", **up_res})
                 ok = ok and bool(up_res.get("ok"))
 
+                proxy = system_proxy_repair() if ok else None
                 json_response(
                     self,
                     HTTPStatus.OK if ok else HTTPStatus.BAD_REQUEST,
-                    {"ok": ok, "app": app_id, "steps": steps},
+                    {"ok": ok, "app": app_id, "steps": steps, "proxy": proxy},
                 )
                 return
 

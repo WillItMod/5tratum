@@ -4,6 +4,9 @@
   --forgeos-border: hsla(0, 0%, 100%, 0.1);
   --forgeos-border-strong: hsla(0, 0%, 100%, 0.14);
   --forgeos-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  --forgeos-bg: #020617;
+  --forgeos-text: rgba(226, 232, 240, 0.92);
+  --forgeos-text-muted: rgba(148, 163, 184, 0.92);
   --forgeos-radius: 18px;
   --forgeos-ui-scale: 0.9;
   --forgeos-sidebar-width: 320px;
@@ -23,7 +26,7 @@
     rgba(255, 154, 0, 0.56) 100%
   );
   --forgeos-rainbow-strong: linear-gradient(135deg, #00e5ff 0%, #ff2bd6 42%, #9f7aea 68%, #ff9a00 100%);
-  --forgeos-watermark-opacity: 0.07;
+  --forgeos-watermark-opacity: 0.3;
   --forgeos-watermark-y: 84%;
   --forgeos-watermark-size: 86vmin;
   --forgeos-footer-tile: 60px;
@@ -33,10 +36,246 @@
   --forgeos-topbar-logo-offset-y: 0px;
 }
 
+/* Theme overrides (applied via <body data-theme="...">). */
+body[data-theme='midnight'] {
+  --forgeos-bg: #040815;
+  --forgeos-text: rgba(216, 225, 240, 0.9);
+  --forgeos-text-muted: rgba(140, 155, 180, 0.9);
+  --forgeos-sidebar: rgba(2, 6, 23, 0.55);
+  --forgeos-border: rgba(148, 163, 184, 0.12);
+  --forgeos-border-strong: rgba(148, 163, 184, 0.18);
+  --forgeos-rainbow-strong: linear-gradient(135deg, #38bdf8 0%, #a78bfa 45%, #fb7185 100%);
+}
+
+body[data-theme='aurora'] {
+  --forgeos-bg: #04110f;
+  --forgeos-text: rgba(226, 232, 240, 0.88);
+  --forgeos-text-muted: rgba(125, 211, 252, 0.68);
+  --forgeos-sidebar: rgba(2, 8, 7, 0.55);
+  --forgeos-border: rgba(94, 234, 212, 0.12);
+  --forgeos-border-strong: rgba(94, 234, 212, 0.18);
+  --forgeos-rainbow-strong: linear-gradient(135deg, #22c55e 0%, #06b6d4 45%, #a78bfa 100%);
+}
+
+body[data-theme='ember'] {
+  --forgeos-bg: #120606;
+  --forgeos-text: rgba(255, 237, 213, 0.9);
+  --forgeos-text-muted: rgba(253, 186, 116, 0.78);
+  --forgeos-sidebar: rgba(18, 6, 6, 0.6);
+  --forgeos-border: rgba(251, 146, 60, 0.12);
+  --forgeos-border-strong: rgba(251, 146, 60, 0.18);
+  --forgeos-rainbow-strong: linear-gradient(135deg, #fb7185 0%, #fb923c 45%, #facc15 100%);
+}
+
+body[data-theme='matrix'] {
+  --forgeos-bg: #020a05;
+  --forgeos-text: rgba(167, 243, 208, 0.88);
+  --forgeos-text-muted: rgba(110, 231, 183, 0.62);
+  --forgeos-sidebar: rgba(0, 0, 0, 0.62);
+  --forgeos-border: rgba(16, 185, 129, 0.18);
+  --forgeos-border-strong: rgba(16, 185, 129, 0.24);
+  --forgeos-rainbow-strong: linear-gradient(135deg, #34d399 0%, #22c55e 55%, #10b981 100%);
+}
+
+body[data-theme='ice'] {
+  --forgeos-bg: #02121f;
+  --forgeos-text: rgba(224, 242, 254, 0.92);
+  --forgeos-text-muted: rgba(186, 230, 253, 0.78);
+  --forgeos-sidebar: rgba(2, 8, 23, 0.55);
+  --forgeos-border: rgba(56, 189, 248, 0.12);
+  --forgeos-border-strong: rgba(56, 189, 248, 0.18);
+  --forgeos-rainbow-strong: linear-gradient(135deg, #38bdf8 0%, #22d3ee 45%, #a5f3fc 100%);
+}
+
+body[data-theme='donut'] {
+  /* Donut: slightly softer purple-black base. */
+  --forgeos-bg: #090613;
+  --forgeos-text: rgba(240, 233, 255, 0.9);
+  --forgeos-text-muted: rgba(216, 180, 254, 0.72);
+  /* Slightly stronger UI contrast + color. */
+  --forgeos-sidebar: rgba(0, 0, 0, 0.62);
+  --forgeos-border: rgba(216, 180, 254, 0.18);
+  --forgeos-border-strong: rgba(216, 180, 254, 0.26);
+  --forgeos-card-glow-opacity: 0.1;
+  --forgeos-rainbow-strong: linear-gradient(135deg, #a78bfa 0%, #fb7185 45%, #38bdf8 100%);
+  --forgeos-watermark-opacity: 0.3;
+  --forgeos-watermark-y: 74%;
+  --forgeos-watermark-size: min(96vmin, 980px);
+}
+
+body[data-theme='mono'] {
+  --forgeos-bg: #070708;
+  --forgeos-text: rgba(229, 231, 235, 0.88);
+  --forgeos-text-muted: rgba(156, 163, 175, 0.85);
+  --forgeos-sidebar: rgba(0, 0, 0, 0.58);
+  --forgeos-border: rgba(255, 255, 255, 0.1);
+  --forgeos-border-strong: rgba(255, 255, 255, 0.14);
+  --forgeos-rainbow-strong: linear-gradient(135deg, #9ca3af 0%, #e5e7eb 45%, #9ca3af 100%);
+}
+
 html,
 body {
   height: 100%;
   overflow: hidden;
+}
+
+body {
+  background: var(--forgeos-bg);
+  color: var(--forgeos-text);
+}
+
+/* Theme picker (Settings → Appearance). */
+.forgeos-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .forgeos-theme-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.forgeos-theme-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--forgeos-border);
+  background: rgba(0, 0, 0, 0.28);
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.forgeos-theme-btn:hover {
+  border-color: var(--forgeos-border-strong);
+  transform: translateY(-1px);
+}
+
+.forgeos-theme-btn:active {
+  transform: translateY(0);
+}
+
+.forgeos-theme-btn.is-active {
+  border-color: rgba(56, 189, 248, 0.38);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.14) inset;
+}
+
+.forgeos-theme-btn__swatch {
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--forgeos-border-strong);
+  background: var(--forgeos-rainbow-strong);
+}
+
+.forgeos-theme-btn__label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--forgeos-text);
+}
+
+.forgeos-theme-btn__hint {
+  font-size: 11px;
+  color: var(--forgeos-text-muted);
+  line-height: 1.2;
+}
+
+/* Donut theme: swap the watermark to donuts.png (the watermark is rendered via .forgeos-content::after). */
+body[data-theme='donut'] .forgeos-content::after {
+  background-image: url("/assets/New%20Logos/donuts.png");
+  background-position: center 78%;
+  background-size: min(94vmin, 1040px);
+  opacity: var(--forgeos-watermark-opacity);
+  mix-blend-mode: normal;
+  filter: saturate(1.12) contrast(1.08);
+}
+
+/* Donut theme: donuts.png has extra transparent padding, so scale it up to match the
+   perceived size of the normal wordmark in the top bar. */
+body[data-theme='donut'] .forgeos-desktop-topbar__brand-mark {
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(2.2);
+}
+
+body.forgeos-topbar-open[data-theme='donut'] .forgeos-desktop-topbar__brand-mark {
+  transform: translate(var(--forgeos-topbar-logo-offset-x), var(--forgeos-topbar-logo-offset-y)) scale(2.92);
+}
+
+/* Donut theme: the donut-mark assets are already tightly cropped, so don't apply the
+   global brand scaling/translate that the default "5" mark needs. */
+body[data-theme='donut'] .forgeos-brand__mark--full,
+body[data-theme='donut'] .forgeos-brand__mark--icon {
+  transform: none;
+}
+
+/* Donut rain (only used when triggered by JS). */
+.forgeos-donut-rain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}
+
+.forgeos-donut-drop {
+  position: absolute;
+  top: -10vh;
+  left: 0;
+  will-change: transform, opacity;
+  animation: forgeos-donut-fall var(--dur, 7s) linear forwards;
+  opacity: 0.9;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
+}
+
+@keyframes forgeos-donut-fall {
+  0% {
+    transform: translate3d(var(--x, 50vw), -12vh, 0) rotate(0deg);
+    opacity: 0.0;
+  }
+  8% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate3d(calc(var(--x, 50vw) + var(--dx, 0px)), 110vh, 0) rotate(var(--rot, 360deg));
+    opacity: 0.0;
+  }
+}
+
+.forgeos-theme-btn[data-theme='midnight'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #38bdf8 0%, #a78bfa 45%, #fb7185 100%);
+}
+.forgeos-theme-btn[data-theme='aurora'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #22c55e 0%, #06b6d4 45%, #a78bfa 100%);
+}
+.forgeos-theme-btn[data-theme='ember'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #fb7185 0%, #fb923c 45%, #facc15 100%);
+}
+.forgeos-theme-btn[data-theme='matrix'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #34d399 0%, #22c55e 55%, #10b981 100%);
+}
+.forgeos-theme-btn[data-theme='ice'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #38bdf8 0%, #22d3ee 45%, #a5f3fc 100%);
+}
+.forgeos-theme-btn[data-theme='donut'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #a78bfa 0%, #fb7185 45%, #38bdf8 100%);
+}
+.forgeos-theme-btn[data-theme='mono'] .forgeos-theme-btn__swatch {
+  background: linear-gradient(135deg, #9ca3af 0%, #e5e7eb 45%, #9ca3af 100%);
+}
+
+/* Tone down overly-bright defaults on dark backgrounds (retina-friendly). */
+body .text-slate-100,
+body .text-slate-50 {
+  color: var(--forgeos-text) !important;
+}
+
+body .text-slate-200,
+body .text-slate-300,
+body .text-slate-400,
+body .text-slate-500 {
+  color: var(--forgeos-text-muted) !important;
 }
 
 /* Mobile nav: hidden by default (enabled via media queries). */
@@ -496,6 +735,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 44px;
 }
 
 .forgeos-nav-item__icon {
@@ -529,10 +769,11 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
 
 body.forgeos-sidebar-collapsed .forgeos-nav-item,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item {
-  padding: 0;
-  aspect-ratio: 1 / 1;
-  border-radius: 18px;
-  justify-content: center;
+  /* Keep icon alignment stable when expanding/collapsing the drawer. */
+  padding: 7px 9px;
+  height: 44px;
+  border-radius: 14px;
+  justify-content: flex-start;
   background: rgba(0, 0, 0, 0.12);
   border-color: rgba(255, 255, 255, 0.06);
 }
@@ -546,17 +787,17 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item:hover {
 
 body.forgeos-sidebar-collapsed .forgeos-nav-item__icon,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item__icon {
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  border: 0;
-  background: transparent;
+  width: 22px;
+  height: 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 body.forgeos-sidebar-collapsed .forgeos-nav-item__icon svg,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item__icon svg {
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-brand__title,
@@ -625,13 +866,22 @@ body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__name-wrap {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  padding-right: 2px;
+  padding-right: 0;
   flex: 1 1 auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.forgeos-app-list::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-app-list,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-list {
-  gap: 6px;
+  /* Match the expanded drawer's more relaxed spacing. */
+  gap: 12px;
 }
 
 .forgeos-app-item {
@@ -731,12 +981,6 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item--open::
   border-color: rgba(0, 229, 255, 0.22);
   background: rgba(0, 229, 255, 0.08);
   box-shadow: 0 0 0 1px rgba(0, 229, 255, 0.08) inset, 0 0 22px rgba(0, 229, 255, 0.12);
-}
-
-.forgeos-app-item--dragover {
-  border-color: rgba(168, 85, 247, 0.35);
-  background: rgba(168, 85, 247, 0.12);
-  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.12) inset, 0 0 22px rgba(168, 85, 247, 0.14);
 }
 
 .forgeos-app-item__top {
@@ -1403,6 +1647,44 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   .forgeos-desktop-metric__sub {
     display: none;
   }
+
+  .forgeos-desktop-topbar__version {
+    gap: 6px;
+    padding: 0 4px;
+  }
+
+  .forgeos-topbar-pill {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+
+  .forgeos-topbar-toggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+  }
+
+  .forgeos-topbar-perf {
+    height: 34px;
+    min-width: 34px;
+    padding: 0 10px;
+    border-radius: 12px;
+  }
+
+  .forgeos-topbar-perf__icon {
+    width: 16px;
+    height: 16px;
+    font-size: 11px;
+  }
+
+  .forgeos-topbar-perf__count {
+    font-size: 11px;
+  }
+
+  .forgeos-topbar-activity__text,
+  .forgeos-topbar-activity__pct {
+    font-size: 11px;
+  }
 }
 
 .forgeos-topbar-perf {
@@ -1471,6 +1753,17 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-clock__analog {
   justify-content: center;
   padding: 0 8px;
   overflow: hidden;
+  background: none;
+  border: 0;
+  margin: 0;
+  cursor: pointer;
+  appearance: none;
+  color: inherit;
+}
+
+.forgeos-desktop-topbar__brand:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.55);
+  outline-offset: 3px;
 }
 
 .forgeos-desktop-topbar__brand-mark {
@@ -3254,12 +3547,12 @@ body.forgeos-workspace #btn-open-store {
   color: rgba(148, 163, 184, 0.9);
 }
 
-/* Scrollbars (desktop feel) */
+/* Scrollbars (dark theme) */
 .forgeos-view,
 .forgeos-modal__body,
 .forgeos-taskbar__apps {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) rgba(0, 0, 0, 0.25);
+  scrollbar-color: rgba(148, 163, 184, 0.32) rgba(0, 0, 0, 0.55);
 }
 
 .forgeos-view::-webkit-scrollbar,
@@ -3371,15 +3664,15 @@ body.forgeos-workspace #btn-open-store {
 .forgeos-view::-webkit-scrollbar-thumb,
 .forgeos-modal__body::-webkit-scrollbar-thumb,
 .forgeos-taskbar__apps::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(148, 163, 184, 0.28);
   border-radius: 9999px;
-  border: 2px solid rgba(0, 0, 0, 0.55);
+  border: 2px solid rgba(0, 0, 0, 0.62);
 }
 
 .forgeos-view::-webkit-scrollbar-track,
 .forgeos-modal__body::-webkit-scrollbar-track,
 .forgeos-taskbar__apps::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.55);
   border-radius: 9999px;
 }
 
@@ -4130,42 +4423,109 @@ select.forgeos-input optgroup {
     display: none;
   }
 
-  .forgeos-window {
-    min-width: 300px;
-    min-height: 220px;
-  }
+.forgeos-window {
+  min-width: 300px;
+  min-height: 220px;
 }
 
-@media (max-width: 600px) {
+  /* Mobile: keep the top bar as a slim header by default (metrics hidden),
+     and allow expanding it by toggling `.forgeos-topbar-open`. */
   .forgeos-desktop-topbar {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 6px;
+    gap: 8px;
   }
 
   .forgeos-desktop-topbar__brand {
     display: flex;
-    width: 100%;
+    width: auto;
     flex: 0 0 auto;
-    height: 56px;
-    padding: 0 6px;
+    height: 24px;
+    padding: 0;
+  }
+
+  .forgeos-desktop-topbar__brand-mark {
+    height: 18px;
+    width: auto;
+  }
+
+  .forgeos-desktop-topbar__tagline {
+    display: none;
   }
 
   .forgeos-desktop-topbar__metrics {
+    display: none;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar__brand {
+    width: 100%;
+    height: 36px;
+    padding: 0 6px;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar__brand-mark {
+    height: 28px;
+    width: min(220px, 100%);
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar__metrics {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
     justify-content: stretch;
   }
 
-  .forgeos-desktop-metric {
+  body.forgeos-topbar-open .forgeos-desktop-metric {
     min-width: 0;
     width: 100%;
-    min-height: 86px;
+    min-height: 56px;
   }
 
-  .forgeos-desktop-metric--cpu {
+  body.forgeos-topbar-open .forgeos-desktop-metric--cpu {
     min-width: 0;
     grid-column: 1 / -1;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-metric__k {
+    font-size: 10px;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-metric__v {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .forgeos-desktop-topbar {
+    padding: 2px 4px;
+    gap: 6px;
+  }
+
+  .forgeos-desktop-topbar__brand {
+    height: 20px;
+  }
+
+  .forgeos-desktop-topbar__brand-mark {
+    height: 16px;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar__brand {
+    height: 32px;
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar__brand-mark {
+    height: 24px;
+    width: min(200px, 100%);
+  }
+
+  body.forgeos-topbar-open .forgeos-desktop-topbar__metrics {
+    gap: 6px;
   }
 }
 
@@ -4277,4 +4637,35 @@ body.forgeos-settings-split .forgeos-settings-section--hidden {
     position: static;
     max-height: none;
   }
+}
+
+/* Modal prose (About → Mission statement). Keep this near the end so it wins over
+   any generic resets that might affect paragraphs. */
+.forgeos-prose {
+  color: rgb(226 232 240);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.forgeos-prose__p {
+  margin: 0 0 0.9rem 0;
+}
+
+.forgeos-prose__p:last-child {
+  margin-bottom: 0;
+}
+
+.forgeos-prose__mono {
+  margin: 0 0 0.75rem 0;
+}
+
+.forgeos-prose__mono-k {
+  font-size: 0.8rem;
+  color: rgb(148 163 184);
+}
+
+.forgeos-prose__mono-v {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  word-break: break-word;
+  white-space: pre-wrap;
 }

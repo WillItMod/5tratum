@@ -81,6 +81,7 @@
         const errEl = document.getElementById('login-error');
         const keyboardSelect = document.getElementById('keyboard-layout');
         const keyboardStatus = document.getElementById('keyboard-layout-status');
+        let storeSyncBlocking = false;
 
         const params = new URLSearchParams(window.location.search || '');
         const nextRaw = params.get('next') || '/';
@@ -133,6 +134,16 @@
           } catch (e) {
             showError('Unable to reach 5tratumOS auth service.');
           }
+        }
+
+        function setFormEnabled(enabled) {
+          const ok = !!enabled;
+          if (usernameEl) usernameEl.disabled = !ok;
+          if (passwordEl) passwordEl.disabled = !ok;
+          if (password2El) password2El.disabled = !ok;
+          if (submitBtn) submitBtn.disabled = !ok;
+          if (refreshBtn) refreshBtn.disabled = !ok;
+          if (keyboardSelect) keyboardSelect.disabled = !ok;
         }
 
         function setKeyboardStatus(msg) {

@@ -15,6 +15,25 @@ trap cleanup EXIT
 
 cd "${ROOT_DIR}"
 
+json_escape() {
+  local s="${1:-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  printf '%s' "${s}"
+}
+
+TRATUMOS_TAG="${TRATUMOS_TAG:-${OS_TAG:-${FIVETRATUMOS_TAG:-}}}"
+if [ -z "${TRATUMOS_TAG}" ] && command -v git >/dev/null 2>&1; then
+  TRATUMOS_TAG="$(git -C "${ROOT_DIR}" describe --tags --always 2>/dev/null || true)"
+fi
+TRATUMOS_TAG="${TRATUMOS_TAG:-unknown}"
+
+TRATUMOS_CHANNEL="${TRATUMOS_CHANNEL:-${OS_CHANNEL:-${FIVETRATUMOS_CHANNEL:-main}}}"
+TRATUMOS_CHANNEL="$(printf '%s' "${TRATUMOS_CHANNEL}" | tr '[:upper:]' '[:lower:]')"
+
+TRATUMOS_UPDATE_REPO="${TRATUMOS_UPDATE_REPO:-${FIVETRATUMOS_UPDATE_REPO:-WillItMod/5tratum}}"
+BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
 # Stage only what the daemon update applier knows how to deploy.
 mkdir -p "${tmp}/overlay" "${tmp}/daemon" "${tmp}/bootstrap" "${tmp}/apps-available" "${tmp}/systemd" "${tmp}/bin" "${tmp}/console"
 
@@ -27,6 +46,31 @@ cp -a "${ROOT_DIR}/bin/5tratumos" "${tmp}/bin/5tratumos"
 if [ -d "${ROOT_DIR}/console" ]; then
   cp -a "${ROOT_DIR}/console/." "${tmp}/console/"
 fi
+
+# Ensure bundles always ship valid build metadata.
+printf '{"channel":"%s","repo":"%s","tag":"%s","built_at":"%s"}\n' \
+  "$(json_escape "${TRATUMOS_CHANNEL}")" \
+  "$(json_escape "${TRATUMOS_UPDATE_REPO}")" \
+  "$(json_escape "${TRATUMOS_TAG}")" \
+  "$(json_escape "${BUILT_AT}")" \
+  > "${tmp}/bootstrap/build.json"
+
+# Guardrail: fail the build if any critical web assets contain a literal "\n" line.
+# This breaks JS parsing and bricks the WebUI.
+check_files=(
+  "${tmp}/overlay/portal/app.js"
+  "${tmp}/overlay/portal/5tratumos.css"
+  "${tmp}/overlay/portal/index.html"
+  "${tmp}/overlay/portal/login.html"
+  "${tmp}/bootstrap/build.json"
+)
+for f in "${check_files[@]}"; do
+  if [ -f "${f}" ] && grep -nE '^[[:space:]]*\\n[[:space:]]*$' "${f}" >/dev/null 2>&1; then
+    echo "ERROR: invalid literal '\\n' line in ${f} (refusing to build)" >&2
+    grep -nE '^[[:space:]]*\\n[[:space:]]*$' "${f}" | head -n 5 >&2 || true
+    exit 1
+  fi
+done
 
 # Normalize CRLF line endings (Windows checkouts) so shebangs and systemd units work on Linux.
 if command -v sed >/dev/null 2>&1; then

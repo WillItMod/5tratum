@@ -9,6 +9,9 @@
   const tailscaleStatusEl = document.getElementById('tailscale-status');
   const wifiStatusEl = document.getElementById('wifi-status');
   const wifiDetailEl = document.getElementById('wifi-detail');
+  const httpsStatusEl = document.getElementById('https-status');
+  const httpsEnabledInput = document.getElementById('setting-https-enabled');
+  const btnHttpsRegenerate = document.getElementById('btn-https-regenerate');
   const btnWifiToggle = document.getElementById('btn-wifi-toggle');
   const btnWifiScan = document.getElementById('btn-wifi-scan');
   const btnWifiDisconnect = document.getElementById('btn-wifi-disconnect');
@@ -22,7 +25,7 @@
   const metricNetBar = document.getElementById('metric-net-bar');
   const metricNetSub = document.getElementById('metric-net-sub');
   const desktopTopbarEl = document.querySelector('.forgeos-desktop-topbar');
-  const btnTopbarToggle = document.getElementById('btn-topbar-toggle');
+  const btnTopbarCollapse = document.getElementById('btn-topbar-collapse');
   const topbarActivityEl = document.getElementById('topbar-activity');
   const topbarActivityTextEl = document.getElementById('topbar-activity-text');
   const topbarActivityPctEl = document.getElementById('topbar-activity-pct');
@@ -78,7 +81,6 @@
   const btnPower = document.getElementById('btn-power');
   const sidebarClockEl = document.getElementById('sidebar-clock');
   const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
-  const btnSidebarPin = document.getElementById('btn-sidebar-pin');
   const btnMobileMenu = document.getElementById('btn-mobile-menu');
   const mobileBackdrop = document.getElementById('mobile-backdrop');
   const btnDashboardMode = document.getElementById('btn-dashboard-mode');
@@ -117,6 +119,8 @@
   const btnResumeWorkspace = document.getElementById('btn-resume-workspace');
   const settingSidebarSelect = document.getElementById('setting-sidebar');
   const settingTopbarSelect = document.getElementById('setting-topbar');
+  const settingThemeSelect = document.getElementById('setting-theme');
+  const themeGridEl = document.getElementById('theme-grid');
   const settingHostnameInput = document.getElementById('setting-hostname');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
@@ -150,6 +154,9 @@
   const updateProgressEl = document.getElementById('update-progress');
   const updateProgressBarEl = document.getElementById('update-progress-bar');
   const updateNotesEl = document.getElementById('update-notes');
+  const updateRollbackTagSelect = document.getElementById('update-rollback-tag');
+  const btnUpdateRollback = document.getElementById('btn-update-rollback');
+  const updateRollbackStatusEl = document.getElementById('update-rollback-status');
   const btnUpdateCheck = document.getElementById('btn-update-check');
   const btnUpdateApply = document.getElementById('btn-update-apply');
   const btnFixApp = document.getElementById('btn-fix-app');
@@ -194,6 +201,8 @@
   const discordEventUpdateFailureInput = document.getElementById('setting-discord-event-update-failure');
   const discordEventRestartInput = document.getElementById('setting-discord-event-restart');
   const btnDiscordSave = document.getElementById('btn-discord-save');
+  const btnAboutMission = document.getElementById('btn-about-mission');
+  const btnAboutLegal = document.getElementById('btn-about-legal');
   const watchdogCardEl = document.getElementById('settings-watchdog-card');
   const watchdogEnabledInput = document.getElementById('setting-watchdog-enabled');
   const watchdogAppsEl = document.getElementById('setting-watchdog-apps');
@@ -291,6 +300,10 @@
     let systemUpdatePollInFlight = false;
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
+    let systemUpdateHoldSplash = false;
+    let systemUpdateRollbacksCache = null;
+    let systemUpdateRollbacksAt = 0;
+    let systemUpdateRollbacksInFlight = false;
     let uiConfigCache = null;
     let topbarTempOpen = false;
     let topbarHoverOpen = false;
@@ -326,6 +339,7 @@
   const DRAWER_PINNED_KEY = '5tratumos.drawerPinned.v1';
   const SETTINGS_LAYOUT_KEY = '5tratumos.settingsLayout.v1';
   const SETTINGS_SECTION_KEY = '5tratumos.settingsSection.v1';
+  const DONUT_RAIN_LAST_KEY = '5tratumos.donutRainLast.v1';
   const STORE_RENDER_STEP = 72;
   let dragAppId = null;
   const openWindows = new Map();
@@ -377,21 +391,94 @@
     topbarActivityEl.addEventListener('click', async () => {
       const items = activityItems();
       if (!items.length) return;
-      const lines = items
-        .slice()
-        .sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0))
-        .map((it) => {
-          const p = it.pct === null || it.pct === undefined ? '' : ` (${it.pct}%)`;
-          const sub = it.sub ? `\n${it.sub}` : '';
-          return `- ${it.label}${p}${sub}`;
-        })
-        .join('\n\n');
-      await openNoticeModal({
-        kind: 'System',
-        title: 'Activity',
-        message: lines,
-        danger: false,
-      });
+      if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+
+      modalTitleEl.textContent = 'Activity';
+      if (modalKindEl) modalKindEl.textContent = 'System';
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-3';
+
+      const sorted = items.slice().sort((a, b) => (Number(b.startedAt) || 0) - (Number(a.startedAt) || 0));
+      for (const it of sorted) {
+        const row = document.createElement('div');
+        row.className = 'forgeos-mini-card';
+
+        const title = document.createElement('div');
+        title.className = 'text-sm font-extrabold';
+        title.textContent = String(it.label || 'Working...');
+        row.appendChild(title);
+
+        const subText = String(it.sub || '').trim();
+        if (subText) {
+          const sub = document.createElement('div');
+          sub.className = 'mt-1 text-xs text-slate-300 whitespace-pre-wrap';
+          sub.textContent = subText;
+          row.appendChild(sub);
+        }
+
+        const pct = it.pct === null || it.pct === undefined ? null : Number(it.pct);
+        if (Number.isFinite(pct)) {
+          const pctEl = document.createElement('div');
+          pctEl.className = 'mt-2 text-xs text-slate-300';
+          pctEl.textContent = `${Math.max(0, Math.min(100, Math.round(pct)))}%`;
+          row.appendChild(pctEl);
+        }
+
+        try {
+          const key = String(it.key || '');
+          if (key.startsWith('app-action:')) {
+            const id = key.slice('app-action:'.length);
+            const st = pendingAppActions.get(id);
+            if (st && typeof st === 'object' && typeof st.abort === 'function') {
+              const actions = document.createElement('div');
+              actions.className = 'mt-3 flex items-center justify-end gap-2';
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'axe-btn';
+              btn.textContent = 'Cancel';
+              btn.addEventListener('click', async () => {
+                const ok = await openConfirmModal({
+                  title: 'Cancel action?',
+                  message:
+                    'This aborts the request from the browser.\n\nThe server may still be working in the background. Use this only if you\'re sure.',
+                  confirmText: 'Cancel action',
+                  cancelText: 'Keep running',
+                  danger: true,
+                });
+                if (!ok) return;
+                try {
+                  st.abort();
+                } catch {}
+                pendingAppActions.delete(id);
+                renderTopbarActivity();
+                closeModal();
+              });
+              actions.appendChild(btn);
+              row.appendChild(actions);
+            }
+          }
+        } catch {}
+
+        wrap.appendChild(row);
+      }
+
+      const footer = document.createElement('div');
+      footer.className = 'flex items-center justify-end gap-2';
+      const btnClose = document.createElement('button');
+      btnClose.type = 'button';
+      btnClose.className = 'axe-btn';
+      btnClose.textContent = 'Close';
+      btnClose.addEventListener('click', () => closeModal());
+      footer.appendChild(btnClose);
+
+      wrap.appendChild(footer);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
     });
   }
 
@@ -972,6 +1059,7 @@
     if (!btnMqttSave) return;
     btnMqttSave.disabled = true;
     if (mqttStatusEl) mqttStatusEl.textContent = 'Saving...';
+    let splashToken = null;
     try {
       const body = {
         enabled: !!(mqttEnabledInput && mqttEnabledInput.checked),
@@ -984,7 +1072,24 @@
           block_found: !!(mqttEventBlockInput && mqttEventBlockInput.checked),
         },
       };
-      const res = await apiJsonTimeout('/api/v0/system/mqtt/config', { method: 'POST', body: JSON.stringify(body) }, 8000);
+
+      let timeoutMs = 8000;
+      if (body.enabled) {
+        // Enabling MQTT may need to install/start Mosquitto; allow a longer timeout and keep the UI focused.
+        const current = await apiJsonTimeout('/api/v0/system/mqtt/config', {}, 5000).catch(() => null);
+        const available = !!(current && typeof current === 'object' && current.available === true);
+        if (!available) {
+          splashToken = showGlobalSplash({
+            title: 'Enabling MQTT',
+            sub: 'Installing and starting Mosquitto...',
+            showProgress: false,
+            dismissable: false,
+          });
+          timeoutMs = 10 * 60 * 1000;
+        }
+      }
+
+      const res = await apiJsonTimeout('/api/v0/system/mqtt/config', { method: 'POST', body: JSON.stringify(body) }, timeoutMs);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
       saveNotifyCache('mqtt', body);
       showToast('MQTT settings saved', null);
@@ -994,6 +1099,7 @@
       if (mqttStatusEl) mqttStatusEl.textContent = 'Save failed.';
       showToast('MQTT save failed', 'error');
     } finally {
+      if (splashToken) hideGlobalSplash(splashToken);
       btnMqttSave.disabled = false;
     }
   }
@@ -1236,6 +1342,203 @@
     return 'static';
   }
 
+  function normalizeThemeId(value) {
+    const v = String(value || '').trim().toLowerCase();
+    const allowed = new Set(['default', 'midnight', 'aurora', 'ember', 'matrix', 'ice', 'donut', 'mono']);
+    return allowed.has(v) ? v : 'default';
+  }
+
+  const THEME_KEY = '5tratumos.theme.v1';
+
+  function getThemeId() {
+    // Prefer localStorage so themes persist even if /api/v0/system/ui is unavailable
+    // or doesn't include theme config yet.
+    try {
+      const raw = window.localStorage.getItem(THEME_KEY);
+      if (raw) return normalizeThemeId(raw);
+    } catch {}
+    const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
+    return normalizeThemeId(cfg.theme);
+  }
+
+  function applyTheme() {
+    const theme = getThemeId();
+
+    // Theme-driven brand swaps (fun mode only).
+    try {
+      const topbarLogo = document.querySelector('.forgeos-desktop-topbar__brand-mark');
+      if (topbarLogo && topbarLogo.tagName === 'IMG') {
+        topbarLogo.src =
+          theme === 'donut' ? '/assets/New%20Logos/donuts.png' : '/assets/New%20Logos/WordOnlyLogo.png';
+      }
+    } catch (_) {}
+
+    // Sidebar "5" mark swap for donut mode.
+    try {
+      const sidebarMarks = Array.from(
+        document.querySelectorAll('.forgeos-brand__mark--full, .forgeos-brand__mark--icon'),
+      );
+      for (const el of sidebarMarks) {
+        if (!el || el.tagName !== 'IMG') continue;
+        el.src = theme === 'donut' ? '/assets/New%20Logos/5_donut.png' : '/assets/New%20Logos/5.png';
+      }
+    } catch (_) {}
+
+    if (theme === 'default') {
+      try {
+        delete document.body.dataset.theme;
+      } catch {
+        document.body.removeAttribute('data-theme');
+      }
+      syncThemeGridSelection();
+      maybeScheduleDonutRain();
+      return;
+    }
+    document.body.dataset.theme = theme;
+    syncThemeGridSelection();
+    maybeScheduleDonutRain();
+  }
+
+  let donutRainScheduled = false;
+
+  function maybeScheduleDonutRain() {
+    // One-time "donut rain" effect: random start within the next hour, runs for 10s.
+    // Only in donut theme, and rate-limited to once per hour per browser via localStorage.
+    try {
+      const theme = getThemeId();
+      if (theme !== 'donut') return;
+      if (donutRainScheduled) return;
+      donutRainScheduled = true;
+
+      const now = Date.now();
+      const lastRaw = window.localStorage.getItem(DONUT_RAIN_LAST_KEY);
+      const last = lastRaw ? Number(lastRaw) : 0;
+      if (Number.isFinite(last) && last > 0 && now - last < 60 * 60 * 1000) return;
+
+      const delayMs = Math.floor(Math.random() * 60 * 60 * 1000);
+      window.setTimeout(() => {
+        try {
+          if (getThemeId() !== 'donut') return;
+          const now2 = Date.now();
+          const last2Raw = window.localStorage.getItem(DONUT_RAIN_LAST_KEY);
+          const last2 = last2Raw ? Number(last2Raw) : 0;
+          if (Number.isFinite(last2) && last2 > 0 && now2 - last2 < 60 * 60 * 1000) return;
+          window.localStorage.setItem(DONUT_RAIN_LAST_KEY, String(now2));
+          triggerDonutRain();
+        } catch (_) {}
+      }, delayMs);
+    } catch (_) {}
+  }
+
+  function triggerDonutRain() {
+    try {
+      const existing = document.querySelector('.forgeos-donut-rain');
+      if (existing) existing.remove();
+
+      const host = document.createElement('div');
+      host.className = 'forgeos-donut-rain';
+
+      const donuts = ['ðŸ©', 'ðŸ©', 'ðŸ©', 'ðŸ§', 'ðŸ¬', 'ðŸ­', 'ðŸ«'];
+      const sprinkles = ['·', '•', '\u2219', '\u22C5'];
+      const sprinkleColors = ['#38bdf8', '#fb7185', '#a78bfa', '#22c55e', '#facc15', '#22d3ee'];
+
+      const drops = 46;
+      for (let i = 0; i < drops; i++) {
+        const el = document.createElement('div');
+        el.className = 'forgeos-donut-drop';
+
+        const isSprinkle = Math.random() < 0.38;
+        if (isSprinkle) {
+          el.textContent = sprinkles[Math.floor(Math.random() * sprinkles.length)];
+          el.style.color = sprinkleColors[Math.floor(Math.random() * sprinkleColors.length)];
+          el.style.fontSize = `${10 + Math.floor(Math.random() * 12)}px`;
+          el.style.opacity = '0.85';
+        } else {
+          el.textContent = donuts[Math.floor(Math.random() * donuts.length)];
+          el.style.fontSize = `${18 + Math.floor(Math.random() * 22)}px`;
+        }
+
+        const x = Math.floor(Math.random() * 100);
+        const dx = Math.floor((Math.random() - 0.5) * 240);
+        const dur = 5 + Math.random() * 5.5;
+        const rot = Math.floor((Math.random() * 720 + 180) * (Math.random() < 0.5 ? 1 : -1));
+        el.style.setProperty('--x', `${x}vw`);
+        el.style.setProperty('--dx', `${dx}px`);
+        el.style.setProperty('--dur', `${dur}s`);
+        el.style.setProperty('--rot', `${rot}deg`);
+
+        host.appendChild(el);
+      }
+
+      document.body.appendChild(host);
+
+      window.setTimeout(() => {
+        try {
+          host.remove();
+        } catch (_) {}
+      }, 10_000);
+    } catch (_) {}
+  }
+
+  const THEMES = [
+    { id: 'default', label: 'Default', desc: 'Classic 5tratumOS' },
+    { id: 'midnight', label: 'Midnight', desc: 'Deep blue' },
+    { id: 'aurora', label: 'Aurora', desc: 'Teal + purple' },
+    { id: 'ember', label: 'Ember', desc: 'Warm orange' },
+    { id: 'matrix', label: 'Matrix', desc: 'Green terminal' },
+    { id: 'ice', label: 'Ice', desc: 'Cool cyan' },
+    { id: 'donut', label: 'Donut', desc: 'Purple candy' },
+    { id: 'mono', label: 'Mono', desc: 'Greyscale' },
+  ];
+
+  function renderThemeGrid() {
+    if (!themeGridEl) return;
+    themeGridEl.innerHTML = '';
+    for (const theme of THEMES) {
+      const id = normalizeThemeId(theme.id);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forgeos-theme-btn';
+      btn.dataset.theme = id;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = `${theme.label}${theme.desc ? ` \u2014 ${theme.desc}` : ''}`;
+
+      const swatch = document.createElement('div');
+      swatch.className = 'forgeos-theme-btn__swatch';
+
+      const label = document.createElement('div');
+      label.className = 'forgeos-theme-btn__label';
+      label.textContent = theme.label;
+
+      const hint = document.createElement('div');
+      hint.className = 'forgeos-theme-btn__hint';
+      hint.textContent = theme.desc || '';
+
+      btn.appendChild(swatch);
+      btn.appendChild(label);
+      if (theme.desc) btn.appendChild(hint);
+
+      btn.addEventListener('click', async () => {
+        await setTheme(id);
+      });
+
+      themeGridEl.appendChild(btn);
+    }
+    syncThemeGridSelection();
+  }
+
+  function syncThemeGridSelection() {
+    if (!themeGridEl) return;
+    const active = getThemeId();
+    const buttons = Array.from(themeGridEl.querySelectorAll('button.forgeos-theme-btn'));
+    for (const btn of buttons) {
+      const id = normalizeThemeId(btn.dataset.theme);
+      const on = id === active;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+
   function getTopbarMode() {
     const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
     if (Object.prototype.hasOwnProperty.call(cfg, 'topbar_mode')) return normalizeTopbarMode(cfg.topbar_mode);
@@ -1255,7 +1558,13 @@
     const collapsedLike = mode !== 'static';
 
     let open = false;
-    if (pinned) open = true;
+    if (isMobileLayout()) {
+      // Mobile UX: keep the top bar as a slim header by default, and let the user
+      // temporarily expand it (metrics) without changing their saved pin/auto mode.
+      open = !!topbarTempOpen;
+    } else if (pinned) {
+      open = true;
+    }
     else if (manual) open = !!topbarTempOpen;
     else if (auto) open = !!topbarTempOpen || (!isMobileLayout() && topbarHoverOpen);
     else open = false;
@@ -1270,16 +1579,11 @@
       topbarHoverOpen = false;
     }
 
-    if (btnTopbarToggle) {
-      const pressed = pinned || (manual && open);
-      btnTopbarToggle.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-      if (manual) {
-        btnTopbarToggle.setAttribute('aria-label', open ? 'Collapse top bar' : 'Expand top bar');
-        btnTopbarToggle.title = open ? 'Collapse top bar' : 'Expand top bar';
-      } else {
-        btnTopbarToggle.setAttribute('aria-label', pinned ? 'Unpin top bar' : 'Pin top bar');
-        btnTopbarToggle.title = pinned ? 'Unpin top bar (auto-hide)' : 'Pin top bar';
-      }
+    if (btnTopbarCollapse) {
+      const expanded = mode === 'static' || (mode === 'manual' && open);
+      btnTopbarCollapse.setAttribute('aria-pressed', expanded ? 'true' : 'false');
+      btnTopbarCollapse.setAttribute('aria-label', expanded ? 'Collapse top bar' : 'Expand top bar');
+      btnTopbarCollapse.title = expanded ? 'Collapse top bar (right-click for options)' : 'Expand top bar (right-click for options)';
     }
   }
 
@@ -1312,12 +1616,6 @@
     document.body.classList.toggle('forgeos-sidebar-manual-open', m === 'manual' && !!sidebarManualOpen);
     if (settingSidebarSelect) settingSidebarSelect.value = m;
 
-    if (btnSidebarPin) {
-      const pinned = m === 'static';
-      btnSidebarPin.setAttribute('aria-pressed', pinned ? 'true' : 'false');
-      btnSidebarPin.setAttribute('aria-label', pinned ? 'Unpin sidebar' : 'Pin sidebar');
-      btnSidebarPin.title = pinned ? 'Unpin sidebar (auto-hide)' : 'Pin sidebar';
-    }
   }
 
   function setSidebarMode(mode) {
@@ -1745,6 +2043,27 @@
     } catch {
       return [];
     }
+  }
+
+  async function hydrateFleetSeriesFromServer() {
+    try {
+      const res = await fetch('/api/v0/fleet/history?limit=720', {
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+      });
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (!data || data.ok !== true || !Array.isArray(data.series)) return;
+      const series = data.series
+        .map((p) => ({ t: Number(p && p.t), v: Number(p && p.v) }))
+        .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t > 0);
+      if (!series.length) return;
+      fleetSeries = series.slice(-720);
+      saveFleetSeries();
+      try {
+        if (lastFleet) renderFleet(lastFleet);
+      } catch {}
+    } catch {}
   }
 
   function saveFleetSeries() {
@@ -2175,8 +2494,7 @@
     const pending = id ? pendingKindFor(id) : '';
     const raw = installed && typeof installed === 'object' ? installed.status : '';
     const s = String(raw || '').trim().toLowerCase();
-    const notCreated = s === 'not-created' || s === 'not_created' || s === 'not created';
-    const stoppedLike = notCreated || s === 'stopped' || s === 'exited' || s === 'dead';
+    const stoppedLike = s === 'not-created' || s === 'not_created' || s === 'not created' || s === 'stopped' || s === 'exited' || s === 'dead';
     const runningLike = s === 'running';
 
     // Guard against stale pending UI states: if the daemon already reports a stable state,
@@ -2188,7 +2506,7 @@
       }
       if (pending === 'down' && stoppedLike) {
         pendingAppActions.delete(id);
-        return notCreated ? 'not running' : 'stopped';
+        return 'stopped';
       }
       const ageMs = pendingAgeMsFor(id);
       if (ageMs > 2 * 60 * 1000) pendingAppActions.delete(id);
@@ -2199,7 +2517,7 @@
     if (pending === 'down') return 'stopping';
     if (pending === 'redeploy') return 'redeploying';
     if (!s) return 'installed';
-    if (notCreated) return 'not running';
+    if (s === 'not-created' || s === 'not_created' || s === 'not created') return 'stopped';
     if (s === 'created') return 'starting';
     if (s === 'exited' || s === 'dead') return 'stopped';
     return s;
@@ -2343,7 +2661,7 @@
   function fallbackLogoFor(appId, name) {
     const id = String(appId || '').trim();
     const label = String(name || id || '?').trim() || '?';
-    if (id.toLowerCase() === 'axedoom') return '/assets/doom.webp';
+    if (id.toLowerCase() === 'axedoom') return '/assets/doom_final.png';
     const key = id || label;
     const cached = fallbackLogoCache.get(key);
     if (cached) return cached;
@@ -2406,7 +2724,7 @@
       name: 'Doom',
       desc: 'Play Doom in your browser (Freedoom). Optional install.',
       tag: 'Fun',
-      logo: '/assets/doom.webp',
+      logo: '/assets/doom_final.png',
       screenshots: [makeShot('Doom', 'Freedoom + Chocolate Doom (noVNC)')],
     },
   };
@@ -2425,7 +2743,7 @@
       const category = sanitizeStoreText(String(store.category || '')).trim();
       let logo = String(store.icon || '').trim() || fallbackLogoFor(id, name);
       if (id === 'axedoom') name = 'Doom';
-      if (id === 'axedoom') logo = '/assets/doom.webp';
+      if (id === 'axedoom') logo = '/assets/doom_final.png';
       const repo = String(store.repo || '').trim();
       const gallery = normalizeGallery(store.gallery);
       const depsRaw = Array.isArray(store.dependencies)
@@ -2470,7 +2788,6 @@
   function statusKeyForUi(text) {
     const t = String(text || '').trim().toLowerCase();
     if (!t) return 'starting';
-    if (t.includes('not running')) return 'offline';
     if (t.includes('online') || t.includes('running') || t.includes('ready')) return 'online';
     if (t.includes('start') || t.includes('init') || t.includes('boot')) return 'starting';
     if (t.includes('offline') || t.includes('down') || t.includes('error') || t.includes('fail')) return 'offline';
@@ -2490,9 +2807,12 @@
   function setHostIp() {
     try {
       const h = window.location.hostname || '';
-      if (hostIp) hostIp.textContent = h || '-';
-      if (metricNetHost) metricNetHost.textContent = h || '-';
-      if (metricNetIp) metricNetIp.textContent = h || '-';
+      const m = lastMetrics && typeof lastMetrics === 'object' ? lastMetrics : null;
+      const ip4 = m && m.network && typeof m.network.ip4 === 'string' ? m.network.ip4 : '';
+      const display = ip4 || h || '-';
+      if (hostIp) hostIp.textContent = display;
+      if (metricNetHost) metricNetHost.textContent = display;
+      if (metricNetIp) metricNetIp.textContent = display;
     } catch {
       if (hostIp) hostIp.textContent = '-';
       if (metricNetHost) metricNetHost.textContent = '-';
@@ -2565,7 +2885,85 @@
     if (appId === 'tailscale' && host) {
       return `${window.location.protocol}//${host}:8240/`;
     }
+    try {
+      const st = installedById && installedById.get ? installedById.get(appId) : null;
+      const ui = st && typeof st === 'object' ? st.ui : null;
+      const mode = ui && typeof ui.mode === 'string' ? String(ui.mode).trim().toLowerCase() : '';
+      const port = ui && typeof ui.port === 'number' ? ui.port : Number(ui && ui.port);
+      if (mode === 'direct' && host && Number.isFinite(port) && port > 0) {
+        return `http://${host}:${port}/`;
+      }
+    } catch {}
     return `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
+  }
+
+  async function httpStatus(url, timeoutMs) {
+    const t = Math.max(500, Number(timeoutMs) || 1500);
+    const ctl = new AbortController();
+    const timer = window.setTimeout(() => ctl.abort(), t);
+    try {
+      const isCrossOrigin = (() => {
+        try {
+          const u = new URL(url, window.location.href);
+          return u.origin !== window.location.origin;
+        } catch {
+          return false;
+        }
+      })();
+      const res = await fetch(url, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: isCrossOrigin ? 'omit' : 'same-origin',
+        mode: isCrossOrigin ? 'no-cors' : 'cors',
+        signal: ctl.signal,
+      });
+      if (isCrossOrigin) return 200;
+      return res && typeof res.status === 'number' ? res.status : 0;
+    } catch {
+      return 0;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  function isAppHttpReady(status) {
+    const s = Number(status) || 0;
+    if (!s) return false;
+    if (s === 404) return false;
+    if (s >= 500) return false;
+    if (s === 501) return false;
+    return true;
+  }
+
+  async function waitForAppReady(appId, url, opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 90000);
+    const pollMs = Math.max(750, Number(options.pollMs) || 1500);
+    const startedAt = Date.now();
+    let lastStatus = 0;
+    while (Date.now() - startedAt < timeoutMs) {
+      lastStatus = await httpStatus(url, 1800);
+      if (isAppHttpReady(lastStatus)) return { ok: true, status: lastStatus, waitedMs: Date.now() - startedAt };
+      await sleep(pollMs);
+    }
+    return { ok: false, status: lastStatus, waitedMs: Date.now() - startedAt };
+  }
+
+  async function runRepairWithoutPrompt(appId) {
+    const id = String(appId || '').trim();
+    if (!id) return { ok: false, error: 'missing app id' };
+    const label = metaFor(id).name || id;
+    const splashToken = showGlobalSplash({ title: `Fixing ${label}`, sub: 'Rebuilding app from template...' });
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout('/api/v0/apps/repair', { method: 'POST', body: JSON.stringify({ id }) }, 900000);
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Fix failed');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e && e.message ? String(e.message) : String(e) };
+    } finally {
+      hideGlobalSplash(splashToken);
+    }
   }
 
   let toastTimer = null;
@@ -2743,6 +3141,232 @@
     });
   }
 
+  function openRichModal(options) {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return Promise.resolve();
+    const opts = options && typeof options === 'object' ? options : {};
+    const title = String(opts.title || 'About').trim() || 'About';
+    const kind = String(opts.kind || 'About').trim() || 'About';
+    const build = typeof opts.build === 'function' ? opts.build : null;
+    const closeText = String(opts.closeText || 'Close').trim() || 'Close';
+
+    return new Promise((resolve) => {
+      modalOnClose = () => resolve();
+      if (modalKindEl) modalKindEl.textContent = kind;
+      modalTitleEl.textContent = title;
+      modalBodyEl.innerHTML = '';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'flex flex-col gap-4';
+
+      const body = document.createElement('div');
+      body.className = 'max-h-[60vh] overflow-y-auto pr-1 text-sm text-slate-200';
+      if (build) build(body);
+      wrap.appendChild(body);
+
+      const actions = document.createElement('div');
+      actions.className = 'flex items-center justify-end gap-2';
+
+      const btnClose = document.createElement('button');
+      btnClose.type = 'button';
+      btnClose.className = 'axe-btn';
+      btnClose.textContent = closeText;
+      btnClose.addEventListener('click', () => closeModal());
+      actions.appendChild(btnClose);
+
+      wrap.appendChild(actions);
+      modalBodyEl.appendChild(wrap);
+
+      modalEl.classList.remove('hidden');
+      modalEl.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      window.setTimeout(() => btnClose.focus(), 20);
+    });
+  }
+
+  function appendHeading(parent, text) {
+    const el = document.createElement('div');
+    el.className = 'text-base font-semibold text-slate-100';
+    el.textContent = String(text || '').trim();
+    parent.appendChild(el);
+  }
+
+  function appendPara(parent, text) {
+    const el = document.createElement('div');
+    el.className = 'whitespace-pre-wrap';
+    el.style.whiteSpace = 'pre-wrap';
+    el.textContent = String(text || '');
+    parent.appendChild(el);
+  }
+
+  function appendBlock(parent, text, className) {
+    const el = document.createElement('div');
+    el.className = String(className || 'whitespace-pre-wrap text-sm leading-relaxed text-slate-200').trim();
+    el.style.whiteSpace = 'pre-wrap';
+    el.textContent = String(text || '');
+    parent.appendChild(el);
+  }
+
+  function appendMono(parent, label, value) {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 gap-1 md:grid-cols-[160px_1fr]';
+    const k = document.createElement('div');
+    k.className = 'text-xs text-slate-300';
+    k.textContent = String(label || '').trim();
+    const v = document.createElement('div');
+    v.className = 'forgeos-mono break-all text-slate-100';
+    v.textContent = String(value || '').trim();
+    row.appendChild(k);
+    row.appendChild(v);
+    parent.appendChild(row);
+  }
+
+  function appendLink(parent, label, href) {
+    const row = document.createElement('div');
+    row.className = 'grid grid-cols-1 gap-1 md:grid-cols-[160px_1fr]';
+    const k = document.createElement('div');
+    k.className = 'text-xs text-slate-300';
+    k.textContent = String(label || '').trim();
+    const a = document.createElement('a');
+    a.className = 'text-sky-300 hover:text-sky-200 underline break-all';
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noreferrer';
+    a.textContent = href;
+    row.appendChild(k);
+    row.appendChild(a);
+    parent.appendChild(row);
+  }
+
+  function openMissionStatementModal() {
+    return openRichModal({
+      kind: 'About',
+      title: 'Mission statement',
+      build: (body) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'forgeos-prose';
+        wrap.style.marginTop = '0.5rem';
+
+        function p(text) {
+          const el = document.createElement('div');
+          el.className = 'forgeos-prose__p';
+          el.textContent = String(text || '');
+          wrap.appendChild(el);
+        }
+
+        function mono(label, value) {
+          const row = document.createElement('div');
+          row.className = 'forgeos-prose__mono';
+          const k = document.createElement('div');
+          k.className = 'forgeos-prose__mono-k';
+          k.textContent = String(label || '').trim();
+          const v = document.createElement('div');
+          v.className = 'forgeos-prose__mono-v';
+          v.textContent = String(value || '').trim();
+          row.appendChild(k);
+          row.appendChild(v);
+          wrap.appendChild(row);
+        }
+
+        p("Hi, I'm Johnny.");
+        p(
+          "AxeSuite and 5tratumOS are built by me, on my own. There's no company behind this, no venture capital, no hidden team. Just one person designing, building, testing, breaking, and rebuilding a blockchain-focused operating system and application stack because I believe mining and blockchain infrastructure should belong to the people actually running the hardware."
+        );
+        p(
+          "This project exists to push back against centralisation, black-box firmware, closed platforms, and the idea that mining should only happen at industrial scale. Home and small-scale miners matter. Individuals matter. Knowledge matters. When you understand your hardware, your power, and your software, you're no longer dependent on someone else's dashboard or promises."
+        );
+        p(
+          "5tratumOS is a blockchain-first operating system. Blockchain is not an add-on or a feature, it's the core design principle. The OS is built specifically to run mining software, blockchain nodes, and supporting services as first-class citizens. AxeSuite applications are integrated directly into the operating system as a root-level layer, not bolted on afterwards. That integration is deliberate. It keeps the system fast, stable, predictable, and efficient, while still exposing what's actually happening under the hood."
+        );
+        p(
+          "AxeSuite exists to give miners real tools, not abstractions. Benchmarking, solo and pool mining, monitoring, tuning, and node management are designed to be transparent, inspectable, and under your control. There are no magic presets, no hidden behaviour, and no 'trust us' configuration. You should know exactly what your hardware is doing, why it's doing it, and how to change it safely."
+        );
+        p(
+          "This is also about hardware. Software is only half the story. The long-term goal is to take designs that usually stay as diagrams, spreadsheets, or half-finished ideas and turn them into real boards, real devices, and real mining hardware that people can actually run at home. An operating system that truly understands blockchain and hardware at a low level is what makes that possible."
+        );
+        p(
+          "Community matters here, but not in a performative way. Decentralisation doesn't come from slogans or social media posts. It comes from lots of people running their own nodes, mining on their own terms, learning how things work, and sharing that knowledge. The feedback, testing, encouragement, and yes, the donated donuts from the community have played a huge part in getting this as far as it has."
+        );
+        p(
+          "This isn't a side project or a hobby experiment. 5tratumOS is intended to be a complete, stable, blockchain-focused operating system. AxeSuite is intended to be a serious toolset for people who care about control, transparency, and decentralisation. If this helps you mine smarter, run your own infrastructure, or simply understand your setup better, then it's doing exactly what it was built to do."
+        );
+        p(
+          "If you're a hardware manufacturer, supplier, or someone with serious ideas around mining or blockchain hardware, you can reach me directly at axesuite.app@gmail.com"
+        );
+        p('Johnny Murray - Donut.');
+        p("If you'd like to support the project, donuts are always appreciated:");
+        mono('Lightning', 'lightning:staticrod559@walletofsatoshi.com');
+        mono('Bitcoin (BTC)', 'bitcoin:bc1q0hvxhnvg3hku7fd9ht04araggpykq75xeq5xdx');
+        mono('Bitcoin Cash (BCH)', 'bitcoincash:qqnfrrqefddf2gexr5l8ey7t4y2qgpgrwcc6l3rgmr');
+        mono('DigiByte (DGB)', 'digibyte:dgb1qurt6nec48uc6uehj3492rlmlr74ghtazetdrt9');
+        body.appendChild(wrap);
+      },
+    });
+  }
+
+  async function openLegalTrademarkModal() {
+    function fetchText(url) {
+      return fetch(url, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .catch(() => '');
+    }
+
+    const container = document.createElement('div');
+    container.className = 'flex flex-col gap-4';
+
+    appendPara(
+      container,
+      [
+        'Summary (human-readable):',
+        '- You can run and modify 5tratumOS for personal and internal use.',
+        '- You cannot redistribute/rebrand it or sell preinstalled images/appliances without permission.',
+        '- Trademarks (5tratum / 5tratumOS / logos) are protected; do not use them to market forks/derivatives.',
+        '',
+        'Full terms are below and in the repository docs.',
+      ].join('\n')
+    );
+
+    appendLink(container, 'LICENSE', 'https://github.com/WillItMod/5tratum/blob/main/LICENSE');
+    appendLink(container, 'LICENSE_POLICY.md', 'https://github.com/WillItMod/5tratum/blob/main/LICENSE_POLICY.md');
+    appendLink(container, 'TRADEMARK.md', 'https://github.com/WillItMod/5tratum/blob/main/TRADEMARK.md');
+
+    const status = document.createElement('div');
+    status.className = 'text-xs text-slate-300';
+    status.textContent = 'Loading full text...';
+    container.appendChild(status);
+
+    const [licenseText, policyText, trademarkText] = await Promise.all([
+      fetchText('/assets/legal/LICENSE.txt'),
+      fetchText('/assets/legal/LICENSE_POLICY.md'),
+      fetchText('/assets/legal/TRADEMARK.md'),
+    ]);
+
+    status.textContent = '';
+
+    function addDetails(title, text) {
+      const details = document.createElement('details');
+      details.className = 'rounded-xl border border-white/10 bg-black/20 px-3 py-2';
+      const summary = document.createElement('summary');
+      summary.className = 'cursor-pointer select-none text-sm font-semibold text-slate-100';
+      summary.textContent = title;
+      const pre = document.createElement('pre');
+      pre.className = 'mt-2 whitespace-pre-wrap break-words text-xs text-slate-200';
+      pre.textContent = text || '(unavailable)';
+      details.appendChild(summary);
+      details.appendChild(pre);
+      container.appendChild(details);
+    }
+
+    addDetails('LICENSE', licenseText);
+    addDetails('LICENSE_POLICY.md', policyText);
+    addDetails('TRADEMARK.md', trademarkText);
+
+    return openRichModal({
+      kind: 'Legal',
+      title: 'Legal & Trademark',
+      build: (body) => body.appendChild(container),
+    });
+  }
+
   function renderWifiNetworks(networks) {
     if (!wifiNetworksEl) return;
     const list = Array.isArray(networks) ? networks : [];
@@ -2803,7 +3427,7 @@
     const sec = String(security || '').trim();
 
     modalKindEl.textContent = 'Network';
-    modalTitleEl.textContent = `Join Wi‑Fi`;
+    modalTitleEl.textContent = `Join Wi-Fi`;
     modalBodyEl.innerHTML = '';
 
     const wrap = document.createElement('div');
@@ -2833,7 +3457,7 @@
     const passInput = document.createElement('input');
     passInput.className = 'forgeos-input';
     passInput.type = 'password';
-    passInput.placeholder = sec ? 'Wi‑Fi password' : 'Optional';
+    passInput.placeholder = sec ? 'Wi-Fi password' : 'Optional';
     passWrap.appendChild(passLbl);
     passWrap.appendChild(passInput);
     wrap.appendChild(passWrap);
@@ -2860,10 +3484,10 @@
         const res = await apiJsonTimeout('/api/v0/system/wifi/connect', { method: 'POST', body: JSON.stringify(body) }, 60000).catch(() => null);
         if (!res || res.ok !== true) throw new Error((res && res.error) || 'connect failed');
         closeModal();
-        showToast('Wi‑Fi connected', null);
+        showToast('Wi-Fi connected', null);
         await refreshWifiStatus();
       } catch (e) {
-        await openNoticeModal({ kind: 'Error', title: 'Wi‑Fi connect failed', message: e && e.message ? String(e.message) : String(e), danger: true });
+        await openNoticeModal({ kind: 'Error', title: 'Wi-Fi connect failed', message: e && e.message ? String(e.message) : String(e), danger: true });
       } finally {
         btnJoin.disabled = false;
         btnJoin.textContent = prev;
@@ -2898,10 +3522,10 @@
     const ssid = String(res.ssid || '').trim();
     wifiStateCache = { enabled, connected, ssid };
     if (wifiStatusEl) wifiStatusEl.textContent = !enabled ? 'Disabled' : connected ? 'Connected' : 'Enabled';
-    if (wifiDetailEl) wifiDetailEl.textContent = !enabled ? 'Wi‑Fi radio is off.' : connected ? (ssid ? `SSID: ${ssid}` : 'Connected') : 'Not connected.';
+    if (wifiDetailEl) wifiDetailEl.textContent = !enabled ? 'Wi-Fi radio is off.' : connected ? (ssid ? `SSID: ${ssid}` : 'Connected') : 'Not connected.';
     if (btnWifiToggle) {
       btnWifiToggle.disabled = false;
-      btnWifiToggle.textContent = enabled ? 'Disable Wi‑Fi' : 'Enable Wi‑Fi';
+      btnWifiToggle.textContent = enabled ? 'Disable Wi-Fi' : 'Enable Wi-Fi';
     }
     if (btnWifiScan) btnWifiScan.disabled = !enabled;
     if (btnWifiDisconnect) btnWifiDisconnect.disabled = !connected;
@@ -2917,7 +3541,7 @@
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'scan failed');
       renderWifiNetworks(res.networks);
     } catch (e) {
-      await openNoticeModal({ kind: 'Error', title: 'Wi‑Fi scan failed', message: e && e.message ? String(e.message) : String(e), danger: true });
+      await openNoticeModal({ kind: 'Error', title: 'Wi-Fi scan failed', message: e && e.message ? String(e.message) : String(e), danger: true });
     } finally {
       btnWifiScan.disabled = false;
       btnWifiScan.textContent = prev;
@@ -3429,7 +4053,8 @@
     const iframe = document.createElement('iframe');
     iframe.className = 'forgeos-window__frame';
     iframe.title = name;
-    iframe.src = appLaunchUrl(id);
+    const targetUrl = appLaunchUrl(id);
+    iframe.src = 'about:blank';
     const launchOverlay = document.createElement('div');
     launchOverlay.className = 'forgeos-app-launch';
     launchOverlay.setAttribute('aria-hidden', 'false');
@@ -3448,8 +4073,43 @@
       launchOverlay.classList.add('forgeos-app-launch--hidden');
       launchOverlay.setAttribute('aria-hidden', 'true');
     };
-    iframe.addEventListener('load', hideLaunch, { once: true });
-    window.setTimeout(hideLaunch, 12000);
+
+    (async () => {
+      // For same-origin apps, wait until the app endpoint is ready before loading the iframe
+      // to avoid showing transient 5xx/501 "not ready" pages.
+      if (targetUrl.startsWith(window.location.origin)) {
+        const ready = await waitForAppReady(id, targetUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
+        if (!ready.ok) {
+          const label = metaFor(id).name || id;
+          const okFix = await openConfirmModal({
+            kind: 'App launch',
+            title: `${label} is still starting`,
+            message:
+              `The app UI is not responding yet (HTTP ${ready.status || 0}).\n\n` +
+              'Run Fix App to repair the deployment, or open anyway.',
+            confirmText: 'Run Fix',
+            cancelText: 'Open anyway',
+          });
+          if (okFix) {
+            const res = await runRepairWithoutPrompt(id);
+            if (!res.ok) {
+              await openNoticeModal({
+                kind: 'Error',
+                title: 'Fix failed',
+                message: res.error || 'Fix failed.',
+                danger: true,
+              });
+            } else {
+              await waitForAppReady(id, targetUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
+            }
+          }
+        }
+      }
+      iframe.src = targetUrl;
+      iframe.addEventListener('load', hideLaunch, { once: true });
+      // Safety: don't trap the overlay forever if an app never fully loads.
+      window.setTimeout(hideLaunch, 600000);
+    })();
 
     const resize = document.createElement('div');
     resize.className = 'forgeos-window__resize';
@@ -3557,10 +4217,16 @@
   async function apiJsonTimeout(path, opts, timeoutMs) {
     const t = Number(timeoutMs) || 0;
     if (!t) return apiJson(path, opts);
-    const ctl = new AbortController();
-    const timer = window.setTimeout(() => ctl.abort(), t);
+    const hasSignal = !!(opts && typeof opts === 'object' && opts.signal);
+    const ctl = hasSignal ? null : new AbortController();
+    const signal = hasSignal ? opts.signal : ctl.signal;
+    const timer = window.setTimeout(() => {
+      try {
+        if (ctl) ctl.abort();
+      } catch {}
+    }, t);
     try {
-      return await apiJson(path, { ...opts, signal: ctl.signal });
+      return await apiJson(path, { ...opts, signal });
     } finally {
       window.clearTimeout(timer);
     }
@@ -3712,6 +4378,12 @@
     if (!/^-?\d+(?:\.\d+)?$/.test(numeric)) return raw;
     const num = Number(numeric);
     if (!Number.isFinite(num)) return raw;
+    if (t.includes('hashrate')) {
+      const rounded = Math.round(num * 100) / 100;
+      let out = rounded.toFixed(2);
+      out = out.replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+      return out;
+    }
     if (t.includes('share') || t.includes('shares') || t.includes('best')) return formatCompactNumber(num);
     return raw;
   }
@@ -3722,6 +4394,7 @@
     const cpu = metrics.cpu || {};
     const cores = Number(cpu.cores) || 1;
     const load1 = Number(cpu.load1) || 0;
+    const tempC = Number(cpu.temp_c);
     const cpuTotal = Number.isFinite(Number(cpu.total_perc)) ? Number(cpu.total_perc) : NaN;
     const cpuPct = Number.isFinite(cpuTotal) ? Math.max(0, Math.round(cpuTotal)) : Math.max(0, Math.round((load1 / cores) * 100));
     if (metricCpu) {
@@ -3729,7 +4402,12 @@
       metricCpu.title = `cores=${cores} load1=${load1.toFixed(2)}`;
     }
     if (metricCpuSub) {
-      metricCpuSub.textContent = `${cores} cores \u2022 load1 ${load1.toFixed(2)}`;
+      const parts = [`${cores} cores`, `load1 ${load1.toFixed(2)}`];
+      if (Number.isFinite(tempC) && tempC > -10 && tempC < 130) {
+        const t = Math.round(tempC);
+        parts.push(`${t}\u00b0C`);
+      }
+      metricCpuSub.textContent = parts.join(' \u2022 ');
     }
     if (metricCpuBar) setMaskedGradientBar(metricCpuBar, cpuPct);
 
@@ -3786,6 +4464,7 @@
       const net = metrics.network || {};
       const rx = Number(net.rx_bytes) || 0;
       const tx = Number(net.tx_bytes) || 0;
+      const linkMbps = Number(net.link_mbps) || 0;
       const now = Date.now();
       let rateRx = 0;
       let rateTx = 0;
@@ -3796,7 +4475,9 @@
       }
       lastNetSample = { time: now, rx, tx };
       const totalRate = rateRx + rateTx;
-      const maxRate = 50 * 1024 * 1024;
+      // If link speed is unknown (common on WiFi/virtual NICs), assume ~100Mbps so the bar
+      // remains informative at moderate throughput.
+      const maxRate = linkMbps > 0 ? (linkMbps * 1000 * 1000) / 8 : 12.5 * 1024 * 1024;
       const pct = maxRate > 0 ? Math.max(0, Math.min(100, (totalRate / maxRate) * 100)) : 0;
       if (metricNetBar) setMaskedGradientBar(metricNetBar, pct);
       if (metricNetSub) metricNetSub.textContent = `Up ${formatBytesPerSec(rateTx)} \u2022 Down ${formatBytesPerSec(rateRx)}`;
@@ -3897,6 +4578,8 @@
               ? 'Restarting'
               : kind === 'redeploy'
                 ? 'Redeploying'
+                : kind === 'repair'
+                  ? 'Fixing'
                 : 'Working on';
       items.push({
         key: `app-action:${id}`,
@@ -3998,6 +4681,37 @@
 
     if (globalSplashEl && !globalSplashEl.classList.contains('hidden')) {
       updateGlobalSplashProgress(pct);
+      try {
+        const kind = String(st.kind || '').trim().toLowerCase();
+        const startedAt = Number(st.startedAt) || 0;
+        const ageMs = startedAt ? Date.now() - startedAt : 0;
+        const ageS = ageMs > 0 ? Math.max(0, Math.round(ageMs / 1000)) : 0;
+        const ageLabel = (() => {
+          if (!ageS) return '';
+          // Avoid flashing a noisy timer for quick operations.
+          if (ageS < 30) return '';
+          const s = Math.max(0, Math.round(ageS));
+          const h = Math.floor(s / 3600);
+          const m = Math.floor((s % 3600) / 60);
+          const r = s % 60;
+          if (h > 0) return `Elapsed ${h}h ${m}m.`;
+          if (m > 0) return `Elapsed ${m}m ${r}s.`;
+          return `Elapsed ${r}s.`;
+        })();
+
+        let hint = '';
+        if (kind === 'update' && pct >= 94 && pct < 100) {
+          hint = 'Finalizing update… waiting for containers to stop / services to restart (this can take a few minutes).';
+        } else if (pct >= 90 && pct < 100) {
+          hint = 'Finalizing… this step can take a moment.';
+        }
+
+        if (hint) {
+          updateGlobalSplash(null, `${hint}${ageLabel ? ` ${ageLabel}` : ''}`);
+          if (globalSplashSubEl) globalSplashSubEl.title = hint;
+          if (globalSplashProgressLabelEl) globalSplashProgressLabelEl.title = hint;
+        }
+      } catch {}
     }
 
     renderTopbarActivity();
@@ -4219,7 +4933,7 @@
     iframe.loading = 'lazy';
     iframe.addEventListener('focus', noteUserActivity);
     iframe.addEventListener('pointerdown', noteUserActivity, { passive: true });
-    iframe.src = pathUrl;
+    iframe.src = 'about:blank';
     let launchHidden = false;
     const hideLaunch = () => {
       if (launchHidden) return;
@@ -4251,7 +4965,38 @@
       } catch {}
       hideLaunch();
     });
-    window.setTimeout(hideLaunch, 12000);
+    (async () => {
+      if (pathUrl.startsWith(window.location.origin)) {
+        const ready = await waitForAppReady(id, pathUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
+        if (!ready.ok) {
+          const label = metaFor(id).name || id;
+          const okFix = await openConfirmModal({
+            kind: 'App launch',
+            title: `${label} is still starting`,
+            message:
+              `The app UI is not responding yet (HTTP ${ready.status || 0}).\n\n` +
+              'Run Fix App to repair the deployment, or open anyway.',
+            confirmText: 'Run Fix',
+            cancelText: 'Open anyway',
+          });
+          if (okFix) {
+            const res = await runRepairWithoutPrompt(id);
+            if (!res.ok) {
+              await openNoticeModal({
+                kind: 'Error',
+                title: 'Fix failed',
+                message: res.error || 'Fix failed.',
+                danger: true,
+              });
+            } else {
+              await waitForAppReady(id, pathUrl, { timeoutMs: 180000 }).catch(() => ({ ok: false, status: 0 }));
+            }
+          }
+        }
+      }
+      iframe.src = pathUrl;
+      window.setTimeout(hideLaunch, 600000);
+    })();
 
     const ui = installed && installed.ui && typeof installed.ui === 'object' ? installed.ui : null;
     const port = ui && ui.port ? Number(ui.port) : 0;
@@ -5652,7 +6397,8 @@
   function formatHashrateThs(value) {
     const v = Number(value);
     if (!Number.isFinite(v) || v < 0) return '-';
-    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : v >= 1 ? 2 : 3;
+    // Cap display precision to 2 decimals (avoid noisy/ugly long floats).
+    const decimals = v >= 100 ? 0 : v >= 10 ? 1 : 2;
     return v.toFixed(decimals);
   }
 
@@ -5704,6 +6450,33 @@
   function renderFleetBreakdown(pools, totalThs) {
     if (!fleetBreakdownEl) return;
     fleetBreakdownEl.innerHTML = '';
+
+    const poolRaw = Array.isArray(pools) ? pools : [];
+    const unreachable = poolRaw
+      .map((p) => {
+        const obj = p && typeof p === 'object' ? p : null;
+        if (!obj) return null;
+        const id = String(obj.id || '').trim();
+        const name = String(obj.name || obj.coin || id || '').trim() || id;
+        const ok = obj.ok === true;
+        const stale = obj.stale === true || obj.sample_ok === false;
+        const err = String(obj.pool_error || obj.workers_error || '').trim();
+        if (ok && !stale) return null;
+        return { id, name, stale, err };
+      })
+      .filter(Boolean);
+
+    if (unreachable.length) {
+      const banner = document.createElement('div');
+      banner.className = 'forgeos-muted';
+      const names = unreachable
+        .slice(0, 3)
+        .map((u) => String(u.name || u.id).trim())
+        .filter(Boolean);
+      const more = unreachable.length > names.length ? ` +${unreachable.length - names.length}` : '';
+      banner.textContent = `Some pools are unreachable (stats may be stale): ${names.join(', ')}${more}`;
+      fleetBreakdownEl.appendChild(banner);
+    }
 
     const entries = Array.isArray(pools)
       ? pools
@@ -5955,40 +6728,6 @@
     renderFleetWorkers(payload);
   }
 
-  async function hydrateFleetSeriesFromServer() {
-    try {
-      const ok = await ensureHealthy();
-      if (!ok) return;
-      const res = await apiJsonTimeout('/api/v0/fleet/history?limit=720', {}, 3500).catch(() => null);
-      if (!res || res.ok !== true || !Array.isArray(res.points)) return;
-
-      const incoming = res.points
-        .map((p) => {
-          const t = Date.parse(String((p && p.time) || ''));
-          const v = Number(p && p.hashrate_ths);
-          if (!Number.isFinite(t) || !Number.isFinite(v)) return null;
-          return { t, v };
-        })
-        .filter(Boolean);
-      if (!incoming.length) return;
-
-      const map = new Map();
-      for (const p of fleetSeries) {
-        if (!p || !Number.isFinite(p.t) || !Number.isFinite(p.v)) continue;
-        map.set(p.t, p.v);
-      }
-      for (const p of incoming) map.set(p.t, p.v);
-
-      fleetSeries = Array.from(map.entries())
-        .map(([t, v]) => ({ t, v }))
-        .sort((a, b) => a.t - b.t)
-        .slice(-720);
-
-      saveFleetSeries();
-      renderFleetSpark();
-    } catch {}
-  }
-
   function loadFleetCache() {
     try {
       const raw = String(window.localStorage.getItem(FLEET_CACHE_KEY) || '').trim();
@@ -6047,6 +6786,7 @@
       if (!metrics || metrics.ok !== true) return;
       lastMetrics = metrics;
       applyMetrics(metrics);
+      setHostIp();
     } finally {
       refreshMetricsInFlight = false;
     }
@@ -6162,6 +6902,25 @@
     } catch {}
   }
 
+  async function refreshHttpsConfig() {
+    if (!httpsEnabledInput && !httpsStatusEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/https', {}, 6000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      const cfg = res.config && typeof res.config === 'object' ? res.config : {};
+      if (httpsEnabledInput) httpsEnabledInput.checked = !!cfg.enabled;
+      if (httpsStatusEl) {
+        const enabled = !!cfg.enabled;
+        const cert = !!res.cert_present;
+        httpsStatusEl.textContent = enabled ? (cert ? 'Enabled (self-signed)' : 'Enabled (missing cert)') : 'Disabled';
+      }
+    } catch (e) {
+      if (httpsStatusEl) httpsStatusEl.textContent = 'Unavailable.';
+    }
+  }
+
   async function refreshUiConfig() {
     try {
       const ok = await ensureHealthy();
@@ -6170,10 +6929,14 @@
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
       uiConfigCache = res;
       if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
+      if (settingThemeSelect) settingThemeSelect.value = getThemeId();
       applyTopbarMode();
+      applyTheme();
     } catch {
       if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
       applyTopbarMode();
+      if (settingThemeSelect) settingThemeSelect.value = getThemeId();
+      applyTheme();
     }
   }
 
@@ -6182,6 +6945,7 @@
     const res = await apiJsonTimeout('/api/v0/system/ui', { method: 'POST', body: JSON.stringify(body) }, 8000).catch(() => null);
     if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
     uiConfigCache = res;
+    applyTheme();
     return res;
   }
 
@@ -6687,7 +7451,7 @@
       const keep = await openConfirmModal({
         title: 'Keep kiosk mode enabled?',
         message:
-          'Kiosk mode launches the 5tratumOS UI fullscreen on an attached monitor (tty1).\n\nChoose “Disable” if this is a headless/VM install.',
+          'Kiosk mode launches the 5tratumOS UI fullscreen on an attached monitor (tty1).\n\nChoose \"Disable\" if this is a headless/VM install.',
         confirmText: 'Keep enabled',
         cancelText: 'Disable',
         danger: false,
@@ -6755,6 +7519,8 @@
   function renderSystemUpdatePanel() {
     const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
     const status = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
+    const rollbacks =
+      systemUpdateRollbacksCache && typeof systemUpdateRollbacksCache === 'object' ? systemUpdateRollbacksCache : null;
 
     const installedTag =
       check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '-';
@@ -6786,15 +7552,53 @@
         updateGlobalSplash('Updating 5tratumOS', label);
         updateGlobalSplashProgress(pct);
       }
-    } else if (systemUpdateSplashToken) {
+    } else if (systemUpdateSplashToken && !systemUpdateHoldSplash) {
       hideGlobalSplash(systemUpdateSplashToken);
       systemUpdateSplashToken = null;
+    } else if (systemUpdateSplashToken && systemUpdateHoldSplash) {
+      updateGlobalSplash('Updating 5tratumOS', 'Restarting services...');
+      updateGlobalSplashProgress(100);
     }
 
     if (btnUpdateCheck) btnUpdateCheck.disabled = busy;
 
     const updateAvailable = !!(check && check.update_available === true);
     if (btnUpdateApply) btnUpdateApply.disabled = busy || !updateAvailable;
+
+    // Rollback UI (uses locally cached update bundles, up to the last N).
+    if (updateRollbackTagSelect && btnUpdateRollback && updateRollbackStatusEl) {
+      const items = rollbacks && Array.isArray(rollbacks.items) ? rollbacks.items : [];
+      const prev = String(updateRollbackTagSelect.value || '').trim();
+
+      updateRollbackTagSelect.innerHTML = '';
+      for (const it of items) {
+        const tag = it && it.tag ? String(it.tag).trim() : '';
+        if (!tag) continue;
+        const cachedAt = it && it.cached_at ? String(it.cached_at).trim() : '';
+        const label = cachedAt ? `${tag} (${cachedAt.replace('T', ' ').replace('Z', ' UTC')})` : tag;
+        const opt = document.createElement('option');
+        opt.value = tag;
+        opt.textContent = label;
+        updateRollbackTagSelect.appendChild(opt);
+      }
+
+      if (prev) updateRollbackTagSelect.value = prev;
+      if (!updateRollbackTagSelect.value && updateRollbackTagSelect.options.length) {
+        updateRollbackTagSelect.value = updateRollbackTagSelect.options[0].value;
+      }
+
+      const selected = String(updateRollbackTagSelect.value || '').trim();
+      const hasItems = updateRollbackTagSelect.options.length > 0;
+      btnUpdateRollback.disabled = busy || !hasItems || !selected;
+      updateRollbackTagSelect.disabled = busy || !hasItems;
+
+      let line = '-';
+      if (busy) line = 'Update in progress.';
+      else if (systemUpdateRollbacksInFlight) line = 'Loading cached versions...';
+      else if (!hasItems) line = 'No cached versions yet. Apply an update to enable rollbacks.';
+      else line = `Ready. ${updateRollbackTagSelect.options.length} cached version(s).`;
+      updateRollbackStatusEl.textContent = line;
+    }
 
     if (updateStatusEl) {
       let line = '-';
@@ -6859,15 +7663,81 @@
       if (systemUpdateIsBusy(state)) {
         scheduleSystemUpdatePoll(1400);
       } else {
-        stopSystemUpdatePoll();
-        if (state === 'done') refreshSystemUpdateCheck({ force: true }).catch(() => {});
+        if (state === 'error') {
+          systemUpdateHoldSplash = false;
+          stopSystemUpdatePoll();
+          renderSystemUpdatePanel();
+          return;
+        }
+
+        // Keep the splash up until we've reconnected and confirmed the new version.
+      if (systemUpdateHoldSplash) {
+        scheduleSystemUpdatePoll(2500);
+        const ok = await finalizeSystemUpdateUi().catch(() => false);
+        if (ok) stopSystemUpdatePoll();
+        return;
       }
-    } catch {
-      if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting...';
-      scheduleSystemUpdatePoll(4000);
-    } finally {
+
+      stopSystemUpdatePoll();
+      if (state === 'done') {
+        refreshSystemUpdateCheck({ force: true }).catch(() => {});
+        refreshSystemUpdateRollbacks({ force: true }).catch(() => {});
+      }
+    }
+  } catch {
+    if (updateStatusEl && systemUpdateIsBusy(systemUpdateState())) updateStatusEl.textContent = 'Reconnecting...';
+    scheduleSystemUpdatePoll(4000);
+  } finally {
       systemUpdatePollInFlight = false;
     }
+  }
+
+  async function finalizeSystemUpdateUi() {
+    // Wait until the portal is reachable again, update check confirms we're up-to-date,
+    // and the auth service is stable (avoid handing the UI back during daemon/nginx restarts).
+    const startedAt = Date.now();
+    const timeoutMs = 3 * 60 * 1000;
+    let stableN = 0;
+    const stableNeed = 3;
+    while (Date.now() - startedAt < timeoutMs) {
+      const ok = await ensureHealthy();
+      if (!ok) {
+        stableN = 0;
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      await refreshSystemUpdateCheck({ force: true }).catch(() => {});
+      const check = systemUpdateCheckCache && typeof systemUpdateCheckCache === 'object' ? systemUpdateCheckCache : null;
+      const installedTag =
+        check && check.installed && typeof check.installed === 'object' && check.installed.tag ? String(check.installed.tag) : '';
+      const updateAvailable = !!(check && check.update_available === true);
+      if (!installedTag || installedTag.toLowerCase() === 'unknown' || updateAvailable) {
+        stableN = 0;
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      const auth = await apiJsonTimeout('/api/v0/auth/status', {}, 2500).catch(() => null);
+      const authOk = !!(auth && typeof auth === 'object' && auth.ok === true);
+      if (!authOk) {
+        stableN = 0;
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+
+      stableN += 1;
+      if (stableN >= stableNeed) {
+        systemUpdateHoldSplash = false;
+        renderSystemUpdatePanel();
+        return true;
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    // Don't trap the UI forever if something goes wrong; leave the panel updated.
+    systemUpdateHoldSplash = false;
+    renderSystemUpdatePanel();
+    return false;
   }
 
   async function refreshSystemUpdateStatus() {
@@ -7049,6 +7919,90 @@
     }
   }
 
+  async function refreshSystemUpdateRollbacks(opts) {
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const force = !!options.force;
+    const now = Date.now();
+    if (systemUpdateRollbacksInFlight) return;
+    if (!force && systemUpdateRollbacksAt && now - systemUpdateRollbacksAt < 60000) {
+      renderSystemUpdatePanel();
+      return;
+    }
+    systemUpdateRollbacksAt = now;
+    systemUpdateRollbacksInFlight = true;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/update/rollbacks', {}, 12000).catch(() => null);
+      if (res && typeof res === 'object') systemUpdateRollbacksCache = res;
+    } finally {
+      systemUpdateRollbacksInFlight = false;
+      renderSystemUpdatePanel();
+    }
+  }
+
+  async function applySystemRollback(tag) {
+    const targetTag = String(tag || '').trim();
+    if (!targetTag) return;
+    if (btnUpdateRollback && btnUpdateRollback.disabled) return;
+
+    const okConfirm = await openConfirmModal({
+      title: `Rollback to ${targetTag}?`,
+      message: 'This reinstalls a cached system bundle and restarts portal services.',
+      confirmText: 'Rollback',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!okConfirm) return;
+
+    if (btnUpdateRollback) btnUpdateRollback.disabled = true;
+    if (btnUpdateApply) btnUpdateApply.disabled = true;
+    if (btnUpdateCheck) btnUpdateCheck.disabled = true;
+    systemUpdateHoldSplash = true;
+
+    if (!systemUpdateSplashToken) {
+      systemUpdateSplashToken = showGlobalSplash({
+        title: 'Rolling back 5tratumOS',
+        sub: 'Starting rollback...',
+        showProgress: true,
+        progress: 0,
+        dismissable: false,
+      });
+    } else {
+      updateGlobalSplash('Rolling back 5tratumOS', 'Starting rollback...');
+      updateGlobalSplashProgress(0);
+    }
+
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) throw new Error('System service unavailable');
+      const ch = systemUpdateCheckCache && systemUpdateCheckCache.channel ? String(systemUpdateCheckCache.channel) : '';
+      const res = await apiJsonTimeout(
+        '/api/v0/system/update/rollback',
+        { method: 'POST', body: JSON.stringify({ tag: targetTag, channel: ch }) },
+        30000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Rollback did not start');
+      showToast(`Rollback started: ${targetTag}`, null);
+      await refreshSystemUpdateStatus();
+      scheduleSystemUpdatePoll(1200);
+    } catch (e) {
+      showToast('Rollback failed', 'error');
+      if (systemUpdateSplashToken) {
+        hideGlobalSplash(systemUpdateSplashToken);
+        systemUpdateSplashToken = null;
+      }
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Rollback failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      renderSystemUpdatePanel();
+    }
+  }
+
   async function clearSystemUpdateToken() {
     if (!btnUpdateTokenClear) return;
     const okConfirm = await openConfirmModal({
@@ -7111,6 +8065,7 @@
 
     if (btnUpdateApply) btnUpdateApply.disabled = true;
     if (btnUpdateCheck) btnUpdateCheck.disabled = true;
+    systemUpdateHoldSplash = true;
     if (!systemUpdateSplashToken) {
       systemUpdateSplashToken = showGlobalSplash({
         title: 'Updating 5tratumOS',
@@ -7189,7 +8144,7 @@
 
       const p = document.createElement('div');
       p.className = 'text-sm text-slate-300 whitespace-pre-wrap';
-      p.textContent = `${reason}\n\nIf you don’t have a key, contact 5tratum to request one.`;
+      p.textContent = `${reason}\n\nIf you don't have a key, contact 5tratum to request one.`;
       wrap.appendChild(p);
 
       const input = document.createElement('input');
@@ -7548,9 +8503,16 @@
     if (!okConfirm) return;
 
     const splashToken = showGlobalSplash({ title: `Fixing ${label}`, sub: 'Rebuilding app from template...' });
+    const ctl = new AbortController();
+    pendingAppActions.set(app_id, { kind: 'repair', startedAt: Date.now(), abort: () => ctl.abort() });
+    renderTopbarActivity();
     try {
       await ensureHealthy();
-      const res = await apiJsonTimeout('/api/v0/apps/repair', { method: 'POST', body: JSON.stringify({ id: app_id }) }, 900000);
+      const res = await apiJsonTimeout(
+        '/api/v0/apps/repair',
+        { method: 'POST', body: JSON.stringify({ id: app_id }), signal: ctl.signal },
+        900000,
+      );
       if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'Fix failed');
       showToast('App repaired', null);
       await refresh();
@@ -7564,6 +8526,8 @@
         danger: true,
       });
     } finally {
+      pendingAppActions.delete(app_id);
+      renderTopbarActivity();
       hideGlobalSplash(splashToken);
     }
   }
@@ -8932,7 +9896,7 @@
       return;
     }
 
-    if (!hasStoreApps && channel === 'global' && hasLoadedStore && !storeLastOk) {
+    if (!hasStoreApps && hasLoadedStore && !storeLastOk) {
       const empty = document.createElement('div');
       empty.className = 'forgeos-store-item';
       empty.style.gridColumn = '1 / -1';
@@ -8940,11 +9904,15 @@
 
       const title = document.createElement('div');
       title.className = 'text-lg font-extrabold tracking-tight';
-      title.textContent = 'Global store not synced';
+      title.textContent = channel === 'global' ? 'Global store not synced' : 'App Store not synced';
 
       const sub = document.createElement('div');
       sub.className = 'mt-2 text-sm text-slate-300';
-      sub.textContent = storeLastError ? `Error: ${storeLastError}` : 'Click Sync to download the global store index.';
+      sub.textContent = storeLastError
+        ? `Error: ${storeLastError}`
+        : channel === 'global'
+          ? 'Click Sync to download the global store index.'
+          : 'Click Sync to download the App Store index.';
 
       const actions = document.createElement('div');
       actions.className = 'forgeos-store-item__actions';
@@ -8952,7 +9920,7 @@
       const btn = document.createElement('button');
       btn.className = 'axe-btn';
       btn.type = 'button';
-      btn.textContent = 'Sync global store';
+      btn.textContent = channel === 'global' ? 'Sync global store' : 'Sync App Store';
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         syncStoreNow().catch(() => {});
@@ -8970,25 +9938,15 @@
       ? storeApps
           .map((a) => (a && typeof a === 'object' ? String(a.id || '').trim() : String(a || '').trim()))
           .filter(Boolean)
-      : channel !== 'global'
-        ? Object.keys(APP_CATALOG)
-        : [];
+      : [];
 
     if (!entries.length) {
       const empty = document.createElement('div');
       empty.className = 'forgeos-muted';
       empty.style.gridColumn = '1 / -1';
-      empty.textContent = 'No apps found.';
+      empty.textContent = refreshStoreInFlight || storeOpenSyncInFlight ? 'Syncing App Store...' : 'No apps found.';
       storeEl.appendChild(empty);
       return;
-    }
-
-    if (hasLoadedStore && !storeLastOk && storeLastError && channel !== 'global') {
-      const notice = document.createElement('div');
-      notice.className = 'forgeos-muted';
-      notice.style.gridColumn = '1 / -1';
-      notice.textContent = `Store not synced (${storeLastError}). Showing built-in catalog.`;
-      storeEl.appendChild(notice);
     }
 
     const ids = entries.slice().sort((a, b) => {
@@ -9552,14 +10510,7 @@
       const path = String(d.path || d.mount || '-') || '-';
       const used = Number(d.used_bytes);
       const total = Number(d.total_bytes);
-      let pct = Number(d.used_pct);
-      if (Number.isFinite(pct)) {
-        // allow either ratio (0-1) or percent (0-100)
-        if (pct <= 1) pct = pct * 100;
-        pct = Math.round(Math.max(0, Math.min(100, pct)));
-      } else {
-        pct = total > 0 ? Math.round((Math.max(0, used) / total) * 100) : NaN;
-      }
+      const pct = total > 0 ? Math.round((Math.max(0, used) / total) * 100) : NaN;
       const cols = [path, Number.isFinite(used) ? formatBytes(used) : '-', Number.isFinite(total) ? formatBytes(total) : '-', Number.isFinite(pct) ? `${pct}%` : '-'];
       const tr = document.createElement('tr');
       for (const c of cols) {
@@ -9618,16 +10569,10 @@
 
         const disks = Array.isArray(m.disks) ? m.disks : [];
         const preferred = disks.find((d) => d && d.path === '/srv/5tratumos-data') || disks.find((d) => d && d.path === '/') || null;
-        let diskPct = preferred ? Number(preferred.used_pct) : NaN;
-        if (Number.isFinite(diskPct)) {
-          if (diskPct <= 1) diskPct = diskPct * 100;
-          diskPct = Math.round(Math.max(0, Math.min(100, diskPct)));
-        } else {
-          diskPct =
-            preferred && Number(preferred.total_bytes) > 0
-              ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
-              : null;
-        }
+        const diskPct =
+          preferred && Number(preferred.total_bytes) > 0
+            ? Math.max(0, Math.round((Number(preferred.used_bytes || 0) / Number(preferred.total_bytes || 1)) * 100))
+            : null;
 
         const uptime = formatUptime(m.uptime_s);
         let line = '';
@@ -10626,6 +11571,67 @@
     applyStoreAutoSyncUi();
   });
 
+  httpsEnabledInput?.addEventListener('change', async () => {
+    const enabled = !!httpsEnabledInput.checked;
+    httpsEnabledInput.disabled = true;
+    btnHttpsRegenerate && (btnHttpsRegenerate.disabled = true);
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout(
+        '/api/v0/system/https',
+        { method: 'POST', body: JSON.stringify({ enabled }) },
+        30000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'save failed');
+      showToast(enabled ? 'HTTPS enabled' : 'HTTPS disabled', null);
+    } catch (err) {
+      // Revert UI state on failure.
+      httpsEnabledInput.checked = !enabled;
+      showToast('HTTPS update failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'HTTPS update failed',
+        message: err && err.message ? String(err.message) : String(err),
+        danger: true,
+      });
+    } finally {
+      httpsEnabledInput.disabled = false;
+      btnHttpsRegenerate && (btnHttpsRegenerate.disabled = false);
+      refreshHttpsConfig().catch(() => {});
+    }
+  });
+
+  btnHttpsRegenerate?.addEventListener('click', async () => {
+    btnHttpsRegenerate.disabled = true;
+    const prev = btnHttpsRegenerate.textContent;
+    btnHttpsRegenerate.textContent = 'Regenerating...';
+    const splashToken = showGlobalSplash({ title: 'Regenerating HTTPS cert', sub: 'This may take a few seconds...' });
+    try {
+      await ensureHealthy();
+      const res = await apiJsonTimeout(
+        '/api/v0/system/https',
+        { method: 'POST', body: JSON.stringify({ enabled: true, regenerate: true }) },
+        60000,
+      );
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'regenerate failed');
+      showToast('HTTPS certificate regenerated', null);
+      if (httpsEnabledInput) httpsEnabledInput.checked = true;
+    } catch (err) {
+      showToast('Regenerate failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Regenerate failed',
+        message: err && err.message ? String(err.message) : String(err),
+        danger: true,
+      });
+    } finally {
+      hideGlobalSplash(splashToken);
+      btnHttpsRegenerate.disabled = false;
+      btnHttpsRegenerate.textContent = prev;
+      refreshHttpsConfig().catch(() => {});
+    }
+  });
+
   btnPower?.addEventListener('click', openPowerModal);
   btnOpenTerminal?.addEventListener('click', openTerminalModal);
   btnAutoLockSave?.addEventListener('click', () => saveSessionConfig(autoLockMinutesInput ? autoLockMinutesInput.value : 0).catch(() => {}));
@@ -10715,10 +11721,22 @@
     setSidebarMode(next);
   });
 
-  btnSidebarPin?.addEventListener('click', () => {
+  btnSidebarCollapse?.addEventListener('contextmenu', (e) => {
     if (isMobileLayout()) return;
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+    } catch {}
     const current = loadSidebarMode();
-    setSidebarMode(current === 'static' ? 'auto' : 'static');
+    openContextMenu(
+      [
+        { label: current === 'auto' ? '\u2713 Auto-hide' : 'Auto-hide', onClick: () => setSidebarMode('auto') },
+        { label: current === 'static' ? '\u2713 Expanded' : 'Expanded', onClick: () => setSidebarMode('static') },
+        { label: current === 'collapsed' ? '\u2713 Collapsed' : 'Collapsed', onClick: () => setSidebarMode('collapsed') },
+      ],
+      e.clientX,
+      e.clientY,
+    );
   });
 
   btnMobileMenu?.addEventListener('click', () => toggleMobileSidebar());
@@ -10842,6 +11860,7 @@
 
   btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true, user: true }).catch(() => {}));
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
+  btnUpdateRollback?.addEventListener('click', () => applySystemRollback(updateRollbackTagSelect?.value).catch(() => {}));
   btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
   btnStorageRefresh?.addEventListener('click', () => refreshStorageSettings().catch(() => {}));
@@ -10867,7 +11886,7 @@
     } catch (e) {
       await openNoticeModal({
         kind: 'Error',
-        title: 'Wi‑Fi update failed',
+        title: 'Wi-Fi update failed',
         message: e && e.message ? String(e.message) : String(e),
         danger: true,
       });
@@ -10889,7 +11908,7 @@
     } catch (e) {
       await openNoticeModal({
         kind: 'Error',
-        title: 'Wi‑Fi disconnect failed',
+        title: 'Wi-Fi disconnect failed',
         message: e && e.message ? String(e.message) : String(e),
         danger: true,
       });
@@ -10901,8 +11920,27 @@
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
-  mqttEnabledInput?.addEventListener('change', () => {
-    setMqttInputsEnabled(!!(mqttEnabledInput && mqttEnabledInput.checked));
+  btnAboutMission?.addEventListener('click', () => openMissionStatementModal().catch(() => {}));
+  btnAboutLegal?.addEventListener('click', () => openLegalTrademarkModal().catch(() => {}));
+  mqttEnabledInput?.addEventListener('change', async () => {
+    if (!mqttEnabledInput) return;
+    const nextEnabled = !!mqttEnabledInput.checked;
+    if (nextEnabled) {
+      const okConfirm = await openConfirmModal({
+        kind: 'MQTT',
+        title: 'Enable MQTT notifications?',
+        message:
+          'Enabling MQTT will install and start Mosquitto if it is not already present.\n\nThis may download images and take a few minutes.',
+        confirmText: 'Enable',
+        cancelText: 'Cancel',
+      });
+      if (!okConfirm) {
+        mqttEnabledInput.checked = false;
+        setMqttInputsEnabled(false);
+        return;
+      }
+    }
+    setMqttInputsEnabled(nextEnabled);
     saveMqttConfig().catch(() => {});
   });
   btnAuthUpdate?.addEventListener('click', async () => {
@@ -11186,7 +12224,7 @@
   settingsLayout = loadSettingsLayout();
   applySettingsLayout();
   fleetSeries = loadFleetSeries();
-  hydrateFleetSeriesFromServer().catch(() => {});
+  hydrateFleetSeriesFromServer();
   initDashboard();
   updateClock();
   window.setInterval(updateClock, 1000);
@@ -11247,19 +12285,68 @@
     });
   }
 
-  if (btnTopbarToggle) {
-    btnTopbarToggle.addEventListener('click', async (e) => {
+  async function setTheme(nextTheme) {
+    const theme = normalizeThemeId(nextTheme);
+    uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), theme };
+    if (settingThemeSelect) settingThemeSelect.value = theme;
+    applyTheme();
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {}
+    try {
+      await saveUiConfig({ theme });
+      showToast('Theme saved', null);
+    } catch (err) {
+      showToast('Theme save failed', err && err.message ? err.message : 'error');
+      await refreshUiConfig();
+    }
+  }
+
+  if (settingThemeSelect) {
+    settingThemeSelect.addEventListener('change', async () => {
+      await setTheme(settingThemeSelect.value);
+    });
+  }
+
+  renderThemeGrid();
+
+  if (btnTopbarCollapse) {
+    btnTopbarCollapse.addEventListener('click', async (e) => {
       try {
         e.preventDefault();
         e.stopPropagation();
       } catch {}
-      const mode = getTopbarMode();
-      if (mode === 'manual') {
+      if (isMobileLayout()) {
         topbarTempOpen = !topbarTempOpen;
         applyTopbarMode();
         return;
       }
-      await setTopbarMode(mode === 'static' ? 'auto' : 'static');
+      const mode = getTopbarMode();
+      if (mode === 'manual' || mode === 'auto') {
+        topbarTempOpen = !topbarTempOpen;
+        applyTopbarMode();
+        return;
+      }
+      await setTopbarMode(mode === 'static' ? 'collapsed' : 'static');
+    });
+
+    btnTopbarCollapse.addEventListener('contextmenu', (e) => {
+      if (isMobileLayout()) return;
+      try {
+        e.preventDefault();
+        e.stopPropagation();
+      } catch {}
+      const currentRaw = getTopbarMode();
+      const current = currentRaw === 'manual' ? 'auto' : currentRaw;
+      openContextMenu(
+        [
+          { label: current === 'auto' ? '\u2713 Auto-hide' : 'Auto-hide', onClick: () => setTopbarMode('auto') },
+          { label: current === 'static' ? '\u2713 Expanded' : 'Expanded', onClick: () => setTopbarMode('static') },
+          { label: current === 'collapsed' ? '\u2713 Collapsed' : 'Collapsed', onClick: () => setTopbarMode('collapsed') },
+        ],
+        e.clientX,
+        e.clientY,
+      );
     });
   }
 
@@ -11302,10 +12389,12 @@
   refreshStoreCustomConfig().catch(() => {});
   refreshSystemUpdateStatus().catch(() => {});
   refreshSystemUpdateConfig().catch(() => {});
+  refreshSystemUpdateRollbacks().catch(() => {});
   refreshAuthSettings().catch(() => {});
   refreshSystemSettings().catch(() => {});
   refreshUiConfig().catch(() => {});
   refreshSessionConfig().catch(() => {});
+  refreshHttpsConfig().catch(() => {});
   refreshMqttConfig().catch(() => {});
   refreshDiscordConfig().catch(() => {});
   refreshWatchdogConfig().catch(() => {});

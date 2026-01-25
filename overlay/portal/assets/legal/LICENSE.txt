@@ -1,0 +1,94 @@
+Business Source License 1.1
+
+License text copyright (c) 2017 MariaDB Corporation Ab.
+“Business Source License” is a trademark of MariaDB Corporation Ab.
+
+-----------------------------------------------------------------------------
+Parameters
+-----------------------------------------------------------------------------
+
+Licensor: WillItMod
+
+Licensed Work: 5tratumOS (including this repository’s source code and related
+materials, excluding third‑party components under their own licenses)
+
+The Licensed Work is (c) WillItMod and other contributors.
+
+Additional Use Grant:
+  You may use, copy, modify, and run the Licensed Work for personal,
+  noncommercial, internal business use (including use on your own hardware),
+  provided you do not violate the “Restrictions” below.
+
+  You may redistribute unmodified copies of the Licensed Work for the sole
+  purpose of evaluation, provided you retain all notices and do not use
+  WillItMod/5tratumOS trademarks or branding except as permitted by
+  `TRADEMARK.md`.
+
+Restrictions:
+  The following are not permitted without a separate commercial license from
+  the Licensor:
+  - Rebranding, representing as your own, or distributing a fork/derivative
+    product under the 5tratumOS name or confusingly similar branding.
+  - Distributing the Licensed Work (modified or unmodified) as a product
+    offering (commercial or noncommercial), including preinstalled images,
+    appliances, or bundles, except as explicitly allowed in the Additional Use
+    Grant.
+  - Offering the Licensed Work (or a derivative) as a hosted service or
+    managed offering, or otherwise using it to provide a competing product or
+    service.
+
+Change Date: 2099-01-01
+
+Change License: Apache License, Version 2.0
+
+-----------------------------------------------------------------------------
+Terms
+-----------------------------------------------------------------------------
+
+The Business Source License (this document, or the “License”) is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in the Change License, on the Change
+Date.
+
+License grant
+
+Subject to the terms and conditions of this License, the Licensor hereby
+grants you a non-exclusive, worldwide, non-transferable, royalty-free license
+to use, copy, modify, create derivative works, and redistribute the Licensed
+Work, in whole or in part, solely as authorized by the Additional Use Grant
+and subject to the Restrictions above.
+
+If you would like to use the Licensed Work in any way that is not permitted by
+this License, you must contact the Licensor to obtain a commercial license.
+
+Notice
+
+You must ensure that anyone who receives a copy of the Licensed Work from you
+also receives a copy of this License.
+
+Trademarks
+
+This License does not grant any rights to use the Licensor’s trademarks,
+service marks, or logos. See `TRADEMARK.md`.
+
+Third‑party components
+
+Third‑party components (including dependencies, libraries, and tools) are not
+covered by this License and remain under their respective licenses.
+
+Disclaimer of warranty
+
+THE LICENSED WORK IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE LICENSED WORK OR THE USE OR OTHER DEALINGS IN THE LICENSED WORK.
+
+-----------------------------------------------------------------------------
+Full license text
+-----------------------------------------------------------------------------
+
+This repository uses the Business Source License 1.1. The full text of BSL 1.1
+is available at:
+  https://mariadb.com/bsl11/
