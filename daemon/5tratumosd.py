@@ -763,6 +763,24 @@ def _write_ui_config(cfg: dict) -> None:
         pass
 
 
+_UI_THEMES = {"default", "midnight", "aurora", "ember", "matrix", "ice", "donut", "mono"}
+_UI_SIDEBAR_MODES = {"static", "collapsed", "auto", "manual"}
+
+
+def _normalize_ui_theme(value: object) -> str:
+    v = str(value or "").strip().lower()
+    return v if v in _UI_THEMES else "default"
+
+
+def _normalize_ui_sidebar_mode(value: object) -> str:
+    v = str(value or "").strip().lower()
+    if v == "expanded":
+        v = "static"
+    if v in {"autohide", "auto-hide"}:
+        v = "auto"
+    return v if v in _UI_SIDEBAR_MODES else "static"
+
+
 def system_ui_config_get() -> dict:
     cfg = _read_ui_config()
     mode = str(cfg.get("workbench_topbar_mode") or "").strip().lower() or "compact"
@@ -800,7 +818,17 @@ def system_ui_config_get() -> dict:
     # Keep pinned consistent with explicit mode.
     pinned = topbar_mode == "static"
 
-    return {"ok": True, "workbench_topbar_mode": mode, "topbar_pinned": pinned, "topbar_mode": topbar_mode}
+    theme = _normalize_ui_theme(cfg.get("theme"))
+    sidebar_mode = _normalize_ui_sidebar_mode(cfg.get("sidebar_mode"))
+
+    return {
+        "ok": True,
+        "workbench_topbar_mode": mode,
+        "topbar_pinned": pinned,
+        "topbar_mode": topbar_mode,
+        "theme": theme,
+        "sidebar_mode": sidebar_mode,
+    }
 
 
 def system_ui_config_set(body: dict) -> dict:
@@ -838,6 +866,24 @@ def system_ui_config_set(body: dict) -> dict:
         cfg["topbar_mode"] = mode
         # Keep pinned coherent with mode for old clients.
         cfg["topbar_pinned"] = mode == "static"
+
+    if "theme" in body:
+        raw = body.get("theme")
+        theme = str(raw or "").strip().lower()
+        if theme not in _UI_THEMES:
+            return {"ok": False, "error": "theme must be one of: default, midnight, aurora, ember, matrix, ice, donut, mono"}
+        cfg["theme"] = theme
+
+    if "sidebar_mode" in body or "sidebarMode" in body:
+        raw = body.get("sidebar_mode") if "sidebar_mode" in body else body.get("sidebarMode")
+        mode = str(raw or "").strip().lower()
+        if mode == "expanded":
+            mode = "static"
+        if mode in {"autohide", "auto-hide"}:
+            mode = "auto"
+        if mode not in _UI_SIDEBAR_MODES:
+            return {"ok": False, "error": "sidebar_mode must be static, collapsed, auto, or manual"}
+        cfg["sidebar_mode"] = mode
 
     _write_ui_config(cfg)
     return {**system_ui_config_get(), "saved": True}

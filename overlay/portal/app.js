@@ -1306,6 +1306,9 @@
       const raw = String(window.localStorage.getItem(SIDEBAR_MODE_KEY) || '').trim().toLowerCase();
       if (raw === 'static' || raw === 'collapsed' || raw === 'auto' || raw === 'manual') return raw;
     } catch {}
+    const cfg = uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {};
+    const server = String(cfg.sidebar_mode || cfg.sidebarMode || '').trim().toLowerCase();
+    if (server === 'static' || server === 'collapsed' || server === 'auto' || server === 'manual') return server;
     return 'static';
   }
 
@@ -1679,15 +1682,23 @@
     }
   }
 
-  function setSidebarMode(mode) {
+  async function setSidebarMode(mode) {
     const next = String(mode || '').trim().toLowerCase();
     if (!['static', 'collapsed', 'auto', 'manual'].includes(next)) return;
     sidebarManualOpen = false;
     saveSidebarManualOpen(false);
+    uiConfigCache = { ...(uiConfigCache && typeof uiConfigCache === 'object' ? uiConfigCache : {}), sidebar_mode: next };
     try {
       window.localStorage.setItem(SIDEBAR_MODE_KEY, next);
     } catch {}
     applySidebarMode(next);
+    try {
+      await saveUiConfig({ sidebar_mode: next });
+      showToast('Sidebar setting saved', null);
+    } catch (err) {
+      showToast('Sidebar save failed', err && err.message ? err.message : 'error');
+      await refreshUiConfig();
+    }
   }
 
   function loadDashboardMode() {
@@ -7070,10 +7081,12 @@
       uiConfigCache = res;
       if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
       if (settingThemeSelect) settingThemeSelect.value = getThemeId();
+      applySidebarMode(loadSidebarMode());
       applyTopbarMode();
       applyTheme();
     } catch {
       if (settingTopbarSelect) settingTopbarSelect.value = getTopbarMode();
+      applySidebarMode(loadSidebarMode());
       applyTopbarMode();
       if (settingThemeSelect) settingThemeSelect.value = getThemeId();
       applyTheme();
