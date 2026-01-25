@@ -1589,6 +1589,44 @@
 
   let mobileSidebarPrevMode = '';
 
+  function captureInstalledAppsScrollState() {
+    if (!installedAppsEl) return null;
+    const el = installedAppsEl;
+    const scrollTop = Number(el.scrollTop) || 0;
+    const items = Array.from(el.querySelectorAll('.forgeos-app-item[data-app-id]'));
+    if (!items.length) return { scrollTop };
+    let anchor = null;
+    for (const it of items) {
+      if (!(it instanceof HTMLElement)) continue;
+      const top = Number(it.offsetTop) || 0;
+      const h = Number(it.offsetHeight) || 0;
+      if (top + h >= scrollTop) {
+        anchor = it;
+        break;
+      }
+    }
+    if (!anchor) anchor = items[items.length - 1];
+    if (!(anchor instanceof HTMLElement)) return { scrollTop };
+    const appId = String(anchor.dataset.appId || '').trim();
+    const offset = scrollTop - (Number(anchor.offsetTop) || 0);
+    return { appId, offset, scrollTop };
+  }
+
+  function restoreInstalledAppsScrollState(state) {
+    if (!installedAppsEl || !state) return;
+    const el = installedAppsEl;
+    const appId = String(state.appId || '').trim();
+    const offset = Number(state.offset) || 0;
+    if (appId) {
+      const anchor = el.querySelector(`.forgeos-app-item[data-app-id="${cssEscape(appId)}"]`);
+      if (anchor instanceof HTMLElement) {
+        el.scrollTop = Math.max(0, (Number(anchor.offsetTop) || 0) + offset);
+        return;
+      }
+    }
+    el.scrollTop = Math.max(0, Number(state.scrollTop) || 0);
+  }
+
   function setMobileSidebarOpen(open) {
     const next = !!open;
     if (next) {
@@ -1609,6 +1647,7 @@
 
   function applySidebarMode(mode) {
     const m = String(mode || 'static').toLowerCase();
+    const scrollState = captureInstalledAppsScrollState();
     document.body.classList.toggle('forgeos-sidebar-manual', m === 'manual');
     document.body.classList.toggle('forgeos-sidebar-auto', m === 'auto');
     const collapsed = m === 'collapsed' || (m === 'manual' && !sidebarManualOpen);
@@ -1616,6 +1655,13 @@
     document.body.classList.toggle('forgeos-sidebar-manual-open', m === 'manual' && !!sidebarManualOpen);
     if (settingSidebarSelect) settingSidebarSelect.value = m;
 
+    // Keep the installed-apps list anchored to the same app when the sidebar
+    // expands/collapses (avoids "jumping" due to different spacing/layout).
+    if (scrollState) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => restoreInstalledAppsScrollState(scrollState));
+      });
+    }
   }
 
   function setSidebarMode(mode) {

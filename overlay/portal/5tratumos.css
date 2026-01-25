@@ -770,10 +770,10 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
 body.forgeos-sidebar-collapsed .forgeos-nav-item,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item {
   /* Keep icon alignment stable when expanding/collapsing the drawer. */
-  padding: 7px 9px;
+  padding: 0;
   height: 44px;
   border-radius: 14px;
-  justify-content: flex-start;
+  justify-content: center;
   background: rgba(0, 0, 0, 0.12);
   border-color: rgba(255, 255, 255, 0.06);
 }
@@ -787,17 +787,17 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item:hover {
 
 body.forgeos-sidebar-collapsed .forgeos-nav-item__icon,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item__icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.18);
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  border: none;
+  background: transparent;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-nav-item__icon svg,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item__icon svg {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 body.forgeos-sidebar-collapsed .forgeos-brand__title,
@@ -880,8 +880,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:hover .forgeos-app-item__name-wrap {
 
 body.forgeos-sidebar-collapsed .forgeos-app-list,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-list {
-  /* Match the expanded drawer's more relaxed spacing. */
-  gap: 12px;
+  /* Keep list geometry stable so scroll position doesn't jump. */
+  gap: 8px;
 }
 
 .forgeos-app-item {
@@ -897,8 +897,6 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-list {
 
 body.forgeos-sidebar-collapsed .forgeos-app-item,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-app-item {
-  padding: 9px 10px;
-  border-radius: 18px;
   background: rgba(0, 0, 0, 0.12);
   border-color: rgba(255, 255, 255, 0.06);
 }
