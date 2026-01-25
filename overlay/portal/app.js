@@ -79,6 +79,7 @@
   const installedEmptyEl = document.getElementById('installed-empty');
   const btnRefresh = document.getElementById('btn-refresh');
   const btnPower = document.getElementById('btn-power');
+  const sidebarEl = document.querySelector('.forgeos-sidebar');
   const sidebarClockEl = document.getElementById('sidebar-clock');
   const btnSidebarCollapse = document.getElementById('btn-sidebar-collapse');
   const btnMobileMenu = document.getElementById('btn-mobile-menu');
@@ -1595,32 +1596,45 @@
     const scrollTop = Number(el.scrollTop) || 0;
     const items = Array.from(el.querySelectorAll('.forgeos-app-item[data-app-id]'));
     if (!items.length) return { scrollTop };
+
+    const rect = el.getBoundingClientRect();
+    const yRel = Math.max(24, Math.min(Math.floor(rect.height * 0.3), 140));
+    const yInContent = scrollTop + yRel;
+
     let anchor = null;
+    let bestDist = Number.POSITIVE_INFINITY;
     for (const it of items) {
       if (!(it instanceof HTMLElement)) continue;
       const top = Number(it.offsetTop) || 0;
       const h = Number(it.offsetHeight) || 0;
-      if (top + h >= scrollTop) {
+      const bottom = top + h;
+      const contains = yInContent >= top && yInContent <= bottom;
+      if (contains) {
         anchor = it;
         break;
       }
+      const dist = Math.min(Math.abs(yInContent - top), Math.abs(yInContent - bottom));
+      if (dist < bestDist) {
+        bestDist = dist;
+        anchor = it;
+      }
     }
-    if (!anchor) anchor = items[items.length - 1];
     if (!(anchor instanceof HTMLElement)) return { scrollTop };
     const appId = String(anchor.dataset.appId || '').trim();
-    const offset = scrollTop - (Number(anchor.offsetTop) || 0);
-    return { appId, offset, scrollTop };
+    const anchorOffset = yInContent - (Number(anchor.offsetTop) || 0);
+    return { appId, anchorOffset, yRel, scrollTop };
   }
 
   function restoreInstalledAppsScrollState(state) {
     if (!installedAppsEl || !state) return;
     const el = installedAppsEl;
     const appId = String(state.appId || '').trim();
-    const offset = Number(state.offset) || 0;
+    const yRel = Math.max(0, Number(state.yRel) || 0);
+    const anchorOffset = Number(state.anchorOffset) || 0;
     if (appId) {
       const anchor = el.querySelector(`.forgeos-app-item[data-app-id="${cssEscape(appId)}"]`);
       if (anchor instanceof HTMLElement) {
-        el.scrollTop = Math.max(0, (Number(anchor.offsetTop) || 0) + offset);
+        el.scrollTop = Math.max(0, (Number(anchor.offsetTop) || 0) + anchorOffset - yRel);
         return;
       }
     }
@@ -11864,6 +11878,27 @@
       e.clientX,
       e.clientY,
     );
+  });
+
+  function stabilizeSidebarScrollAfterLayoutChange() {
+    const st = captureInstalledAppsScrollState();
+    if (!st) return;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => restoreInstalledAppsScrollState(st));
+    });
+  }
+
+  // In auto-hide mode, the sidebar expands/collapses on hover via CSS. Keep the
+  // installed apps list anchored so it doesn't "jump" between the two layouts.
+  sidebarEl?.addEventListener('mouseenter', () => {
+    if (isMobileLayout()) return;
+    if (!document.body.classList.contains('forgeos-sidebar-auto')) return;
+    stabilizeSidebarScrollAfterLayoutChange();
+  });
+  sidebarEl?.addEventListener('mouseleave', () => {
+    if (isMobileLayout()) return;
+    if (!document.body.classList.contains('forgeos-sidebar-auto')) return;
+    stabilizeSidebarScrollAfterLayoutChange();
   });
 
   btnMobileMenu?.addEventListener('click', () => toggleMobileSidebar());
