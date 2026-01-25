@@ -9,6 +9,7 @@ import os
 import re
 import datetime
 import calendar
+import random
 import secrets
 import shlex
 import shutil
@@ -4410,6 +4411,9 @@ _FLEET_CACHE: dict[str, dict] = {}
 _FLEET_POOL_CACHE_LOCK = threading.Lock()
 _FLEET_POOL_CACHE: dict[str, dict] = {}
 
+_DASHBOARD_CACHE_LOCK = threading.Lock()
+_DASHBOARD_CACHE: dict[str, dict] = {}
+
 _FLEET_HISTORY_LOCK = threading.Lock()
 _FLEET_HISTORY: list[dict] = []
 FLEET_HISTORY_FILE = str(_env("FLEET_HISTORY_FILE", os.path.join(STATE_DIR, "fleet_history.json")) or os.path.join(STATE_DIR, "fleet_history.json"))
@@ -4417,6 +4421,13 @@ FLEET_HISTORY_MAX_POINTS = int(str(_env("FLEET_HISTORY_MAX_POINTS", "2160") or "
 FLEET_HISTORY_SAMPLE_S = float(str(_env("FLEET_HISTORY_SAMPLE_S", "10") or "10").strip() or "10")
 FLEET_HISTORY_POOL_STALE_S = float(str(_env("FLEET_HISTORY_POOL_STALE_S", "600") or "600").strip() or "600")
 FLEET_HISTORY_SAVE_EVERY_S = float(str(_env("FLEET_HISTORY_SAVE_EVERY_S", "60") or "60").strip() or "60")
+
+# Periodic dashboard sampling (precompute widgets/fleet so HTTP handlers are constant-time).
+DASHBOARD_SAMPLE_S = float(str(_env("DASHBOARD_SAMPLE_S", "10") or "10").strip() or "10")
+DASHBOARD_SAMPLE_JITTER_S = float(str(_env("DASHBOARD_SAMPLE_JITTER_S", "1") or "1").strip() or "1")
+DASHBOARD_WIDGET_TTL_S = float(str(_env("DASHBOARD_WIDGET_TTL_S", "12") or "12").strip() or "12")
+DASHBOARD_FLEET_TTL_S = float(str(_env("DASHBOARD_FLEET_TTL_S", "12") or "12").strip() or "12")
+DASHBOARD_FLEET_LIMIT = int(str(_env("DASHBOARD_FLEET_LIMIT", "200") or "200").strip() or "200")
 
 
 def _fleet_history_load() -> None:
@@ -4546,6 +4557,61 @@ def _fleet_sampler_loop() -> None:
             pass
         try:
             time.sleep(max(5.0, float(FLEET_HISTORY_SAMPLE_S)))
+        except Exception:
+            time.sleep(30.0)
+
+
+def _dashboard_cache_get(key: str) -> dict | None:
+    k = str(key or "").strip()
+    if not k:
+        return None
+    with _DASHBOARD_CACHE_LOCK:
+        v = _DASHBOARD_CACHE.get(k)
+        if isinstance(v, dict):
+            return dict(v)
+    return None
+
+
+def _dashboard_cache_set(key: str, value: dict) -> None:
+    k = str(key or "").strip()
+    if not k or not isinstance(value, dict):
+        return
+    with _DASHBOARD_CACHE_LOCK:
+        _DASHBOARD_CACHE[k] = dict(value)
+
+
+def _dashboard_sampler_loop() -> None:
+    while True:
+        started = time.time()
+        now_iso = _now_iso()
+        try:
+            fleet = axe_fleet_summary(limit_workers=DASHBOARD_FLEET_LIMIT, include_workers=True)
+            if isinstance(fleet, dict) and fleet.get("ok") is True:
+                fleet["_sample_epoch"] = time.time()
+                fleet["sampled_at"] = now_iso
+                fleet["source"] = "sampler"
+                _dashboard_cache_set(f"fleet_summary_limit_{DASHBOARD_FLEET_LIMIT}", fleet)
+        except Exception:
+            pass
+
+        try:
+            widgets = list_app_widgets()
+            if isinstance(widgets, dict) and widgets.get("ok") is True:
+                widgets["_sample_epoch"] = time.time()
+                widgets["sampled_at"] = now_iso
+                widgets["source"] = "sampler"
+                _dashboard_cache_set("apps_widgets", widgets)
+        except Exception:
+            pass
+
+        try:
+            base = max(5.0, float(DASHBOARD_SAMPLE_S))
+            elapsed = max(0.0, time.time() - started)
+            sleep_for = max(0.0, base - elapsed)
+            jitter = float(DASHBOARD_SAMPLE_JITTER_S)
+            if jitter > 0:
+                sleep_for += random.uniform(0.0, jitter)
+            time.sleep(max(1.0, sleep_for))
         except Exception:
             time.sleep(30.0)
 
@@ -4873,7 +4939,9 @@ def _fetch_json(
 def list_app_widgets() -> dict:
     cache = _WIDGET_CACHE.get("widgets") or {}
     now = time.time()
-    if cache.get("time") and now - float(cache.get("time") or 0) < 3:
+    # Widgets are used by the dashboard; keep a slightly longer TTL to reduce load and
+    # avoid slow app endpoints stalling the UI.
+    if cache.get("time") and now - float(cache.get("time") or 0) < float(DASHBOARD_WIDGET_TTL_S):
         return {"ok": True, "time": _now_iso(), "apps": cache.get("apps") or []}
 
     apps_out: list[dict] = []
@@ -7102,6 +7170,16 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/v0/apps/widgets":
+            cached = _dashboard_cache_get("apps_widgets")
+            if isinstance(cached, dict):
+                try:
+                    age_s = time.time() - float(cached.get("_sample_epoch") or 0.0)
+                except Exception:
+                    age_s = None
+                if age_s is None or age_s <= float(DASHBOARD_WIDGET_TTL_S):
+                    json_response(self, HTTPStatus.OK, cached)
+                    return
+
             def _compute_widgets() -> dict:
                 return list_app_widgets()
 
@@ -7124,6 +7202,17 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     limit = None
             limit_key = str(limit) if isinstance(limit, int) and limit > 0 else "all"
+
+            if isinstance(limit, int) and limit == int(DASHBOARD_FLEET_LIMIT):
+                cached = _dashboard_cache_get(f"fleet_summary_limit_{DASHBOARD_FLEET_LIMIT}")
+                if isinstance(cached, dict):
+                    try:
+                        age_s = time.time() - float(cached.get("_sample_epoch") or 0.0)
+                    except Exception:
+                        age_s = None
+                    if age_s is None or age_s <= float(DASHBOARD_FLEET_TTL_S):
+                        json_response(self, HTTPStatus.OK, cached)
+                        return
 
             def _compute_fleet() -> dict:
                 return axe_fleet_summary(limit_workers=limit)
@@ -7577,6 +7666,7 @@ def main() -> int:
     threading.Thread(target=_watchdog_loop, daemon=True).start()
     threading.Thread(target=_boot_reconcile_loop, daemon=True).start()
     threading.Thread(target=_fleet_sampler_loop, daemon=True).start()
+    threading.Thread(target=_dashboard_sampler_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
