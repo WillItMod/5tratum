@@ -741,7 +741,7 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
   border: 1px solid var(--forgeos-border);
   background: rgba(255, 255, 255, 0.03);
   border-radius: 14px;
-  padding: 7px 9px;
+  padding: 5px 9px;
   transition: transform 120ms ease, background-color 120ms ease, border-color 120ms ease;
   display: flex;
   align-items: center;
@@ -753,8 +753,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.18);
@@ -763,8 +763,8 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
 }
 
 .forgeos-nav-item__icon svg {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
 .forgeos-nav-item:hover {
@@ -786,10 +786,10 @@ body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-brand__btn {
 body.forgeos-sidebar-collapsed .forgeos-nav-item,
 body.forgeos-sidebar-auto .forgeos-sidebar:not(:hover) .forgeos-nav-item {
   /* Keep icon alignment stable when expanding/collapsing the drawer. */
-  padding: 7px 9px;
+  padding: 5px 9px;
   min-height: 44px;
   border-radius: 14px;
-  justify-content: flex-start;
+  justify-content: center;
   background: rgba(0, 0, 0, 0.12);
   border-color: rgba(255, 255, 255, 0.06);
 }
