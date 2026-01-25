@@ -4880,14 +4880,11 @@ def list_app_widgets() -> dict:
     widget_tasks: list[tuple[concurrent.futures.Future, dict]] = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
-        for app_id in list_installed_app_ids():
+        # Mining Overview is currently intended for AxeSuite apps.
+        for app_id in [a for a in list_installed_app_ids() if a in AXE_WIDGET_APP_IDS]:
             store_meta = {}
             widgets: list = []
-            if app_id in AXE_WIDGET_APP_IDS:
-                widgets = list(AXE_WIDGET_DEFS)
-            else:
-                store_meta = store_app_by_id(app_id) or {}
-                widgets = store_meta.get("widgets") or []
+            widgets = list(AXE_WIDGET_DEFS)
             if not isinstance(widgets, list) or not widgets:
                 continue
 
