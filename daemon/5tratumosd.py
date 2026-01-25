@@ -6221,13 +6221,88 @@ def schedule_power_action(action: str) -> dict:
 
 
 def docker_compose_project(app_id: str) -> str:
+    app_id = str(app_id or "").strip().lower()
     new_project = f"5tratumos-{app_id}"
     legacy_project = f"{_legacy_brand()}-{app_id}"
-    if docker_containers_for_project(new_project):
-        return new_project
-    if docker_containers_for_project(legacy_project):
-        return legacy_project
+    bare_project = app_id
+
+    # Keep daemon behavior aligned with `bin/5tratumos app_project_name()`:
+    # - prefer new brand
+    # - fall back to legacy brand
+    # - support older installs that used bare project names (e.g. "axedgb")
+    for project in (new_project, legacy_project, bare_project):
+        if project and docker_containers_for_project(project):
+            return project
+
+    # Last resort: infer the project from existing compose-labeled containers.
+    guessed = _guess_docker_compose_project(app_id)
+    if guessed:
+        return guessed
+
     return new_project
+
+
+def _parse_docker_labels(labels: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for part in str(labels or "").split(","):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        k = k.strip()
+        v = v.strip()
+        if not k:
+            continue
+        out[k] = v
+    return out
+
+
+def _guess_docker_compose_project(app_id: str) -> str | None:
+    app_id = str(app_id or "").strip().lower()
+    if not app_id:
+        return None
+
+    proc = run_cmd(["docker", "ps", "-a", "--format", "{{json .}}"], timeout_s=30)
+    if proc.returncode != 0:
+        return None
+
+    scores: dict[str, int] = {}
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            c = json.loads(line)
+        except Exception:
+            continue
+
+        name = str(c.get("Names") or "").strip().lower()
+        labels = _parse_docker_labels(str(c.get("Labels") or ""))
+        project = str(labels.get("com.docker.compose.project") or "").strip()
+        if not project:
+            continue
+
+        project_l = project.lower()
+        if app_id not in project_l and app_id not in name:
+            continue
+
+        score = 1
+        if project_l == app_id:
+            score += 10
+        if project_l.endswith(f"-{app_id}"):
+            score += 6
+        if project_l.startswith(f"{app_id}-"):
+            score += 4
+        if name.startswith(f"{project_l}-"):
+            score += 3
+        if f"-{app_id}-" in name or name.startswith(f"{app_id}-"):
+            score += 3
+
+        scores[project] = scores.get(project, 0) + score
+
+    if not scores:
+        return None
+    return max(scores.items(), key=lambda kv: (kv[1], kv[0]))[0]
 
 
 def docker_containers_for_project(project: str) -> list[dict]:
