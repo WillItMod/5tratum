@@ -7229,6 +7229,24 @@ def _detect_ui_port(app_id: str, store_port: int | None, *, require_http: bool) 
 def _nginx_proxy_block(app_id: str, port: int) -> str:
     aid = str(app_id or "").strip()
     p = int(port)
+    app_prefix = f"/apps/{aid}"
+    # Nginx sub_filter can't do conditional/regex rewrites, so we combine:
+    # - targeted sub_filter rewrites for common static asset prefixes, and
+    # - an injected JS shim to prefix root-absolute XHR/fetch calls at runtime.
+    # This avoids breaking already-correct /apps/* links while fixing apps that assume they run at /.
+    js_prefix_shim = (
+        "<script>(function(){try{var p=\""
+        + app_prefix
+        + "\";if(window.__f5p===p)return;window.__f5p=p;function f(u){if(typeof u!==\"string\")return u;"
+        "if(u.startsWith(\"//\"))return u;if(!u.startsWith(\"/\"))return u;if(u.startsWith(p+\"/\"))return u;"
+        "if(u.startsWith(\"/apps/\"))return u;return p+u;}"
+        "if(typeof window.fetch===\"function\"){var of=window.fetch.bind(window);window.fetch=function(i,o){try{"
+        "if(typeof i===\"string\")i=f(i);else if(i&&typeof i.url===\"string\")i=new Request(f(i.url),i);}catch(e){}"
+        "return of(i,o);};}"
+        "if(window.XMLHttpRequest&&XMLHttpRequest.prototype&&XMLHttpRequest.prototype.open){var oo=XMLHttpRequest.prototype.open;"
+        "XMLHttpRequest.prototype.open=function(m,u){try{u=f(u);}catch(e){}arguments[1]=u;return oo.apply(this,arguments);};}"
+        "}catch(e){}})();</script>"
+    )
     return f"""
 
   location = /apps/{aid} {{
@@ -7241,6 +7259,7 @@ def _nginx_proxy_block(app_id: str, port: int) -> str:
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Prefix {app_prefix};
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
     proxy_hide_header X-Frame-Options;
@@ -7249,20 +7268,39 @@ def _nginx_proxy_block(app_id: str, port: int) -> str:
     proxy_set_header Accept-Encoding "";
     sub_filter_once off;
     sub_filter_types text/html text/css application/javascript text/javascript application/json application/manifest+json;
+    sub_filter '</head>' '{js_prefix_shim}</head>';
+    sub_filter '</body>' '{js_prefix_shim}</body>';
     sub_filter '"/app.css' '"/apps/{aid}/app.css';
     sub_filter "'/app.css" "'/apps/{aid}/app.css";
     sub_filter '"/app.js' '"/apps/{aid}/app.js';
     sub_filter "'/app.js" "'/apps/{aid}/app.js";
     sub_filter '"/assets/' '"/apps/{aid}/assets/';
     sub_filter "'/assets/" "'/apps/{aid}/assets/";
+    sub_filter 'url(/assets/' 'url(/apps/{aid}/assets/';
     sub_filter '"/api/' '"/apps/{aid}/api/';
     sub_filter "'/api/" "'/apps/{aid}/api/";
     sub_filter '"/api"' '"/apps/{aid}/api"';
     sub_filter "'/api'" "'/apps/{aid}/api'";
     sub_filter '`/api/' '`/apps/{aid}/api/';
     sub_filter '`/api`' '`/apps/{aid}/api`';
+    sub_filter '"/static/' '"/apps/{aid}/static/';
+    sub_filter "'/static/" "'/apps/{aid}/static/";
+    sub_filter 'url(/static/' 'url(/apps/{aid}/static/';
+    sub_filter '"/_next/' '"/apps/{aid}/_next/';
+    sub_filter "'/_next/" "'/apps/{aid}/_next/";
+    sub_filter 'url(/_next/' 'url(/apps/{aid}/_next/';
+    sub_filter '"/_nuxt/' '"/apps/{aid}/_nuxt/';
+    sub_filter "'/_nuxt/" "'/apps/{aid}/_nuxt/";
+    sub_filter 'url(/_nuxt/' 'url(/apps/{aid}/_nuxt/';
     sub_filter '"/icons/' '"/apps/{aid}/icons/';
     sub_filter "'/icons/" "'/apps/{aid}/icons/";
+    sub_filter 'url(/icons/' 'url(/apps/{aid}/icons/';
+    sub_filter '"/favicon' '"/apps/{aid}/favicon';
+    sub_filter "'/favicon" "'/apps/{aid}/favicon";
+    sub_filter '"/manifest.json' '"/apps/{aid}/manifest.json';
+    sub_filter "'/manifest.json" "'/apps/{aid}/manifest.json";
+    sub_filter '"/robots.txt' '"/apps/{aid}/robots.txt';
+    sub_filter "'/robots.txt" "'/apps/{aid}/robots.txt";
     sub_filter '"/manifest.webmanifest' '"/apps/{aid}/manifest.webmanifest';
     sub_filter "'/manifest.webmanifest" "'/apps/{aid}/manifest.webmanifest";
     sub_filter '"/sw.js' '"/apps/{aid}/sw.js';
@@ -7313,6 +7351,7 @@ def system_proxy_repair() -> dict:
 
     updated: list[dict] = []
     added: list[dict] = []
+    patched: list[dict] = []
     next_conf = original
 
     def insert_before_final_brace(text: str, block: str) -> str:
@@ -7320,6 +7359,86 @@ def system_proxy_repair() -> dict:
         if not m:
             return text.rstrip() + "\n" + block.strip() + "\n"
         return text[: m.start()] + "\n" + block.strip() + text[m.start() :]
+
+    def patch_existing_block(text: str, *, app_id: str, port: int) -> tuple[str, bool]:
+        """
+        Ensure existing per-app proxy blocks contain the current set of sub_filter
+        rules needed for subpath-mounted apps, without clobbering any extra
+        per-app tuning that may already be present.
+        """
+        aid = str(app_id or "").strip()
+        if not aid or port <= 0:
+            return text, False
+
+        # Narrowly find the /apps/<id>/ location block and inject missing lines
+        # just before proxy_pass. We keep this conservative to avoid touching
+        # unrelated server blocks.
+        block_pat = re.compile(
+            rf"(location\s+/apps/{re.escape(aid)}/\s*\{{.*?)(\n\s*proxy_pass\s+http://127\.0\.0\.1:{port}/;)",
+            re.S,
+        )
+        m = block_pat.search(text)
+        if not m:
+            return text, False
+
+        block = m.group(1)
+        insertion: list[str] = []
+
+        if "proxy_set_header X-Forwarded-Prefix" not in block:
+            insertion.append(f"    proxy_set_header X-Forwarded-Prefix /apps/{aid};")
+
+        # Only add the shim once per app block.
+        if "__f5p" not in block:
+            app_prefix = f"/apps/{aid}"
+            js_prefix_shim = (
+                "<script>(function(){try{var p=\""
+                + app_prefix
+                + "\";if(window.__f5p===p)return;window.__f5p=p;function f(u){if(typeof u!==\"string\")return u;"
+                "if(u.startsWith(\"//\"))return u;if(!u.startsWith(\"/\"))return u;if(u.startsWith(p+\"/\"))return u;"
+                "if(u.startsWith(\"/apps/\"))return u;return p+u;}"
+                "if(typeof window.fetch===\"function\"){var of=window.fetch.bind(window);window.fetch=function(i,o){try{"
+                "if(typeof i===\"string\")i=f(i);else if(i&&typeof i.url===\"string\")i=new Request(f(i.url),i);}catch(e){}"
+                "return of(i,o);};}"
+                "if(window.XMLHttpRequest&&XMLHttpRequest.prototype&&XMLHttpRequest.prototype.open){var oo=XMLHttpRequest.prototype.open;"
+                "XMLHttpRequest.prototype.open=function(m,u){try{u=f(u);}catch(e){}arguments[1]=u;return oo.apply(this,arguments);};}"
+                "}catch(e){}})();</script>"
+            )
+            insertion.append(f"    sub_filter '</head>' '{js_prefix_shim}</head>';")
+            insertion.append(f"    sub_filter '</body>' '{js_prefix_shim}</body>';")
+
+        # Common static prefixes used by popular web stacks (CRA/Next/Nuxt/etc).
+        static_lines = [
+            f"    sub_filter '\"/static/' '\"/apps/{aid}/static/';",
+            f"    sub_filter \"'/static/\" \"'/apps/{aid}/static/\";",
+            f"    sub_filter 'url(/static/' 'url(/apps/{aid}/static/';",
+            f"    sub_filter '\"/_next/' '\"/apps/{aid}/_next/';",
+            f"    sub_filter \"'/_next/\" \"'/apps/{aid}/_next/\";",
+            f"    sub_filter 'url(/_next/' 'url(/apps/{aid}/_next/';",
+            f"    sub_filter '\"/_nuxt/' '\"/apps/{aid}/_nuxt/';",
+            f"    sub_filter \"'/_nuxt/\" \"'/apps/{aid}/_nuxt/\";",
+            f"    sub_filter 'url(/_nuxt/' 'url(/apps/{aid}/_nuxt/';",
+            f"    sub_filter '\"/favicon' '\"/apps/{aid}/favicon';",
+            f"    sub_filter \"'/favicon\" \"'/apps/{aid}/favicon\";",
+            f"    sub_filter '\"/manifest.json' '\"/apps/{aid}/manifest.json';",
+            f"    sub_filter \"'/manifest.json\" \"'/apps/{aid}/manifest.json\";",
+            f"    sub_filter '\"/robots.txt' '\"/apps/{aid}/robots.txt';",
+            f"    sub_filter \"'/robots.txt\" \"'/apps/{aid}/robots.txt\";",
+        ]
+        for ln in static_lines:
+            if ln.strip() not in block:
+                insertion.append(ln)
+
+        if "sub_filter 'url(/assets/'" not in block:
+            insertion.append(f"    sub_filter 'url(/assets/' 'url(/apps/{aid}/assets/';")
+        if "sub_filter 'url(/icons/'" not in block:
+            insertion.append(f"    sub_filter 'url(/icons/' 'url(/apps/{aid}/icons/';")
+
+        if not insertion:
+            return text, False
+
+        inject = "\n" + "\n".join(insertion)
+        new_text = text[: m.start(2)] + inject + text[m.start(2) :]
+        return new_text, True
 
     for entry in installed:
         app_id = str(entry.get("id") or "").strip()
@@ -7344,6 +7463,10 @@ def system_proxy_repair() -> dict:
             added.append({"id": app_id, "port": port})
         else:
             next_conf = next2
+            next3, did_patch = patch_existing_block(next_conf, app_id=app_id, port=port)
+            if did_patch:
+                patched.append({"id": app_id})
+            next_conf = next3
 
     changed = next_conf != original
     backup_path = conf_path.with_suffix(".conf.bak")
@@ -7375,6 +7498,7 @@ def system_proxy_repair() -> dict:
         "changed": bool(changed),
         "updated": updated,
         "added": added,
+        "patched": patched,
         "restart": restart,
     }
 
