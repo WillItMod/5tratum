@@ -6109,6 +6109,9 @@ def read_uptime_s() -> float | None:
 
 _CPU_TEMP_LOCK = threading.Lock()
 _CPU_TEMP_PATH: str | None = None
+_CPU_TEMP_SAMPLE_LOCK = threading.Lock()
+_CPU_TEMP_SAMPLE: dict[str, object] = {"time": 0.0, "temp_c": None}
+CPU_TEMP_SAMPLE_S = float(str(_env("CPU_TEMP_SAMPLE_S", "5") or "5").strip() or "5")
 
 
 def _parse_sysfs_temp_c(raw: str) -> float | None:
@@ -6139,14 +6142,24 @@ def _discover_cpu_temp() -> tuple[str, float] | None:
     thermal = Path("/sys/class/thermal")
     if thermal.is_dir():
         for zone in sorted(thermal.glob("thermal_zone*"), key=lambda p: p.name):
+            # Avoid probing unrelated sensors (and reduce the chance of slow/hung reads) by
+            # only checking likely CPU/SOC thermal zones.
+            type_s = _read_text(str(zone / "type")).lower()
+            likely = False
+            if type_s:
+                for k in ("x86_pkg_temp", "coretemp", "pkg", "package", "cpu", "soc", "tctl", "tdie"):
+                    if k in type_s:
+                        likely = True
+                        break
+            if not likely and zone.name != "thermal_zone0":
+                continue
+
             temp_path = zone / "temp"
             if not temp_path.is_file():
                 continue
             temp_c = _parse_sysfs_temp_c(_read_text(str(temp_path)))
             if temp_c is None:
                 continue
-
-            type_s = _read_text(str(zone / "type")).lower()
             score = 0
             if "x86_pkg_temp" in type_s:
                 score += 130
@@ -6164,6 +6177,10 @@ def _discover_cpu_temp() -> tuple[str, float] | None:
     if hwmon.is_dir():
         for hw in sorted(hwmon.glob("hwmon*"), key=lambda p: p.name):
             name_s = _read_text(str(hw / "name")).lower()
+            # Restrict probing to known CPU temperature drivers to avoid hanging on
+            # misc hwmon devices (some SMBus sensors can be slow/unreliable).
+            if name_s not in {"coretemp", "k10temp"}:
+                continue
             for tf in sorted(hw.glob("temp*_input"), key=lambda p: p.name):
                 temp_c = _parse_sysfs_temp_c(_read_text(str(tf)))
                 if temp_c is None:
@@ -6219,6 +6236,23 @@ def read_cpu_temp_c() -> float | None:
     with _CPU_TEMP_LOCK:
         _CPU_TEMP_PATH = path
     return float(temp_c)
+
+
+def _cpu_temp_sampler_loop() -> None:
+    # Keep CPU temp sampling out of request handlers so /api/v0/system/metrics stays responsive
+    # even on systems where thermal/hwmon reads are slow or unreliable.
+    interval_s = CPU_TEMP_SAMPLE_S if CPU_TEMP_SAMPLE_S > 0.25 else 0.25
+    while True:
+        try:
+            temp_c = read_cpu_temp_c()
+            with _CPU_TEMP_SAMPLE_LOCK:
+                _CPU_TEMP_SAMPLE["time"] = time.time()
+                _CPU_TEMP_SAMPLE["temp_c"] = float(temp_c) if temp_c is not None else None
+        except Exception:
+            with _CPU_TEMP_SAMPLE_LOCK:
+                _CPU_TEMP_SAMPLE["time"] = time.time()
+                _CPU_TEMP_SAMPLE["temp_c"] = None
+        time.sleep(interval_s)
 
 
 _CPU_STAT_LOCK = threading.Lock()
@@ -6291,7 +6325,16 @@ def system_metrics() -> dict:
         load1, load5, load15 = 0.0, 0.0, 0.0
 
     per_core, total_perc = cpu_utilization_perc()
-    temp_c = read_cpu_temp_c()
+    temp_c: float | None = None
+    try:
+        with _CPU_TEMP_SAMPLE_LOCK:
+            sample = _CPU_TEMP_SAMPLE.get("temp_c")
+        if sample is not None:
+            v = float(sample)
+            if math.isfinite(v):
+                temp_c = v
+    except Exception:
+        temp_c = None
 
     meminfo = read_meminfo_bytes()
     total = int(meminfo.get("MemTotal", 0))
@@ -8451,6 +8494,7 @@ def main() -> int:
     threading.Thread(target=_boot_reconcile_loop, daemon=True).start()
     threading.Thread(target=_fleet_sampler_loop, daemon=True).start()
     threading.Thread(target=_dashboard_sampler_loop, daemon=True).start()
+    threading.Thread(target=_cpu_temp_sampler_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -322,6 +322,7 @@
   let lastFleet = null;
   const FLEET_CACHE_KEY = '5tratumos.fleetCache.v1';
   const WIDGETS_CACHE_KEY = '5tratumos.widgetsCache.v1';
+  const METRICS_CACHE_KEY = '5tratumos.metricsCache.v1';
   let refreshFleetInFlight = false;
   let fleetSeries = [];
   const OPEN_APPS_KEY = 'forgeos.openApps';
@@ -6949,6 +6950,19 @@
     }
   }
 
+  function loadMetricsCache() {
+    try {
+      const raw = String(window.localStorage.getItem(METRICS_CACHE_KEY) || '').trim();
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (parsed.ok !== true) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
   async function refreshFleet(opts) {
     const options = opts && typeof opts === 'object' ? opts : {};
     if (!options.force && !dashboardCardsVisible()) return;
@@ -6977,9 +6991,19 @@
     try {
       const ok = await ensureHealthy();
       if (!ok) return;
-      const metrics = await apiJsonTimeout('/api/v0/system/metrics', {}, 3000).catch(() => null);
-      if (!metrics || metrics.ok !== true) return;
+      const metrics = await apiJsonTimeout('/api/v0/system/metrics', {}, 8000).catch(() => null);
+      if (!metrics || metrics.ok !== true) {
+        const cached = loadMetricsCache();
+        if (cached) {
+          lastMetrics = cached;
+          applyMetrics(cached);
+        }
+        return;
+      }
       lastMetrics = metrics;
+      try {
+        window.localStorage.setItem(METRICS_CACHE_KEY, JSON.stringify(metrics));
+      } catch {}
       applyMetrics(metrics);
       setHostIp();
     } finally {
