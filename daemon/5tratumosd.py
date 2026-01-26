@@ -5849,9 +5849,38 @@ def read_meminfo_bytes() -> dict[str, int]:
     return info
 
 
-def read_netdev_bytes() -> tuple[int, int]:
+def _default_route_iface() -> str | None:
+    # Prefer the interface used by the default route so we report "real" host traffic.
+    # Summing all interfaces (veth/br-*) can wildly inflate values due to internal Docker traffic.
+    try:
+        with open("/proc/net/route", "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        for line in lines[1:]:
+            parts = line.strip().split()
+            if len(parts) < 11:
+                continue
+            iface, dest, _, flags, *_rest = parts
+            if dest != "00000000":
+                continue
+            try:
+                fl = int(flags, 16)
+            except ValueError:
+                fl = 0
+            # Require "up" and usually "gateway" to avoid weird entries.
+            if (fl & 0x1) == 0:
+                continue
+            return str(iface or "").strip() or None
+    except Exception:
+        return None
+    return None
+
+
+def read_netdev_bytes() -> tuple[int, int, str, str]:
+    # Returns (rx_bytes, tx_bytes, iface, mode). iface may be empty when unknown.
+    preferred = _default_route_iface()
     rx_total = 0
     tx_total = 0
+    mode = "default_route" if preferred else "filtered_sum"
     try:
         with open("/proc/net/dev", "r", encoding="utf-8") as f:
             for line in f:
@@ -5859,8 +5888,15 @@ def read_netdev_bytes() -> tuple[int, int]:
                     continue
                 iface, data = line.split(":", 1)
                 name = iface.strip()
-                if not name or name == "lo":
+                if not name:
                     continue
+                if preferred:
+                    if name != preferred:
+                        continue
+                else:
+                    # Heuristic fallback: ignore internal Docker/veth interfaces.
+                    if name == "lo" or name == "docker0" or name.startswith("br-") or name.startswith("veth"):
+                        continue
                 parts = data.strip().split()
                 if len(parts) < 16:
                     continue
@@ -5869,9 +5905,11 @@ def read_netdev_bytes() -> tuple[int, int]:
                     tx_total += int(parts[8])
                 except ValueError:
                     continue
+                if preferred:
+                    break
     except Exception:
-        return 0, 0
-    return rx_total, tx_total
+        return 0, 0, "", ""
+    return rx_total, tx_total, (preferred or ""), mode
 
 
 def disk_usage(path: str) -> dict | None:
@@ -5998,7 +6036,7 @@ def system_metrics() -> dict:
     avail = int(meminfo.get("MemAvailable", 0))
     used = max(0, total - avail) if total and avail else 0
 
-    rx_bytes, tx_bytes = read_netdev_bytes()
+    rx_bytes, tx_bytes, net_iface, net_mode = read_netdev_bytes()
 
     storage_cfg = storage_config_get().get("config") if isinstance(storage_config_get(), dict) else None
     storage_cfg = storage_cfg if isinstance(storage_cfg, dict) else {}
@@ -6057,6 +6095,8 @@ def system_metrics() -> dict:
         "network": {
             "rx_bytes": rx_bytes,
             "tx_bytes": tx_bytes,
+            "iface": net_iface,
+            "mode": net_mode,
         },
         "data_dir": DATA_DIR,
         "primary_disk_path": primary_disk_path,
