@@ -6750,7 +6750,7 @@
       const name = workerName(raw);
       const coin = String(raw.coin || '').trim() || '-';
       const rate =
-        raw.hashrate_ths ?? raw.hashrate_1m_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
+        raw.hashrate_1m_ths ?? raw.hashrate_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
       const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
       const bestShareRaw =
         raw.bestshare ??
@@ -6819,7 +6819,7 @@
       const name = workerName(raw);
       const coin = String(raw.coin || '').trim() || '-';
       const rate =
-        raw.hashrate_ths ?? raw.hashrate_1m_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
+        raw.hashrate_1m_ths ?? raw.hashrate_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
       const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
       const bestShareRaw =
         raw.bestshare ??

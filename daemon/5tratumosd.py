@@ -2337,7 +2337,18 @@ def _pool_block_signature(pool: dict | None) -> str:
 def _pool_hashrate_ths(pool: dict | None) -> float:
     if not isinstance(pool, dict):
         return 0.0
-    for key in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
+    rates = pool.get("hashrates_ths")
+    if isinstance(rates, dict) and "1m" in rates:
+        try:
+            val = rates.get("1m")
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, str) and val.strip():
+                return float(val.strip())
+        except Exception:
+            pass
+
+    for key in ("hashrate_1m_ths", "hashrate_ths", "hashrate_5m_ths", "hashrate"):
         try:
             val = pool.get(key)
             if isinstance(val, (int, float)):
@@ -5399,6 +5410,18 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             if used_widget_cache:
                 entry["pool_widget_cached"] = True
 
+        # Try to enrich widget-derived snapshots with structured /api/pool data when available.
+        # This allows Fleet to prefer the 1-minute hashrate metric (hashrates_ths["1m"]) when apps provide it.
+        if isinstance(pool_data, dict) and entry.get("pool_widget_fallback"):
+            try:
+                enrich_timeout_s = 4.8 if aid == "axebsv" else 1.8 if aid == "axedgb" else 1.0
+                pool_raw = _fetch_json(pool_url, timeout_s=enrich_timeout_s, headers=_internal_auth_headers())
+                if isinstance(pool_raw, dict):
+                    pool_data = pool_raw
+                    entry["pool_enriched"] = True
+            except Exception as e:
+                entry["pool_enrich_error"] = str(e) or "error"
+
         # Compatibility fallback for any pool that doesn't expose widget stats.
         if pool_data is None:
             try:
@@ -5505,7 +5528,7 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
             return None
 
         def _worker_hashrate_ths(w: dict) -> float:
-            for k in ("hashrate_ths", "hashrate_1m_ths", "hashrate_5m_ths", "hashrate"):
+            for k in ("hashrate_1m_ths", "hashrate_ths", "hashrate_5m_ths", "hashrate"):
                 try:
                     v = w.get(k)
                     if isinstance(v, (int, float)):
@@ -5585,15 +5608,31 @@ def axe_fleet_summary(*, limit_workers: int | None = None, include_workers: bool
                     out["workername"] = str(wn)
 
             if "bestshare" not in out:
-                bs = (
-                    out.get("bestShare")
-                    or out.get("best_share")
-                    or out.get("bestshare")
-                    or out.get("bestShareValue")
-                    or out.get("best_share_value")
-                )
-                if bs is not None:
+                for key in (
+                    "bestShare",
+                    "best_share",
+                    "bestshare",
+                    "bestShareValue",
+                    "best_share_value",
+                    "bestshare_since_block",
+                    "best_share_since_block",
+                    "bestShareSinceBlock",
+                    "bestshare_all",
+                    "best_share_all",
+                    "bestShareAll",
+                    "bestshare_all_time",
+                    "best_share_all_time",
+                    "bestShareAllTime",
+                ):
+                    if key not in out:
+                        continue
+                    bs = out.get(key)
+                    if bs is None:
+                        continue
+                    if isinstance(bs, str) and not bs.strip():
+                        continue
                     out["bestshare"] = bs
+                    break
 
             if "lastshare_ago_s" not in out and "last_share_ago_s" not in out:
                 ls = (
