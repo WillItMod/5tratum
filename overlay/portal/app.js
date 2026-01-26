@@ -1404,33 +1404,52 @@
     maybeScheduleDonutRain();
   }
 
-  let donutRainScheduled = false;
+  let donutRainTimer = 0;
 
   function maybeScheduleDonutRain() {
-    // One-time "donut rain" effect: random start within the next hour, runs for 10s.
-    // Only in donut theme, and rate-limited to once per hour per browser via localStorage.
+    // "Donut rain" effect: runs for 10s.
+    // Only in donut theme, and rate-limited to once per 5 minutes per browser via localStorage.
     try {
       const theme = getThemeId();
-      if (theme !== 'donut') return;
-      if (donutRainScheduled) return;
-      donutRainScheduled = true;
+      if (theme !== 'donut') {
+        if (donutRainTimer) {
+          try {
+            window.clearTimeout(donutRainTimer);
+          } catch (_) {}
+          donutRainTimer = 0;
+        }
+        return;
+      }
+      if (donutRainTimer) return;
 
+      const intervalMs = 5 * 60 * 1000;
       const now = Date.now();
       const lastRaw = window.localStorage.getItem(DONUT_RAIN_LAST_KEY);
       const last = lastRaw ? Number(lastRaw) : 0;
-      if (Number.isFinite(last) && last > 0 && now - last < 60 * 60 * 1000) return;
 
-      const delayMs = Math.floor(Math.random() * 60 * 60 * 1000);
-      window.setTimeout(() => {
+      let delayMs = 0;
+      if (Number.isFinite(last) && last > 0 && now - last < intervalMs) {
+        delayMs = intervalMs - (now - last);
+      } else {
+        // Small jitter to avoid always firing immediately on theme toggle.
+        delayMs = Math.floor(Math.random() * 15_000);
+      }
+
+      donutRainTimer = window.setTimeout(() => {
+        donutRainTimer = 0;
         try {
           if (getThemeId() !== 'donut') return;
           const now2 = Date.now();
           const last2Raw = window.localStorage.getItem(DONUT_RAIN_LAST_KEY);
           const last2 = last2Raw ? Number(last2Raw) : 0;
-          if (Number.isFinite(last2) && last2 > 0 && now2 - last2 < 60 * 60 * 1000) return;
+          if (Number.isFinite(last2) && last2 > 0 && now2 - last2 < intervalMs) {
+            maybeScheduleDonutRain();
+            return;
+          }
           window.localStorage.setItem(DONUT_RAIN_LAST_KEY, String(now2));
           triggerDonutRain();
         } catch (_) {}
+        maybeScheduleDonutRain();
       }, delayMs);
     } catch (_) {}
   }
@@ -1443,7 +1462,7 @@
       const host = document.createElement('div');
       host.className = 'forgeos-donut-rain';
 
-      const donuts = ['ðŸ©', 'ðŸ©', 'ðŸ©', 'ðŸ§', 'ðŸ¬', 'ðŸ­', 'ðŸ«'];
+      const donuts = ['\uD83C\uDF69', '\uD83C\uDF69', '\uD83C\uDF69', '\uD83E\uDDC1', '\uD83C\uDF6C', '\uD83C\uDF6D', '\uD83C\uDF6B'];
       const sprinkles = ['·', '•', '\u2219', '\u22C5'];
       const sprinkleColors = ['#38bdf8', '#fb7185', '#a78bfa', '#22c55e', '#facc15', '#22d3ee'];
 
