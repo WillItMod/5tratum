@@ -2125,12 +2125,28 @@
       });
       if (!res.ok) return;
       const data = await res.json().catch(() => null);
-      if (!data || data.ok !== true || !Array.isArray(data.series)) return;
-      const series = data.series
-        .map((p) => ({ t: Number(p && p.t), v: Number(p && p.v) }))
-        .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t > 0);
-      if (!series.length) return;
-      fleetSeries = series.slice(-720);
+      if (!data || data.ok !== true) return;
+
+      const rawSeries = Array.isArray(data.series) ? data.series : null;
+      const rawPoints = !rawSeries && Array.isArray(data.points) ? data.points : null;
+
+      const series = rawSeries
+        ? rawSeries.map((p) => ({ t: Number(p && p.t), v: Number(p && p.v) }))
+        : rawPoints
+          ? rawPoints
+              .map((p) => {
+                const iso = p && typeof p === 'object' ? String(p.time || '').trim() : '';
+                const v = p && typeof p === 'object' ? Number(p.hashrate_ths) : NaN;
+                const d = iso ? new Date(iso) : null;
+                const t = d && Number.isFinite(d.getTime()) ? d.getTime() : NaN;
+                return { t, v };
+              })
+              .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t > 0)
+          : [];
+
+      const cleaned = series.filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.t > 0);
+      if (!cleaned.length) return;
+      fleetSeries = cleaned.slice(-720);
       saveFleetSeries();
       try {
         if (lastFleet) renderFleet(lastFleet);

@@ -7878,12 +7878,31 @@ class Handler(BaseHTTPRequestHandler):
             with _FLEET_HISTORY_LOCK:
                 points = list(_FLEET_HISTORY[-limit:])
 
+            series: list[dict] = []
+            for p in points:
+                if not isinstance(p, dict):
+                    continue
+                iso = str(p.get("time") or "").strip()
+                if not iso:
+                    continue
+                try:
+                    parsed = time.strptime(iso, "%Y-%m-%dT%H:%M:%SZ")
+                    t_ms = int(calendar.timegm(parsed) * 1000)
+                except Exception:
+                    continue
+                try:
+                    v = float(p.get("hashrate_ths") or p.get("v") or 0.0)
+                except Exception:
+                    v = 0.0
+                series.append({"t": t_ms, "v": v})
+
             json_response(
                 self,
                 HTTPStatus.OK,
                 {
                     "ok": True,
                     "time": _now_iso(),
+                    "series": series,
                     "points": points,
                 },
             )
