@@ -4823,6 +4823,13 @@
         const bar = document.createElement('div');
         bar.className = 'forgeos-progress__bar';
         bar.dataset.progressId = id;
+        try {
+          const st = appProgress.get(id);
+          if (st) {
+            const pct = Math.max(0, Math.min(100, Math.round(Number(st.pct) || 0)));
+            setMaskedGradientBar(bar, pct);
+          }
+        } catch {}
         wrap.appendChild(bar);
         actions.appendChild(wrap);
       }
