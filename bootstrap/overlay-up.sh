@@ -85,15 +85,22 @@ overlay_up() {
     exit 1
   fi
 
+  log "Cleaning existing portal (remove orphans)..."
+  compose --project-name 5tratumos-overlay down --remove-orphans >/dev/null 2>&1 || true
+
   log "Starting portal..."
-  compose --project-name 5tratumos-overlay up -d
+  if ! compose --project-name 5tratumos-overlay up -d --force-recreate --remove-orphans; then
+    log "WARN: portal start failed; retrying after cleanup"
+    compose --project-name 5tratumos-overlay down --remove-orphans >/dev/null 2>&1 || true
+    compose --project-name 5tratumos-overlay up -d --force-recreate --remove-orphans
+  fi
   log "Portal started"
 }
 
 overlay_down() {
   log "Stopping portal..."
   # Don't fail shutdown just because Compose isn't installed/running.
-  compose --project-name 5tratumos-overlay down || true
+  compose --project-name 5tratumos-overlay down --remove-orphans || true
   log "Portal stopped"
 }
 

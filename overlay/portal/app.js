@@ -3406,10 +3406,11 @@
     status.textContent = 'Loading full text...';
     container.appendChild(status);
 
-    const [licenseText, policyText, trademarkText] = await Promise.all([
+    const [licenseText, policyText, trademarkText, disclaimerText] = await Promise.all([
       fetchText('/assets/legal/LICENSE.txt'),
       fetchText('/assets/legal/LICENSE_POLICY.md'),
       fetchText('/assets/legal/TRADEMARK.md'),
+      fetchText('/assets/legal/BLOCKCHAIN_DISCLAIMER.md'),
     ]);
 
     status.textContent = '';
@@ -3431,6 +3432,7 @@
     addDetails('LICENSE', licenseText);
     addDetails('LICENSE_POLICY.md', policyText);
     addDetails('TRADEMARK.md', trademarkText);
+    addDetails('Blockchain data disclaimer', disclaimerText);
 
     return openRichModal({
       kind: 'Legal',

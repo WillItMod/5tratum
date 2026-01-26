@@ -79,6 +79,7 @@ DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
 CONSOLE_CONFIG_FILE = str(_env("CONSOLE_CONFIG_FILE", "/etc/5tratumos/console.json") or "/etc/5tratumos/console.json")
+KEYBOARD_FILE = str(_env("KEYBOARD_FILE", "/etc/default/keyboard") or "/etc/default/keyboard")
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
 WATCHDOG_CONFIG_FILE = str(_env("WATCHDOG_CONFIG_FILE", "/etc/5tratumos/watchdog.json") or "/etc/5tratumos/watchdog.json")
 UI_CONFIG_FILE = str(_env("UI_CONFIG_FILE", "/etc/5tratumos/ui.json") or "/etc/5tratumos/ui.json")
@@ -123,6 +124,16 @@ except Exception:  # pragma: no cover
 
 def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _is_local_request(handler: BaseHTTPRequestHandler) -> bool:
+    try:
+        ip = str(handler.headers.get("X-Real-IP") or "").strip()
+        if not ip:
+            ip = str(handler.client_address[0] if handler.client_address else "").strip()
+    except Exception:
+        ip = ""
+    return ip in {"127.0.0.1", "::1"}
 
 
 def run_cmd(
@@ -329,6 +340,103 @@ def set_console_enabled(*, enabled: bool) -> dict:
     st = console_status()
     st["ok"] = True
     return st
+
+
+_KEYBOARD_ALLOWED_LAYOUTS: set[str] = {"gb", "us", "fr", "be", "de"}
+
+
+def _read_keyboard_layout() -> str:
+    raw = _read_text(KEYBOARD_FILE)
+    if raw:
+        for ln in raw.splitlines():
+            line = ln.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not line.startswith("XKBLAYOUT"):
+                continue
+            _, _, rhs = line.partition("=")
+            rhs = rhs.strip().strip('"').strip("'")
+            if rhs:
+                # Debian supports "us,gb" style lists; pick the first as primary.
+                return rhs.split(",")[0].strip().lower()
+    return "gb"
+
+
+def auth_keyboard_get(handler: BaseHTTPRequestHandler) -> dict:
+    with _AUTH_LOCK:
+        auth = _read_auth()
+    users = auth.get("users") if isinstance(auth.get("users"), list) else []
+    needs_setup = len(users) == 0
+    layout = _read_keyboard_layout()
+    return {"ok": True, "layout": layout, "needs_setup": needs_setup}
+
+
+def _write_keyboard_layout(layout: str) -> None:
+    path = Path(KEYBOARD_FILE)
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        raw = ""
+
+    if raw.strip():
+        lines = raw.splitlines(keepends=True)
+        out: list[str] = []
+        replaced = False
+        for ln in lines:
+            if not replaced and re.match(r"^\s*XKBLAYOUT\s*=", ln):
+                out.append(f'XKBLAYOUT="{layout}"\n')
+                replaced = True
+            else:
+                out.append(ln)
+        if not replaced:
+            if out and not out[-1].endswith("\n"):
+                out[-1] = out[-1] + "\n"
+            out.append(f'XKBLAYOUT="{layout}"\n')
+        next_text = "".join(out)
+    else:
+        next_text = (
+            "# KEYBOARD CONFIGURATION FILE\n"
+            'XKBMODEL="pc105"\n'
+            f'XKBLAYOUT="{layout}"\n'
+            'XKBVARIANT=""\n'
+            'XKBOPTIONS=""\n'
+            'BACKSPACE="guess"\n'
+        )
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = Path(f"{KEYBOARD_FILE}.tmp")
+    tmp.write_text(next_text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def auth_keyboard_set(handler: BaseHTTPRequestHandler, body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    layout = str(body.get("layout") or "").strip().lower()
+    if not layout:
+        return {"ok": False, "error": "missing layout"}
+    if layout not in _KEYBOARD_ALLOWED_LAYOUTS:
+        allowed = ", ".join(sorted(_KEYBOARD_ALLOWED_LAYOUTS))
+        return {"ok": False, "error": f"unsupported layout (allowed: {allowed})"}
+
+    prev = _read_keyboard_layout()
+    try:
+        _write_keyboard_layout(layout)
+    except Exception as e:
+        return {"ok": False, "error": str(e) or "write failed"}
+
+    restarted = False
+    if _is_local_request(handler):
+        try:
+            cfg = read_console_config()
+            unit = _console_unit_for_user(cfg.get("user") or "forge")
+            proc = run_cmd(["systemctl", "restart", unit], timeout_s=12)
+            restarted = proc.returncode == 0
+        except Exception:
+            restarted = False
+
+    return {"ok": True, "layout": layout, "changed": layout != prev, "console_restarted": restarted}
 
 
 def _api_cache_path(name: str) -> str:
@@ -7348,6 +7456,9 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     json_response(self, HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "unauthorized"})
                 return
+            if path == "/api/v0/auth/keyboard":
+                json_response(self, HTTPStatus.OK, auth_keyboard_get(self))
+                return
 
             json_response(self, HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
             return
@@ -7733,6 +7844,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/auth/logout":
             status, payload, headers = handle_logout(self)
             json_response(self, int(status), payload, headers=headers)
+            return
+
+        if path == "/api/v0/auth/keyboard":
+            res = auth_keyboard_set(self, body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
         if path == "/api/v0/auth/credentials":

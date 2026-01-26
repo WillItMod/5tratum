@@ -389,6 +389,35 @@ body.forgeos-login-body {
   line-height: 1.35;
 }
 
+html,
+body {
+  scrollbar-color: rgba(148, 163, 184, 0.42) rgba(0, 0, 0, 0.32);
+  scrollbar-width: thin;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.4), rgba(148, 163, 184, 0.22));
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.42);
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(226, 232, 240, 0.28), rgba(148, 163, 184, 0.26));
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.36);
+}
+
 .forgeos-shell {
   display: flex;
   height: 100vh;
@@ -4123,7 +4152,7 @@ body.forgeos-workspace #btn-open-store {
   height: auto;
   display: block;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
   background: rgba(255, 255, 255, 0.03);
 }
