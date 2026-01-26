@@ -6107,6 +6107,120 @@ def read_uptime_s() -> float | None:
         return None
 
 
+_CPU_TEMP_LOCK = threading.Lock()
+_CPU_TEMP_PATH: str | None = None
+
+
+def _parse_sysfs_temp_c(raw: str) -> float | None:
+    s = str(raw or "").strip()
+    if not s:
+        return None
+    m = re.search(r"-?\d+(?:\.\d+)?", s)
+    if not m:
+        return None
+    try:
+        v = float(m.group(0))
+    except Exception:
+        return None
+    if not math.isfinite(v):
+        return None
+    # Common sysfs format is millidegrees C (e.g. "42000").
+    if abs(v) > 1000.0:
+        v = v / 1000.0
+    # Sanity bounds: keep UI stable.
+    if v < -50.0 or v > 200.0:
+        return None
+    return v
+
+
+def _discover_cpu_temp() -> tuple[str, float] | None:
+    candidates: list[tuple[int, float, str]] = []
+
+    thermal = Path("/sys/class/thermal")
+    if thermal.is_dir():
+        for zone in sorted(thermal.glob("thermal_zone*"), key=lambda p: p.name):
+            temp_path = zone / "temp"
+            if not temp_path.is_file():
+                continue
+            temp_c = _parse_sysfs_temp_c(_read_text(str(temp_path)))
+            if temp_c is None:
+                continue
+
+            type_s = _read_text(str(zone / "type")).lower()
+            score = 0
+            if "x86_pkg_temp" in type_s:
+                score += 130
+            if "coretemp" in type_s or "pkg" in type_s or "package" in type_s:
+                score += 120
+            if "cpu" in type_s:
+                score += 100
+            if "soc" in type_s:
+                score += 80
+            if zone.name == "thermal_zone0":
+                score += 5
+            candidates.append((score, float(temp_c), str(temp_path)))
+
+    hwmon = Path("/sys/class/hwmon")
+    if hwmon.is_dir():
+        for hw in sorted(hwmon.glob("hwmon*"), key=lambda p: p.name):
+            name_s = _read_text(str(hw / "name")).lower()
+            for tf in sorted(hw.glob("temp*_input"), key=lambda p: p.name):
+                temp_c = _parse_sysfs_temp_c(_read_text(str(tf)))
+                if temp_c is None:
+                    continue
+
+                score = 0
+                if name_s == "coretemp":
+                    score += 140
+                elif name_s == "k10temp":
+                    score += 135
+                elif name_s and "cpu" in name_s:
+                    score += 110
+                elif name_s and "soc" in name_s:
+                    score += 90
+                elif name_s:
+                    score += 10
+
+                label = _read_text(str(hw / tf.name.replace("_input", "_label"))).lower()
+                if "package" in label or "tctl" in label or "tdie" in label:
+                    score += 15
+                if "cpu" in label:
+                    score += 10
+
+                candidates.append((score, float(temp_c), str(tf)))
+
+    if not candidates:
+        return None
+
+    score, temp_c, path = max(candidates, key=lambda it: (it[0], it[1]))
+    if score <= 0:
+        return None
+    return path, temp_c
+
+
+def read_cpu_temp_c() -> float | None:
+    global _CPU_TEMP_PATH
+
+    with _CPU_TEMP_LOCK:
+        cached = str(_CPU_TEMP_PATH or "").strip()
+
+    if cached:
+        temp_c = _parse_sysfs_temp_c(_read_text(cached))
+        if temp_c is not None:
+            return float(temp_c)
+
+    discovered = _discover_cpu_temp()
+    if not discovered:
+        with _CPU_TEMP_LOCK:
+            _CPU_TEMP_PATH = None
+        return None
+
+    path, temp_c = discovered
+    with _CPU_TEMP_LOCK:
+        _CPU_TEMP_PATH = path
+    return float(temp_c)
+
+
 _CPU_STAT_LOCK = threading.Lock()
 _CPU_STAT_CACHE: dict[str, object] = {"time": 0.0, "samples": []}
 
@@ -6177,6 +6291,7 @@ def system_metrics() -> dict:
         load1, load5, load15 = 0.0, 0.0, 0.0
 
     per_core, total_perc = cpu_utilization_perc()
+    temp_c = read_cpu_temp_c()
 
     meminfo = read_meminfo_bytes()
     total = int(meminfo.get("MemTotal", 0))
@@ -6231,6 +6346,7 @@ def system_metrics() -> dict:
             "load1": float(load1),
             "load5": float(load5),
             "load15": float(load15),
+            "temp_c": round(float(temp_c), 1) if temp_c is not None else None,
             "total_perc": round(float(total_perc), 3) if total_perc is not None else None,
             "per_core_perc": [round(float(v), 3) for v in per_core],
         },
