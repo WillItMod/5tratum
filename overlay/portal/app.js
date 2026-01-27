@@ -12253,7 +12253,6 @@
   });
   btnWifiToggle?.addEventListener('click', async () => {
     btnWifiToggle.disabled = true;
-    const prev = btnWifiToggle.textContent;
     btnWifiToggle.textContent = 'Working...';
     try {
       await refreshWifiStatus();
@@ -12275,7 +12274,7 @@
       });
     } finally {
       btnWifiToggle.disabled = false;
-      btnWifiToggle.textContent = prev;
+      await refreshWifiStatus();
     }
   });
   btnWifiScan?.addEventListener('click', () => scanWifiNetworks().catch(() => {}));
