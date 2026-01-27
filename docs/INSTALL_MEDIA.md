@@ -39,7 +39,7 @@ The ISO build is driven from `installer/build-debian-preseed-iso.sh` and embeds:
 - `5tratumos/build.json` (so the UI shows the correct version on first boot)
 - optionally: `5tratumos/update.token` (only needed for private update repos)
 
-Build steps (run on a Debian/Ubuntu box â€” e.g. your Proxmox host or a Debian VM):
+Build steps (run on a Debian/Ubuntu box, e.g. your Proxmox host or a Debian VM):
 
 ```bash
 cd /opt/5tratum_Build/5tratumOS

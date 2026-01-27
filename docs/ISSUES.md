@@ -1,6 +1,9 @@
 # Outstanding Issues / Backlog
 
-Last updated: 2026-01-18
+Last updated: 2026-01-27
+
+Note: The source of truth for active work is the GitHub tracker(s), especially:
+- https://github.com/WillItMod/5tratum/issues/15
 
 ## P0 - Reliability / Breakages
 - App updates UX: after update completes, tiles/cards must refresh version/state and remove update badge immediately (also hard-refresh any open Workbench iframe for that app).
@@ -41,9 +44,6 @@ Last updated: 2026-01-18
 - Run a smoke test: `docs/SMOKE_TEST.md`.
 - Ensure update signing is enabled on devices (`docs/UPDATE_SIGNING.md`).
 
-## Recent Context
-- App updates were failing because the updater script had bad indentation inside the Python heredoc used to write 5tratumos.json after an update.
-- Fix applied in `bin/5tratumos` (metadata block with no leading-space lines for `meta = {` and `print(json.dumps(...))`).
-- Pushed to `WillItMod/5tratum_Build` (main) and deployed to `/usr/local/bin/5tratumos` on the VM.
-- `sudo 5tratumos app update axebch --channel dev` now succeeds; metadata shows `installed_version: "0.7.142-dev"`.
-- UI should no longer show "App action failed" after a successful update.
+## Recent context
+- DEV prereleases have been shipping continuously; `v0.3.184` was promoted to MAIN as a non-prerelease bundle.
+- See GitHub Releases for exact assets/tags: https://github.com/WillItMod/5tratum/releases

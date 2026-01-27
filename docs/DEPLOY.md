@@ -24,11 +24,11 @@ curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/inst
 
 ### Deploy from Windows
 
-From an elevated PowerShell:
+From an elevated PowerShell (run from the repo root):
 
-- Portal only: `powershell -ExecutionPolicy Bypass -File C:\VSC\5tratumOS\scripts\deploy.ps1 -Target portal`
-- Daemon only: `powershell -ExecutionPolicy Bypass -File C:\VSC\5tratumOS\scripts\deploy.ps1 -Target daemon`
-- Both: `powershell -ExecutionPolicy Bypass -File C:\VSC\5tratumOS\scripts\deploy.ps1 -Target all`
+- Portal only: `powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -Target portal`
+- Daemon only: `powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -Target daemon`
+- Both: `powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -Target all`
 
 Optional parameters:
 

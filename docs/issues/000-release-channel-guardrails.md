@@ -4,8 +4,8 @@ Priority: P0
 
 ## Problem
 - DEV builds must not be visible to MAIN users by default.
-- MAIN vs DEV update selection currently depends heavily on GitHub “prerelease” flag and/or publishing hygiene.
-- Users repeatedly report “I don’t see the update” (version bumps + correct asset publishing/channel selection).
+- MAIN vs DEV update selection can depend heavily on GitHub prerelease flags and/or publishing hygiene.
+- Users repeatedly report "I don't see the update" (version bumps + correct asset publishing/channel selection).
 
 ## Scope
 - Updater logic (release selection + apply guardrails).
@@ -26,5 +26,8 @@ Priority: P0
 
 ## Notes
 - A pragmatic implementation is to treat `-dev` in tag as authoritative DEV marker.
-- Consider adding an “override” toggle in `Settings -> Updates` (stored in `/etc/5tratumos/update.json`).
+- Consider adding an "override" toggle in `Settings -> Updates` (stored in `/etc/5tratumos/update.json`).
 
+## Status
+- Implemented in `daemon/5tratumosd.py:_select_release()` (MAIN ignores prereleases/`-dev`; DEV prefers prereleases and treats `-dev` as DEV-only).
+- Release checklist documented in `docs/RELEASE_PROCESS.md`.

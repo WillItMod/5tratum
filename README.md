@@ -1,6 +1,8 @@
-# 5tratumOS (starter)
+# 5tratumOS (Build / OS source)
 
-This folder is a first-pass "appliance OS" foundation for running AxeSuite apps:
+This repo builds the 5tratumOS update bundle consumed by running devices via GitHub Releases (`WillItMod/5tratum`).
+
+It is an "appliance OS" foundation for running AxeSuite apps:
 
 - Base: Ubuntu/Debian VM (Proxmox-friendly)
 - Runtime: Docker Engine + Docker Compose v2
@@ -89,11 +91,23 @@ From the private build repo (this repo), create a bundle:
 ./scripts/build-update-bundle.sh
 ```
 
+Windows PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-update-bundle.ps1 -BuildTag v0.x.y -Channel main -UpdateRepo WillItMod/5tratum
+```
+
 Then create a GitHub Release in `WillItMod/5tratum` and upload:
 
 - `dist/5tratumos-update.tgz`
 - `dist/5tratumos-update.tgz.sha256`
 - `dist/5tratumos-update.tgz.sig` (if signing enabled)
+
+Tag naming / channels:
+- MAIN: `vX.Y.Z` (no `-dev`) and **not** marked prerelease
+- DEV: `vX.Y.Z-dev` and marked prerelease
+
+Full checklist: `docs/RELEASE_PROCESS.md`.
 
 ### Apply on a device
 

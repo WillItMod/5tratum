@@ -1,23 +1,46 @@
-# Release Process (v0.3.32+)
+# Release Process (Update Bundles)
 
-This repo produces update bundles consumed by devices via GitHub Releases.
+This repo (`WillItMod/5tratum_Build`) produces update bundles consumed by devices via GitHub Releases in `WillItMod/5tratum`.
 
-## 1) Versioning
-- First public release tag: `v0.3.32`
-- Increment tags for each update bundle pushed to the public update repo (`WillItMod/5tratum`).
+## 1) Versioning / channels
+
+Tag naming must match the intended update channel:
+
+- MAIN channel: `vX.Y.Z` (no `-dev`)
+  - GitHub Release: **not** marked prerelease
+  - Bundle metadata: `build.json.channel = "main"`
+- DEV channel: `vX.Y.Z-dev`
+  - GitHub Release: marked prerelease
+  - Bundle metadata: `build.json.channel = "dev"`
+
+Updater guardrails:
+- MAIN ignores prereleases and any tag containing `-dev`.
+- DEV selects prereleases (and treats `-dev` tags as DEV-only even if a release was published incorrectly).
 
 ## 2) Build the update bundle
 
-From this repo:
+Linux/macOS:
 
 ```bash
-./scripts/build-update-bundle.sh
+# MAIN
+TRATUMOS_TAG="v0.x.y" TRATUMOS_CHANNEL="main" ./scripts/build-update-bundle.sh
+
+# DEV
+TRATUMOS_TAG="v0.x.y-dev" TRATUMOS_CHANNEL="dev" ./scripts/build-update-bundle.sh
 ```
 
-Signed (recommended):
+Signed (recommended; produces `dist/5tratumos-update.tgz.sig`):
 
 ```bash
-SIGNING_KEY=/path/to/5tratumos_update_signing.key ./scripts/build-update-bundle.sh
+SIGNING_KEY=/path/to/5tratumos_update_signing.key \
+  TRATUMOS_TAG="v0.x.y" TRATUMOS_CHANNEL="main" \
+  ./scripts/build-update-bundle.sh
+```
+
+Windows PowerShell (equivalent):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-update-bundle.ps1 -BuildTag v0.x.y -Channel main -UpdateRepo WillItMod/5tratum
 ```
 
 Artifacts:
@@ -27,11 +50,20 @@ Artifacts:
 
 ## 3) Publish to GitHub Releases
 
-Create a release in `WillItMod/5tratum` with tag `v0.3.32` (or newer) and upload the artifacts above as release assets.
+Create a release in `WillItMod/5tratum` with the matching tag and upload the artifacts above as release assets.
 
-Notes:
-- MAIN update channel uses the latest non-prerelease.
-- DEV update channel uses the latest prerelease (if enabled later).
+CLI example (recommended for repeatability):
+
+```bash
+# MAIN
+gh release create v0.x.y dist/5tratumos-update.tgz dist/5tratumos-update.tgz.sha256 --repo WillItMod/5tratum --title "v0.x.y" --notes "MAIN update bundle"
+
+# DEV
+gh release create v0.x.y-dev dist/5tratumos-update.tgz dist/5tratumos-update.tgz.sha256 --prerelease --repo WillItMod/5tratum --title "v0.x.y-dev" --notes "DEV update bundle"
+```
+
+Promotion flow (DEV -> MAIN):
+- Once a DEV tag is validated, rebuild the bundle with `TRATUMOS_CHANNEL=main` and publish a **non-prerelease** tag without `-dev` (e.g. promote `v0.3.184-dev` -> `v0.3.184`).
 
 ## 4) Device prerequisites
 
