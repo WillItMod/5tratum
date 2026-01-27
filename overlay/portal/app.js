@@ -3272,6 +3272,7 @@
 
       const body = document.createElement('div');
       body.className = 'max-h-[60vh] overflow-y-auto pr-1 text-sm text-slate-200';
+      body.style.overflowX = 'hidden';
       if (build) build(body);
       wrap.appendChild(body);
 
@@ -3326,6 +3327,8 @@
     k.textContent = String(label || '').trim();
     const v = document.createElement('div');
     v.className = 'forgeos-mono break-all text-slate-100';
+    v.style.overflowWrap = 'anywhere';
+    v.style.wordBreak = 'break-word';
     v.textContent = String(value || '').trim();
     row.appendChild(k);
     row.appendChild(v);
@@ -3340,6 +3343,8 @@
     k.textContent = String(label || '').trim();
     const a = document.createElement('a');
     a.className = 'text-sky-300 hover:text-sky-200 underline break-all';
+    a.style.overflowWrap = 'anywhere';
+    a.style.wordBreak = 'break-word';
     a.href = href;
     a.target = '_blank';
     a.rel = 'noreferrer';
@@ -3463,6 +3468,10 @@
       summary.textContent = title;
       const pre = document.createElement('pre');
       pre.className = 'mt-2 whitespace-pre-wrap break-words text-xs text-slate-200';
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.style.overflowWrap = 'anywhere';
+      pre.style.wordBreak = 'break-word';
+      pre.style.maxWidth = '100%';
       pre.textContent = text || '(unavailable)';
       details.appendChild(summary);
       details.appendChild(pre);
