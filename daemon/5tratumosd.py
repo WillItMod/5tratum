@@ -75,6 +75,9 @@ STORE_DEV_REPO = str(_env("DEV_STORE_REPO", "WillItMod/umbrel-dev-community-stor
 STORE_DEV_BRANCH = str(_env("DEV_STORE_BRANCH", "main") or "main").strip()
 STORE_MAIN_PRIVATE = str(_env("MAIN_STORE_PRIVATE", "0") or "0").strip() == "1"
 SESSION_CONFIG_FILE = str(_env("SESSION_CONFIG_FILE", "/etc/5tratumos/session.json") or "/etc/5tratumos/session.json")
+SESSION_STATE_FILE = str(
+    _env("SESSION_STATE_FILE", os.path.join(STATE_DIR, "session_state.json")) or os.path.join(STATE_DIR, "session_state.json")
+)
 DESKTOP_STATE_FILE = str(_env("DESKTOP_STATE_FILE", "/etc/5tratumos/desktop.json") or "/etc/5tratumos/desktop.json")
 APPS_PAGES_FILE = str(_env("APPS_PAGES_FILE", "/etc/5tratumos/apps_pages.json") or "/etc/5tratumos/apps_pages.json")
 NOTIFY_CONFIG_FILE = str(_env("NOTIFY_CONFIG_FILE", "/etc/5tratumos/notify.json") or "/etc/5tratumos/notify.json")
@@ -89,6 +92,7 @@ UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip
 UPDATE_ALLOW_CHANNEL_MISMATCH = str(_env("UPDATE_ALLOW_CHANNEL_MISMATCH", "0") or "0").strip() == "1"
 SESSION_TTL_S = int(str(_env("SESSION_TTL_S", "86400") or "86400"))
 SESSION_COOKIE = str(_env("SESSION_COOKIE", "5tratumos_session") or "5tratumos_session")
+SESSION_PERSIST = str(_env("SESSION_PERSIST", "1") or "1").strip().lower() not in {"0", "false", "no", "off"}
 # Workers with 0 hashrate and a last-share older than this are considered stale and are hidden
 # from the Fleet "Workers" table (the pool endpoints may retain historical worker entries).
 WORKER_STALE_S = int(str(_env("WORKER_STALE_S", "900") or "900"))
@@ -3942,6 +3946,73 @@ def _prune_sessions(now: float) -> None:
         _SESSIONS.pop(sid, None)
 
 
+def _sessions_save_locked() -> None:
+    if not SESSION_PERSIST:
+        return
+    try:
+        _write_json_atomic(SESSION_STATE_FILE, {"sessions": _SESSIONS})
+        try:
+            os.chmod(SESSION_STATE_FILE, 0o600)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _sessions_load() -> None:
+    if not SESSION_PERSIST:
+        return
+
+    obj = _read_json(SESSION_STATE_FILE)
+    raw = obj.get("sessions")
+    if not isinstance(raw, dict):
+        return
+
+    allowed_users: set[str] = set()
+    try:
+        auth = _read_auth()
+        users = auth.get("users") if isinstance(auth.get("users"), list) else []
+        for u in users:
+            if not isinstance(u, dict):
+                continue
+            name = _normalize_username(str(u.get("username") or ""))
+            if name:
+                allowed_users.add(name.lower())
+    except Exception:
+        allowed_users = set()
+
+    now = time.time()
+    cleaned: dict[str, dict] = {}
+    for sid, sess in raw.items():
+        if not isinstance(sess, dict):
+            continue
+        sid = str(sid or "").strip()
+        if not sid:
+            continue
+        user = _normalize_username(str(sess.get("user") or ""))
+        if not user:
+            continue
+        if allowed_users and user.lower() not in allowed_users:
+            continue
+        try:
+            exp = float(sess.get("expires") or 0.0)
+        except Exception:
+            exp = 0.0
+        if exp <= now:
+            continue
+        created = str(sess.get("created") or "").strip()
+        cleaned[sid] = {"user": user, "expires": exp, "created": created}
+
+    if not cleaned:
+        return
+
+    with _AUTH_LOCK:
+        _SESSIONS.clear()
+        _SESSIONS.update(cleaned)
+        _prune_sessions(time.time())
+        _sessions_save_locked()
+
+
 def current_user(handler: BaseHTTPRequestHandler) -> str | None:
     sid = _cookie_map(handler).get(SESSION_COOKIE) or ""
     if not sid:
@@ -3991,7 +4062,9 @@ def _internal_session_cookie() -> str | None:
             _INTERNAL_SESSION["exp"] = 0.0
             return None
 
-        sid, exp = _make_session(username)
+        with _AUTH_LOCK:
+            sid, exp = _make_session(username)
+            _sessions_save_locked()
         _INTERNAL_SESSION["sid"] = sid
         _INTERNAL_SESSION["exp"] = float(exp)
         return sid
@@ -4056,6 +4129,7 @@ def handle_login(handler: BaseHTTPRequestHandler, body: dict) -> tuple[int, dict
             return HTTPStatus.UNAUTHORIZED, {"ok": False, "error": "invalid credentials"}, None
 
         sid, _ = _make_session(username)
+        _sessions_save_locked()
 
     return HTTPStatus.OK, {"ok": True, "user": username}, [("Set-Cookie", _set_cookie_header(sid, max_age=SESSION_TTL_S))]
 
@@ -4087,6 +4161,7 @@ def handle_setup(handler: BaseHTTPRequestHandler, body: dict) -> tuple[int, dict
         ]
         _write_auth(auth)
         sid, _ = _make_session(username)
+        _sessions_save_locked()
 
     return HTTPStatus.OK, {"ok": True, "user": username, "created": True}, [("Set-Cookie", _set_cookie_header(sid, max_age=SESSION_TTL_S))]
 
@@ -4096,6 +4171,7 @@ def handle_logout(handler: BaseHTTPRequestHandler) -> tuple[int, dict, list[tupl
     with _AUTH_LOCK:
         if sid:
             _SESSIONS.pop(sid, None)
+            _sessions_save_locked()
     return HTTPStatus.OK, {"ok": True}, [("Set-Cookie", _set_cookie_header("", max_age=0))]
 
 
@@ -4152,6 +4228,7 @@ def handle_update_credentials(
         _write_auth(auth)
         _SESSIONS.clear()
         sid, _ = _make_session(username)
+        _sessions_save_locked()
 
     return HTTPStatus.OK, {"ok": True, "user": username}, [("Set-Cookie", _set_cookie_header(sid, max_age=SESSION_TTL_S))]
 
@@ -8664,6 +8741,7 @@ def main() -> int:
     args = parser.parse_args()
 
     _installed_registry_bootstrap()
+    _sessions_load()
     _fleet_history_load()
     _fleet_pool_cache_load()
     _widget_endpoint_cache_load()
