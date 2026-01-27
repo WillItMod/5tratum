@@ -163,6 +163,7 @@
   const updateRollbackStatusEl = document.getElementById('update-rollback-status');
   const btnUpdateCheck = document.getElementById('btn-update-check');
   const btnUpdateApply = document.getElementById('btn-update-apply');
+  const btnUpdateCancel = document.getElementById('btn-update-cancel');
   const btnFixApp = document.getElementById('btn-fix-app');
   const updateRepoInput = document.getElementById('update-repo');
   const updateTokenInput = document.getElementById('update-token');
@@ -307,6 +308,7 @@
     let systemUpdateAutoCheckTimer = null;
     let systemUpdateSplashToken = null;
     let systemUpdateHoldSplash = false;
+    let systemUpdateCancelInFlight = false;
     let systemUpdateRollbacksCache = null;
     let systemUpdateRollbacksAt = 0;
     let systemUpdateRollbacksInFlight = false;
@@ -347,6 +349,7 @@
   const SETTINGS_LAYOUT_KEY = '5tratumos.settingsLayout.v1';
   const SETTINGS_SECTION_KEY = '5tratumos.settingsSection.v1';
   const DONUT_RAIN_LAST_KEY = '5tratumos.donutRainLast.v1';
+  const UPDATE_SPLASH_DISMISSED_KEY = '5tratumos.updateSplashDismissed.v1';
   const STORE_RENDER_STEP = 72;
   let dragAppId = null;
   const openWindows = new Map();
@@ -465,6 +468,29 @@
               actions.appendChild(btn);
               row.appendChild(actions);
             }
+          }
+          if (key === 'system-update') {
+            const actions = document.createElement('div');
+            actions.className = 'mt-3 flex items-center justify-end gap-2';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'axe-btn';
+            btn.textContent = 'Open updates';
+            btn.addEventListener('click', () => {
+              try {
+                setView('settings');
+                activeSettingsKey = 'updates';
+                saveActiveSettingsKey(activeSettingsKey);
+                applySettingsLayout();
+                const section = document.querySelector('section[data-settings-key=\"updates\"]');
+                if (section && section.scrollIntoView) {
+                  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              } catch {}
+              closeModal();
+            });
+            actions.appendChild(btn);
+            row.appendChild(actions);
           }
         } catch {}
 
@@ -770,6 +796,7 @@
     const progress = Number.isFinite(Number(options.progress)) ? Number(options.progress) : null;
     const showProgress = options.showProgress === true || progress !== null;
     const dismissable = options.dismissable !== false;
+    const onDismiss = typeof options.onDismiss === 'function' ? options.onDismiss : null;
     const primary = options.primary && typeof options.primary === 'object' ? options.primary : null;
     const secondary = options.secondary && typeof options.secondary === 'object' ? options.secondary : null;
 
@@ -810,7 +837,7 @@
 
     splashTokenSeq += 1;
     const token = `splash-${splashTokenSeq}`;
-    splashTokens.set(token, { title, sub, dismissable });
+    splashTokens.set(token, { title, sub, dismissable, onDismiss });
     if (globalSplashTitleEl) globalSplashTitleEl.textContent = title;
     if (globalSplashSubEl) {
       const fallbackSub = dismissable ? 'Please wait' : 'Do not refresh or navigate away from this page.';
@@ -832,6 +859,10 @@
       splashClickBound = true;
       globalSplashEl.addEventListener('click', () => {
         if (globalSplashEl.dataset.locked === 'true') return;
+        const callbacks = [];
+        for (const value of splashTokens.values()) {
+          if (value && typeof value.onDismiss === 'function') callbacks.push(value.onDismiss);
+        }
         globalSplashEl.classList.add('hidden');
         globalSplashEl.setAttribute('aria-hidden', 'true');
         splashTokens.clear();
@@ -841,6 +872,11 @@
           globalSplashActionsEl.setAttribute('aria-hidden', 'true');
         }
         refreshGlobalSplashLock();
+        for (const cb of callbacks) {
+          try {
+            cb();
+          } catch {}
+        }
       });
     }
     return token;
@@ -7722,6 +7758,28 @@
   }
 
 
+  function loadSystemUpdateSplashDismissedTag() {
+    try {
+      return String(window.localStorage.getItem(UPDATE_SPLASH_DISMISSED_KEY) || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function setSystemUpdateSplashDismissedTag(tag) {
+    try {
+      const t = String(tag || '').trim();
+      if (!t) window.localStorage.removeItem(UPDATE_SPLASH_DISMISSED_KEY);
+      else window.localStorage.setItem(UPDATE_SPLASH_DISMISSED_KEY, t);
+    } catch {}
+  }
+
+  function clearSystemUpdateSplashDismissedTag() {
+    try {
+      window.localStorage.removeItem(UPDATE_SPLASH_DISMISSED_KEY);
+    } catch {}
+  }
+
   function systemUpdateState() {
     const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
     return st && st.state ? String(st.state).trim().toLowerCase() : 'idle';
@@ -7745,6 +7803,7 @@
     if (s === 'deploying') return 72;
     if (s === 'restarting') return 88;
     if (s === 'restarting_daemon') return 94;
+    if (s === 'canceled') return 0;
     if (s === 'done') return 100;
     if (s === 'error') return 100;
     return 0;
@@ -7754,12 +7813,15 @@
     const s = String(state || '').trim().toLowerCase();
     const st = status && typeof status === 'object' ? status : {};
     const svc = st.service ? String(st.service) : '';
-    if (s === 'downloading') return 'Downloading update bundle...';
-    if (s === 'extracting') return 'Extracting update...';
-    if (s === 'deploying') return 'Deploying update...';
-    if (s === 'restarting') return `Restarting ${svc || 'services'}...`;
-    if (s === 'restarting_daemon') return `Restarting ${svc || 'daemon'}...`;
+    const detail = st.detail ? String(st.detail).trim() : '';
+    const withDetail = (base) => (detail ? `${base} (${detail})` : base);
+    if (s === 'downloading') return withDetail('Downloading update bundle...');
+    if (s === 'extracting') return withDetail('Extracting update...');
+    if (s === 'deploying') return withDetail('Deploying update...');
+    if (s === 'restarting') return withDetail(`Restarting ${svc || 'services'}...`);
+    if (s === 'restarting_daemon') return withDetail(`Restarting ${svc || 'daemon'}...`);
     if (s === 'done') return 'Update complete.';
+    if (s === 'canceled') return 'Update canceled.';
     if (s === 'error') return `Update failed: ${st.error ? String(st.error) : 'unknown error'}`;
     return 'Idle.';
   }
@@ -7793,8 +7855,21 @@
     const state = status && status.state ? String(status.state).trim().toLowerCase() : 'idle';
     const busy = systemUpdateIsBusy(state);
     const pct = busy ? systemUpdateProgressPct(state, status) : null;
+    const targetTag =
+      status && status.target_tag ? String(status.target_tag).trim() : availableTag || (installedTag && installedTag !== '-' ? installedTag : '');
 
-    if (busy) {
+    let dismissedTag = loadSystemUpdateSplashDismissedTag();
+    if (busy && targetTag && dismissedTag && dismissedTag !== targetTag) {
+      clearSystemUpdateSplashDismissedTag();
+      dismissedTag = '';
+    }
+    const splashDismissed = !!(busy && targetTag && dismissedTag && dismissedTag === targetTag);
+    if (!busy && !systemUpdateHoldSplash && dismissedTag) {
+      clearSystemUpdateSplashDismissedTag();
+      dismissedTag = '';
+    }
+
+    if (busy && !splashDismissed) {
       const label = systemUpdateStateLabel(state, status);
       if (!systemUpdateSplashToken) {
         systemUpdateSplashToken = showGlobalSplash({
@@ -7802,7 +7877,11 @@
           sub: label,
           showProgress: true,
           progress: pct,
-          dismissable: false,
+          dismissable: true,
+          onDismiss: () => {
+            if (targetTag) setSystemUpdateSplashDismissedTag(targetTag);
+            systemUpdateSplashToken = null;
+          },
         });
       } else {
         updateGlobalSplash('Updating 5tratumOS', label);
@@ -7820,6 +7899,9 @@
 
     const updateAvailable = !!(check && check.update_available === true);
     if (btnUpdateApply) btnUpdateApply.disabled = busy || !updateAvailable;
+
+    const cancelEligible = busy && (state === 'downloading' || state === 'extracting');
+    if (btnUpdateCancel) btnUpdateCancel.disabled = !cancelEligible || systemUpdateCancelInFlight;
 
     // Rollback UI (uses locally cached update bundles, up to the last N).
     if (updateRollbackTagSelect && btnUpdateRollback && updateRollbackStatusEl) {
@@ -7864,6 +7946,8 @@
       } else if (state === 'done') {
         const tgt = status && status.target_tag ? String(status.target_tag) : availableTag || installedTag;
         line = tgt ? `Updated to ${tgt}.` : 'Update complete.';
+      } else if (state === 'canceled') {
+        line = 'Update canceled.';
       } else if (state === 'error') {
         line = systemUpdateStateLabel(state, status);
       } else if (updateAvailable) {
@@ -8374,6 +8458,51 @@
         danger: true,
       });
     } finally {
+      renderSystemUpdatePanel();
+    }
+  }
+
+  async function cancelSystemUpdate() {
+    const st = systemUpdateStatusCache && typeof systemUpdateStatusCache === 'object' ? systemUpdateStatusCache : null;
+    const state = st && st.state ? String(st.state).trim().toLowerCase() : 'idle';
+    const canCancel = state === 'downloading' || state === 'extracting';
+    if (!canCancel) {
+      showToast('Cancel unavailable', 'error');
+      return;
+    }
+    if (systemUpdateCancelInFlight) return;
+
+    const okConfirm = await openConfirmModal({
+      title: 'Cancel system update?',
+      message:
+        'This attempts to cancel the update during download/extract.\n\nIf deployment has already started, it may be too late to cancel.\n\nYour system should remain on the current version.',
+      confirmText: 'Cancel update',
+      cancelText: 'Keep updating',
+      danger: true,
+    });
+    if (!okConfirm) return;
+
+    systemUpdateCancelInFlight = true;
+    renderSystemUpdatePanel();
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) throw new Error('System service unavailable');
+      const res = await apiJsonTimeout('/api/v0/system/update/cancel', { method: 'POST', body: '{}' }, 8000);
+      if (!res || res.ok !== true) throw new Error((res && (res.error || res.stderr)) || 'cancel rejected');
+      showToast('Cancel requested', null);
+      await refreshSystemUpdateStatus();
+      scheduleSystemUpdatePoll(1200);
+    } catch (e) {
+      const msg = e && e.message ? String(e.message) : String(e);
+      showToast('Cancel failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Cancel failed',
+        message: msg,
+        danger: true,
+      });
+    } finally {
+      systemUpdateCancelInFlight = false;
       renderSystemUpdatePanel();
     }
   }
@@ -12182,6 +12311,7 @@
   btnUpdateCheck?.addEventListener('click', () => refreshSystemUpdateCheck({ force: true, user: true }).catch(() => {}));
   btnUpdateApply?.addEventListener('click', () => applySystemUpdate().catch(() => {}));
   btnUpdateRollback?.addEventListener('click', () => applySystemRollback(updateRollbackTagSelect?.value).catch(() => {}));
+  btnUpdateCancel?.addEventListener('click', () => cancelSystemUpdate().catch(() => {}));
   btnUpdateSave?.addEventListener('click', () => saveSystemUpdateConfig().catch(() => {}));
   btnUpdateTokenClear?.addEventListener('click', () => clearSystemUpdateToken().catch(() => {}));
   btnStorageRefresh?.addEventListener('click', () => refreshStorageSettings().catch(() => {}));

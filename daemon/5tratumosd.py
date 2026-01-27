@@ -2885,6 +2885,7 @@ _UPDATE_CHECK_CACHE: dict[str, object] = {"checked_at": 0.0, "channel": "", "res
 _UPDATE_STATE_DIR = os.path.join(STATE_DIR, "update")
 _UPDATE_STATUS_PATH = os.path.join(_UPDATE_STATE_DIR, "status.json")
 _UPDATE_LOCK_PATH = os.path.join(_UPDATE_STATE_DIR, "lock.json")
+_UPDATE_CANCEL_PATH = os.path.join(_UPDATE_STATE_DIR, "cancel.json")
 _UPDATE_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
@@ -2914,6 +2915,30 @@ def _update_lock_write(*, target_tag: str) -> None:
 def _update_lock_clear() -> None:
     try:
         Path(_UPDATE_LOCK_PATH).unlink()
+    except Exception:
+        pass
+
+
+def _update_cancel_requested(*, target_tag: str) -> bool:
+    req = _read_json(_UPDATE_CANCEL_PATH)
+    if not req:
+        return False
+    want = str(req.get("target_tag") or "").strip()
+    if want and target_tag and want != str(target_tag).strip():
+        return False
+    return True
+
+
+def _update_cancel_write(*, target_tag: str) -> None:
+    try:
+        _write_json_atomic(_UPDATE_CANCEL_PATH, {"target_tag": str(target_tag or "").strip(), "time": _now_iso()})
+    except Exception:
+        pass
+
+
+def _update_cancel_clear() -> None:
+    try:
+        Path(_UPDATE_CANCEL_PATH).unlink()
     except Exception:
         pass
 
@@ -3024,6 +3049,10 @@ def update_status_write(state: str, **extra: object) -> None:
     obj: dict = {"ok": True, "state": state, "time": _now_iso()}
     obj.update({k: v for k, v in extra.items() if v is not None})
     _write_json_atomic(_UPDATE_STATUS_PATH, obj)
+
+
+class _UpdateCanceled(Exception):
+    pass
 
 
 def _sha256_file(path: str) -> str:
@@ -3172,6 +3201,7 @@ def _github_download_file(
     *,
     timeout_s: int = 600,
     progress_cb: Callable[[int, int | None], None] | None = None,
+    cancel_cb: Callable[[], bool] | None = None,
 ) -> None:
     headers = {"User-Agent": "5tratumOS"}
     if "/releases/assets/" in url:
@@ -3187,6 +3217,8 @@ def _github_download_file(
         written = 0
         with open(dest_path, "wb") as f:
             while True:
+                if cancel_cb and cancel_cb():
+                    raise _UpdateCanceled("cancel requested")
                 chunk = r.read(256 * 1024)
                 if not chunk:
                     break
@@ -3595,10 +3627,21 @@ def system_update_apply(channel: str | None = None) -> dict:
         if sig_required and not pubkey:
             return {"ok": False, "error": "update signature required but public key not configured"}
 
+        def cancelable() -> bool:
+            try:
+                return _update_cancel_requested(target_tag=target_tag)
+            except Exception:
+                return False
+
+        def check_cancel() -> None:
+            if cancelable():
+                raise _UpdateCanceled("canceled")
+
         def worker() -> None:
             _update_lock_write(target_tag=target_tag)
             try:
-                update_status_write("downloading", target_tag=target_tag, progress=0)
+                _update_cancel_clear()
+                update_status_write("downloading", target_tag=target_tag, progress=0, detail="Starting download")
                 os.makedirs(_UPDATE_STATE_DIR, exist_ok=True)
                 bundle_path = os.path.join(_UPDATE_STATE_DIR, "bundle.tgz")
                 stage_dir = os.path.join(_UPDATE_STATE_DIR, f"stage-{int(time.time())}")
@@ -3621,9 +3664,17 @@ def system_update_apply(channel: str | None = None) -> dict:
                     last_pct = pct
                     update_status_write("downloading", target_tag=target_tag, progress=pct)
 
-                _github_download_file(bundle_url, tmp, timeout_s=600, progress_cb=download_progress)
+                check_cancel()
+                _github_download_file(
+                    bundle_url,
+                    tmp,
+                    timeout_s=600,
+                    progress_cb=download_progress,
+                    cancel_cb=cancelable,
+                )
+                check_cancel()
                 os.replace(tmp, bundle_path)
-                update_status_write("downloading", target_tag=target_tag, progress=35)
+                update_status_write("downloading", target_tag=target_tag, progress=35, detail="Verifying checksum")
 
                 if bundle_sha:
                     got = _sha256_file(bundle_path)
@@ -3632,6 +3683,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                         return
 
                 if sig_required:
+                    update_status_write("downloading", target_tag=target_tag, progress=35, detail="Verifying signature")
                     try:
                         sig_bytes = _github_bytes(sig_url, timeout_s=60) if sig_url else b""
                     except Exception:
@@ -3640,7 +3692,8 @@ def system_update_apply(channel: str | None = None) -> dict:
                         update_status_write("error", target_tag=target_tag, error="signature verification failed", progress=100)
                         return
 
-                update_status_write("extracting", target_tag=target_tag, progress=40)
+                check_cancel()
+                update_status_write("extracting", target_tag=target_tag, progress=40, detail="Extracting bundle")
                 if os.path.isdir(stage_dir):
                     for p in sorted(Path(stage_dir).rglob("*"), reverse=True):
                         try:
@@ -3658,8 +3711,9 @@ def system_update_apply(channel: str | None = None) -> dict:
 
                 with tarfile.open(bundle_path, "r:gz") as tar:
                     _safe_extract_tar(tar, stage_dir)
-                update_status_write("extracting", target_tag=target_tag, progress=55)
+                update_status_write("extracting", target_tag=target_tag, progress=55, detail="Preparing stage")
 
+                check_cancel()
                 stage_root = Path(stage_dir)
                 stage_overlay = _coalesce_nested_dir(root=stage_root / "overlay", nested_name="overlay", marker="docker-compose.yml")
                 stage_daemon = _coalesce_nested_dir(root=stage_root / "daemon", nested_name="daemon", marker="5tratumosd.py")
@@ -3714,6 +3768,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                     "deploying",
                     target_tag=target_tag,
                     progress=60,
+                    detail="Applying bundle",
                     restarts={
                         "overlay": bool(overlay_cfg_changed),
                         "daemon": bool(daemon_changed),
@@ -3726,6 +3781,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                         "deploying",
                         target_tag=target_tag,
                         progress=70,
+                        detail="Updating portal overlay",
                         restarts={
                             "overlay": bool(overlay_cfg_changed),
                             "daemon": bool(daemon_changed),
@@ -3738,6 +3794,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                         "deploying",
                         target_tag=target_tag,
                         progress=80,
+                        detail="Updating daemon",
                         restarts={
                             "overlay": bool(overlay_cfg_changed),
                             "daemon": bool(daemon_changed),
@@ -3751,6 +3808,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                         "deploying",
                         target_tag=target_tag,
                         progress=84,
+                        detail="Updating bundled apps metadata",
                         restarts={
                             "overlay": bool(overlay_cfg_changed),
                             "daemon": bool(daemon_changed),
@@ -3763,6 +3821,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                         "deploying",
                         target_tag=target_tag,
                         progress=86,
+                        detail="Updating bootstrap metadata",
                         restarts={
                             "overlay": bool(overlay_cfg_changed),
                             "daemon": bool(daemon_changed),
@@ -3786,11 +3845,11 @@ def system_update_apply(channel: str | None = None) -> dict:
                                     pass
                         has_display = os.path.exists("/dev/dri/card0") or os.path.exists("/dev/fb0")
                         if has_display and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
-                            if shutil.which("systemd-run"):
-                                run_cmd(
-                                    [
-                                        "systemd-run",
-                                        "--unit=5tratumos-console-install",
+                    if shutil.which("systemd-run"):
+                        run_cmd(
+                            [
+                                "systemd-run",
+                                "--unit=5tratumos-console-install",
                                         "--collect",
                                         "--property=After=network-online.target",
                                         "--property=Wants=network-online.target",
@@ -3831,22 +3890,74 @@ def system_update_apply(channel: str | None = None) -> dict:
                     run_cmd(["systemctl", "daemon-reload"], timeout_s=60)
 
                 if overlay_cfg_changed:
-                    update_status_write("restarting", target_tag=target_tag, service="overlay", progress=92)
+                    update_status_write(
+                        "restarting",
+                        target_tag=target_tag,
+                        service="overlay",
+                        progress=92,
+                        detail="Restarting portal",
+                    )
                     run_cmd(["systemctl", "restart", "5tratumos-overlay.service"], timeout_s=180)
 
                 if daemon_changed:
-                    update_status_write("restarting_daemon", target_tag=target_tag, service="daemon", progress=96)
+                    update_status_write(
+                        "restarting_daemon",
+                        target_tag=target_tag,
+                        service="daemon",
+                        progress=96,
+                        detail="Restarting daemon",
+                    )
                     run_cmd(["systemctl", "restart", "5tratumosd.service"], timeout_s=180)
                     return
 
                 update_status_write("done", target_tag=target_tag, progress=100)
+            except _UpdateCanceled:
+                try:
+                    update_status_write("canceled", target_tag=target_tag, progress=0, detail="Canceled by user")
+                except Exception:
+                    pass
+                try:
+                    for p in (tmp, bundle_path):
+                        try:
+                            Path(p).unlink()
+                        except Exception:
+                            pass
+                    if os.path.isdir(stage_dir):
+                        for p in sorted(Path(stage_dir).rglob("*"), reverse=True):
+                            try:
+                                if p.is_file() or p.is_symlink():
+                                    p.unlink()
+                                elif p.is_dir():
+                                    p.rmdir()
+                            except Exception:
+                                pass
+                        try:
+                            Path(stage_dir).rmdir()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
             except Exception as e:
                 update_status_write("error", target_tag=target_tag, error=str(e), progress=100)
             finally:
+                _update_cancel_clear()
                 _update_lock_clear()
 
         threading.Thread(target=worker, daemon=True).start()
         return {"ok": True, "started": True, "target_tag": target_tag}
+
+
+def system_update_cancel() -> dict:
+    with _UPDATE_LOCK:
+        st = update_status_read()
+        state = str(st.get("state") or "idle").strip().lower() or "idle"
+        if state not in {"downloading", "extracting", "deploying", "restarting", "restarting_daemon"}:
+            return {"ok": False, "error": "no update in progress"}
+        if state not in {"downloading", "extracting"}:
+            return {"ok": False, "error": "too late to cancel (deployment already started)", "state": state}
+        target_tag = str(st.get("target_tag") or "").strip()
+        _update_cancel_write(target_tag=target_tag)
+        return {"ok": True, "requested": True, "state": state, "target_tag": target_tag}
 
 
 def _systemd_units_changed(stage_dir: Path, dest_dir: Path) -> bool:
@@ -8671,6 +8782,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v0/system/update/apply":
             channel = str(body.get("channel") or "").strip().lower() if isinstance(body, dict) else ""
             res = system_update_apply(channel or None)
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/update/cancel":
+            res = system_update_cancel()
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
