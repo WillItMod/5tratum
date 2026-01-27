@@ -4712,6 +4712,8 @@ _FLEET_CACHE: dict[str, dict] = {}
 _FLEET_POOL_CACHE_LOCK = threading.Lock()
 _FLEET_POOL_CACHE: dict[str, dict] = {}
 
+STORE_CACHE_TTL_S = float(str(_env("STORE_CACHE_TTL_S", "60") or "60").strip() or "60")
+
 FLEET_POOL_CACHE_FILE = str(
     _env("FLEET_POOL_CACHE_FILE", os.path.join(STATE_DIR, "fleet_pool_cache.json"))
     or os.path.join(STATE_DIR, "fleet_pool_cache.json")
@@ -5082,7 +5084,7 @@ def list_store_apps(channel: str | None) -> dict:
 
     cache = _STORE_CACHE.get(ch) or {}
     now = time.time()
-    if cache.get("time") and now - float(cache.get("time") or 0) < 20:
+    if cache.get("time") and now - float(cache.get("time") or 0) < float(STORE_CACHE_TTL_S):
         return {"ok": True, "channel": ch, "apps": cache.get("apps") or []}
 
     store_root = Path(STORE_DIR) / ch

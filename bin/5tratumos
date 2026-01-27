@@ -432,6 +432,29 @@ PY
         store_base="${ROOT_DIR}/store"
         mkdir -p "${store_base}"
 
+        atomic_replace_dir() {
+          local src="$1"
+          local dest="$2"
+          local bak="${dest}.bak"
+
+          rm -rf "${bak}" >/dev/null 2>&1 || true
+          if [ -d "${dest}" ]; then
+            mv "${dest}" "${bak}"
+          fi
+
+          if mv "${src}" "${dest}"; then
+            rm -rf "${bak}" >/dev/null 2>&1 || true
+            return 0
+          fi
+
+          # Best-effort restore on failure.
+          if [ -d "${bak}" ]; then
+            rm -rf "${dest}" >/dev/null 2>&1 || true
+            mv "${bak}" "${dest}" || true
+          fi
+          return 1
+        }
+
         sync_one_github_private() {
           local ch="$1"
           local repo="$2"
@@ -455,12 +478,7 @@ PY
             die "failed to download private store (${repo}@${ref})"
           fi
 
-          rm -rf "${dest}.bak" >/dev/null 2>&1 || true
-          if [ -d "${dest}" ]; then
-            mv "${dest}" "${dest}.bak" || true
-          fi
-          mv "${tmp}" "${dest}"
-          rm -rf "${dest}.bak" >/dev/null 2>&1 || true
+          atomic_replace_dir "${tmp}" "${dest}" || die "failed to finalize private store (${ch})"
         }
 
         sync_one() {
@@ -488,8 +506,7 @@ PY
             mv -f "${f}" "$(dirname "${f}")/global-app.yml" || true
           done
 
-          rm -rf "${dest}"
-          mv "${tmp}" "${dest}"
+          atomic_replace_dir "${tmp}" "${dest}" || die "failed to finalize store (${ch})"
         }
 
         sync_global_assets() {
@@ -531,8 +548,7 @@ PY
             curl -fsSL "${url_fallback}" | tar -xz -C "${tmp}" --strip-components=1
           fi
 
-          rm -rf "${dest}"
-          mv "${tmp}" "${dest}"
+          atomic_replace_dir "${tmp}" "${dest}" || die "failed to finalize store assets (${repo}@${branch})"
         }
 
         main_repo="${FIVETRATUMOS_MAIN_STORE_REPO:-WillItMod/umbrel-community-store}"

@@ -8468,7 +8468,7 @@
       hasLoadedStore = true;
       const installedSet = new Set((installedAppsCache || []).map((a) => a.id));
       const ch = String(activeStoreChannel || 'main').toLowerCase();
-      const storeRes = await apiJsonTimeout(`/api/v0/store/apps?channel=${encodeURIComponent(ch)}`, {}, 15000).catch(
+      const storeRes = await apiJsonTimeout(`/api/v0/store/apps?channel=${encodeURIComponent(ch)}`, {}, 25000).catch(
         () => null,
       );
 
