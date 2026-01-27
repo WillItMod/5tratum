@@ -1274,15 +1274,90 @@ def _ensure_network_manager() -> dict:
 
 
 def _nmcli(args: list[str], *, timeout_s: int = 20) -> subprocess.CompletedProcess:
-    return run_cmd(["nmcli", *args], timeout_s=timeout_s)
+    cmd = ["nmcli", *args]
+    try:
+        return run_cmd(cmd, timeout_s=timeout_s)
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout
+        err = e.stderr
+        if not isinstance(out, str):
+            try:
+                out = (out or b"").decode("utf-8", "replace")
+            except Exception:
+                out = ""
+        if not isinstance(err, str):
+            try:
+                err = (err or b"").decode("utf-8", "replace")
+            except Exception:
+                err = ""
+        msg = f"timeout after {int(timeout_s)}s"
+        err = (err or "").strip()
+        err = f"{err}\n{msg}".strip() if err else msg
+        return subprocess.CompletedProcess(args=cmd, returncode=124, stdout=out or "", stderr=err)
+
+
+def _nmcli_compat(args: list[str], *, timeout_s: int = 20) -> subprocess.CompletedProcess:
+    """
+    Run nmcli with best-effort compatibility across versions.
+
+    Some older nmcli builds (seen on fresh installs) do not support `--separator`.
+    When we detect that failure, retry without it.
+    """
+    proc = _nmcli(args, timeout_s=timeout_s)
+    if proc.returncode == 0:
+        return proc
+    err = (proc.stderr or proc.stdout or "").strip().lower()
+    if "--separator" not in " ".join(args):
+        return proc
+    if "separator" not in err or ("unknown" not in err and "unrecognized" not in err):
+        return proc
+    # Retry without: --separator <value>
+    filtered: list[str] = []
+    skip = 0
+    for a in args:
+        if skip:
+            skip -= 1
+            continue
+        if a == "--separator":
+            skip = 1
+            continue
+        filtered.append(a)
+    try:
+        return _nmcli(filtered, timeout_s=timeout_s)
+    except Exception:
+        return proc
+
+
+def _nmcli_split_escaped(line: str, *, sep: str = ":") -> list[str]:
+    """
+    Split nmcli `-t` output which uses a separator char and escapes it with backslashes.
+    """
+    out: list[str] = []
+    buf: list[str] = []
+    esc = False
+    for ch in str(line or ""):
+        if esc:
+            buf.append(ch)
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if ch == sep:
+            out.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    out.append("".join(buf))
+    return out
 
 
 def _wifi_device() -> str:
-    proc = _nmcli(["-t", "--separator", "\t", "-f", "DEVICE,TYPE,STATE", "device", "status"], timeout_s=8)
+    proc = _nmcli_compat(["-t", "--separator", "\t", "-f", "DEVICE,TYPE,STATE", "device", "status"], timeout_s=8)
     if proc.returncode != 0:
         return ""
     for ln in (proc.stdout or "").splitlines():
-        parts = ln.split("\t")
+        parts = ln.split("\t") if "\t" in ln else _nmcli_split_escaped(ln, sep=":")
         if len(parts) < 2:
             continue
         dev = (parts[0] or "").strip()
@@ -1323,12 +1398,18 @@ def system_wifi_status() -> dict:
     connected = False
     ssid = ""
     if dev:
-        proc = _nmcli(["-t", "--separator", "\t", "-f", "GENERAL.STATE,GENERAL.CONNECTION", "device", "show", dev], timeout_s=6)
+        proc = _nmcli_compat(
+            ["-t", "--separator", "\t", "-f", "GENERAL.STATE,GENERAL.CONNECTION", "device", "show", dev],
+            timeout_s=6,
+        )
         if proc.returncode == 0:
             state = ""
             conn = ""
             for ln in (proc.stdout or "").splitlines():
-                k, _, v = ln.partition("\t")
+                if "\t" in ln:
+                    k, _, v = ln.partition("\t")
+                else:
+                    k, _, v = ln.partition(":")
                 if k == "GENERAL.STATE":
                     state = str(v).strip()
                 elif k == "GENERAL.CONNECTION":
@@ -1355,7 +1436,7 @@ def system_wifi_scan() -> dict:
         return {"ok": False, "error": "wifi is disabled", "enabled": False, "device": dev, "networks": []}
 
     _wifi_prepare(dev)
-    proc = _nmcli(
+    proc = _nmcli_compat(
         ["-t", "--separator", "\t", "-f", "IN-USE,SSID,SECURITY,SIGNAL", "device", "wifi", "list", "--rescan", "yes"],
         timeout_s=30,
     )
@@ -1365,7 +1446,7 @@ def system_wifi_scan() -> dict:
     nets: list[dict] = []
     seen: set[str] = set()
     for ln in (proc.stdout or "").splitlines():
-        parts = ln.split("\t")
+        parts = ln.split("\t") if "\t" in ln else _nmcli_split_escaped(ln, sep=":")
         if len(parts) < 4:
             continue
         in_use, ssid, sec, sig = parts[0], parts[1], parts[2], parts[3]
@@ -7806,13 +7887,32 @@ def list_available_app_ids(channel: str | None = None) -> dict:
 
 
 def stratumos_cmd(args: list[str], *, timeout_s: int = 1800) -> dict:
-    proc = run_cmd(["5tratumos", *args], timeout_s=timeout_s)
-    return {
-        "ok": proc.returncode == 0,
-        "code": proc.returncode,
-        "stdout": proc.stdout,
-        "stderr": proc.stderr,
-    }
+    cmd = ["5tratumos", *args]
+    try:
+        proc = run_cmd(cmd, timeout_s=timeout_s)
+        return {
+            "ok": proc.returncode == 0,
+            "code": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+        }
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout
+        err = e.stderr
+        if not isinstance(out, str):
+            try:
+                out = (out or b"").decode("utf-8", "replace")
+            except Exception:
+                out = ""
+        if not isinstance(err, str):
+            try:
+                err = (err or b"").decode("utf-8", "replace")
+            except Exception:
+                err = ""
+        msg = f"timeout after {int(timeout_s)}s"
+        err = (err or "").strip()
+        err = f"{err}\n{msg}".strip() if err else msg
+        return {"ok": False, "code": 124, "stdout": out or "", "stderr": err}
 
 
 def terminal_run(command: str) -> dict:
@@ -8628,9 +8728,9 @@ class Handler(BaseHTTPRequestHandler):
             if action == "install":
                 channel = body.get("channel")
                 if channel:
-                    res = stratumos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=600)
+                    res = stratumos_cmd(["app", "install", app_id, "--channel", str(channel)], timeout_s=1800)
                 else:
-                    res = stratumos_cmd(["app", "install", app_id], timeout_s=600)
+                    res = stratumos_cmd(["app", "install", app_id], timeout_s=1800)
                 if res.get("ok"):
                     _installed_registry_set(app_id, True)
                     if channel:
