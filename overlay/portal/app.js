@@ -124,6 +124,8 @@
   const settingThemeSelect = document.getElementById('setting-theme');
   const themeGridEl = document.getElementById('theme-grid');
   const settingHostnameInput = document.getElementById('setting-hostname');
+  const btnHostnameSave = document.getElementById('btn-hostname-save');
+  const hostnameStatusEl = document.getElementById('hostname-status');
   const settingChannelSelect = document.getElementById('setting-channel');
   const storageDefaultSelect = document.getElementById('setting-storage-default');
   const btnStorageSave = document.getElementById('btn-storage-save');
@@ -177,6 +179,8 @@
   const autoLockStatusEl = document.getElementById('autolock-status');
   const kioskEnabledInput = document.getElementById('setting-kiosk-enabled');
   const kioskStatusEl = document.getElementById('kiosk-status');
+  const mdnsEnabledInput = document.getElementById('setting-mdns-enabled');
+  const mdnsStatusEl = document.getElementById('mdns-status');
   const mqttCardEl = document.getElementById('settings-mqtt-card');
   const mqttUnavailableEl = document.getElementById('mqtt-unavailable');
   const mqttConfigEl = document.getElementById('mqtt-config');
@@ -3639,6 +3643,27 @@
     }
     if (btnWifiScan) btnWifiScan.disabled = !enabled;
     if (btnWifiDisconnect) btnWifiDisconnect.disabled = !connected;
+  }
+
+  async function refreshMdnsStatus() {
+    if (!mdnsStatusEl && !mdnsEnabledInput) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/mdns', {}, 8000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      const installed = !!res.installed;
+      const active = !!res.active;
+      const host = res.hostname ? String(res.hostname) : '';
+      const label = host ? `${host}.local` : '.local';
+      if (mdnsEnabledInput) mdnsEnabledInput.checked = active;
+      if (mdnsStatusEl) {
+        if (!installed) mdnsStatusEl.textContent = 'Not installed';
+        else mdnsStatusEl.textContent = active ? `Enabled (${label})` : 'Disabled';
+      }
+    } catch {
+      if (mdnsStatusEl) mdnsStatusEl.textContent = 'Unavailable';
+    }
   }
 
   async function scanWifiNetworks() {
@@ -7117,6 +7142,7 @@
       const res = await apiJsonTimeout('/api/v0/system/channel', {}, 3000).catch(() => null);
       if (!res || res.ok !== true) return;
       if (settingHostnameInput && res.hostname) settingHostnameInput.value = String(res.hostname);
+      if (hostnameStatusEl) hostnameStatusEl.textContent = res.hostname ? `Current: ${String(res.hostname)}` : '';
       if (settingChannelSelect) settingChannelSelect.value = String(res.channel || 'main');
     } catch {}
   }
@@ -12154,6 +12180,77 @@
   btnStorageOrphansScan?.addEventListener('click', () => refreshStorageOrphans({ sizes: false }).catch(() => {}));
   btnStorageOrphansScanSizes?.addEventListener('click', () => refreshStorageOrphans({ sizes: true }).catch(() => {}));
   btnStorageOrphansDelete?.addEventListener('click', () => deleteSelectedStorageOrphans().catch(() => {}));
+  btnHostnameSave?.addEventListener('click', async () => {
+    if (!settingHostnameInput) return;
+    const hostname = String(settingHostnameInput.value || '').trim().toLowerCase();
+    if (!hostname) {
+      showToast('Hostname required', 'error');
+      return;
+    }
+    btnHostnameSave.disabled = true;
+    const prev = btnHostnameSave.textContent;
+    btnHostnameSave.textContent = 'Saving...';
+    try {
+      const res = await apiJsonTimeout(
+        '/api/v0/system/hostname',
+        { method: 'POST', body: JSON.stringify({ hostname }) },
+        15000,
+      ).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'save failed');
+      showToast('Hostname saved', null);
+      await refreshSystemSettings();
+      await refreshMdnsStatus();
+    } catch (e) {
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Hostname update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      btnHostnameSave.disabled = false;
+      btnHostnameSave.textContent = prev;
+    }
+  });
+  mdnsEnabledInput?.addEventListener('change', async () => {
+    if (!mdnsEnabledInput) return;
+    const target = !!mdnsEnabledInput.checked;
+    if (target) {
+      const okConfirm = await openConfirmModal({
+        kind: 'Network',
+        title: 'Enable .local address (mDNS)?',
+        message:
+          'This installs and starts avahi-daemon so devices on your LAN can reach this host at <hostname>.local.\n\nThis may take a minute.',
+        confirmText: 'Enable',
+        cancelText: 'Cancel',
+      });
+      if (!okConfirm) {
+        mdnsEnabledInput.checked = false;
+        return;
+      }
+    }
+    mdnsEnabledInput.disabled = true;
+    try {
+      const res = await apiJsonTimeout(
+        '/api/v0/system/mdns',
+        { method: 'POST', body: JSON.stringify({ enabled: target }) },
+        240000,
+      ).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'update failed');
+      showToast(target ? '.local enabled' : '.local disabled', null);
+    } catch (e) {
+      mdnsEnabledInput.checked = !target;
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'mDNS update failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      mdnsEnabledInput.disabled = false;
+      await refreshMdnsStatus();
+    }
+  });
   btnWifiToggle?.addEventListener('click', async () => {
     btnWifiToggle.disabled = true;
     const prev = btnWifiToggle.textContent;
@@ -12681,6 +12778,7 @@
   refreshUiConfig().catch(() => {});
   refreshSessionConfig().catch(() => {});
   refreshHttpsConfig().catch(() => {});
+  refreshMdnsStatus().catch(() => {});
   refreshMqttConfig().catch(() => {});
   refreshDiscordConfig().catch(() => {});
   refreshWatchdogConfig().catch(() => {});

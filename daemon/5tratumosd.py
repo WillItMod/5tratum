@@ -4337,6 +4337,142 @@ def system_channel_set(body: dict) -> dict:
     return {"ok": True, "channel": read_default_channel()}
 
 
+_HOSTNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def _normalize_hostname(raw: object) -> str:
+    s = str(raw or "").strip().lower()
+    if not s:
+        return ""
+    if not _HOSTNAME_RE.match(s):
+        return ""
+    return s
+
+
+def _update_etc_hosts(hostname: str) -> None:
+    if not hostname:
+        return
+    p = Path("/etc/hosts")
+    try:
+        raw = p.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        raw = ""
+    lines = raw.splitlines()
+    out: list[str] = []
+    replaced = False
+    for ln in lines:
+        stripped = ln.strip()
+        if not stripped or stripped.startswith("#"):
+            out.append(ln)
+            continue
+        parts = ln.split("#", 1)
+        pre = parts[0]
+        comment = ("#" + parts[1]) if len(parts) > 1 else ""
+        toks = pre.split()
+        if toks and toks[0] == "127.0.1.1":
+            row = f"127.0.1.1\t{hostname}"
+            if comment.strip():
+                row = f"{row} {comment.strip()}"
+            out.append(row.rstrip())
+            replaced = True
+        else:
+            out.append(ln)
+    if not replaced:
+        if out and out[-1].strip():
+            out.append("")
+        out.append(f"127.0.1.1\t{hostname}")
+    p.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
+
+
+def system_hostname_get() -> dict:
+    return {"ok": True, "hostname": socket.gethostname()}
+
+
+def system_hostname_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    hostname = _normalize_hostname(body.get("hostname") or body.get("value") or "")
+    if not hostname:
+        return {"ok": False, "error": "invalid hostname (use a-z, 0-9, hyphen; max 63 chars)"}
+
+    try:
+        Path("/etc/hostname").write_text(f"{hostname}\n", encoding="utf-8")
+        _update_etc_hosts(hostname)
+    except Exception as e:
+        return {"ok": False, "error": f"failed to persist hostname: {e}"}
+
+    # Apply runtime hostname immediately (no reboot required).
+    proc = None
+    hostnamectl = _which("hostnamectl")
+    if hostnamectl:
+        proc = run_cmd([hostnamectl, "set-hostname", hostname], timeout_s=20)
+        if proc.returncode != 0:
+            proc = None
+    if proc is None:
+        proc = run_cmd(["/bin/hostname", hostname], timeout_s=10)
+        if proc.returncode != 0:
+            return {"ok": False, "error": (proc.stderr or proc.stdout or "hostname set failed").strip()}
+
+    # If mDNS is enabled, a restart ensures the new name is advertised.
+    try:
+        run_cmd(["/bin/systemctl", "try-restart", "avahi-daemon.service"], timeout_s=30)
+    except Exception:
+        pass
+
+    return {"ok": True, "hostname": socket.gethostname()}
+
+
+def _dpkg_is_installed(pkg: str) -> bool:
+    if not pkg:
+        return False
+    proc = run_cmd(["/usr/bin/dpkg-query", "-W", "-f=${Status}", pkg], timeout_s=10)
+    if proc.returncode != 0:
+        return False
+    return "install ok installed" in (proc.stdout or "")
+
+
+def system_mdns_status() -> dict:
+    installed = _dpkg_is_installed("avahi-daemon")
+    active = False
+    enabled = False
+    if installed:
+        active = run_cmd(["/bin/systemctl", "is-active", "--quiet", "avahi-daemon.service"], timeout_s=10).returncode == 0
+        enabled = run_cmd(["/bin/systemctl", "is-enabled", "--quiet", "avahi-daemon.service"], timeout_s=10).returncode == 0
+    host = socket.gethostname()
+    return {
+        "ok": True,
+        "installed": bool(installed),
+        "active": bool(active),
+        "enabled": bool(enabled),
+        "hostname": host,
+        "fqdn": f"{host}.local",
+    }
+
+
+def system_mdns_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+    enabled = bool(body.get("enabled"))
+
+    if enabled:
+        missing = [p for p in ("avahi-daemon", "libnss-mdns") if not _dpkg_is_installed(p)]
+        if missing:
+            proc = run_cmd(["/usr/bin/apt-get", "update"], timeout_s=300)
+            if proc.returncode != 0:
+                return {"ok": False, "error": (proc.stderr or proc.stdout or "apt update failed").strip()}
+            proc = run_cmd(["/usr/bin/apt-get", "install", "-y", *missing], timeout_s=600)
+            if proc.returncode != 0:
+                return {"ok": False, "error": (proc.stderr or proc.stdout or "apt install failed").strip()}
+        proc = run_cmd(["/bin/systemctl", "enable", "--now", "avahi-daemon.service"], timeout_s=60)
+        if proc.returncode != 0:
+            return {"ok": False, "error": (proc.stderr or proc.stdout or "failed to start avahi-daemon").strip()}
+    else:
+        if _dpkg_is_installed("avahi-daemon"):
+            run_cmd(["/bin/systemctl", "disable", "--now", "avahi-daemon.service"], timeout_s=60)
+
+    return system_mdns_status()
+
+
 def os_update_check() -> dict:
     proc = run_cmd(["/usr/bin/apt-get", "update"], timeout_s=300)
     if proc.returncode != 0:
@@ -7860,6 +7996,14 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_channel_get())
             return
 
+        if path == "/api/v0/system/hostname":
+            json_response(self, HTTPStatus.OK, system_hostname_get())
+            return
+
+        if path == "/api/v0/system/mdns":
+            json_response(self, HTTPStatus.OK, system_mdns_status())
+            return
+
         if path == "/api/v0/system/osupdate/check":
             json_response(self, HTTPStatus.OK, os_update_check())
             return
@@ -8172,6 +8316,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/channel":
             res = system_channel_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/hostname":
+            res = system_hostname_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
+        if path == "/api/v0/system/mdns":
+            res = system_mdns_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
