@@ -1880,6 +1880,44 @@
     return { version: 1, active: activeResolved, pages };
   }
 
+  function collapseLauncherPagesState(state, installedApps) {
+    const normalized = normalizePagesState(state, installedApps);
+    const pages = normalized && Array.isArray(normalized.pages) ? normalized.pages : [];
+
+    const items = [];
+    const seen = new Set();
+    for (const p of pages) {
+      if (!p || typeof p !== 'object') continue;
+      const list = Array.isArray(p.items) ? p.items : [];
+      for (const raw of list) {
+        const id = String(raw || '').trim().toLowerCase();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        items.push(id);
+      }
+    }
+
+    const installedIds = new Set(
+      (Array.isArray(installedApps) ? installedApps : [])
+        .map((a) => (a && typeof a === 'object' ? String(a.id || '').trim().toLowerCase() : ''))
+        .filter((v) => v),
+    );
+    const missing = [];
+    for (const id of installedIds) {
+      if (!seen.has(id)) missing.push(id);
+    }
+    if (missing.length) {
+      missing.sort((a, b) => {
+        const ma = metaFor(a);
+        const mb = metaFor(b);
+        return String(ma.name || a).localeCompare(String(mb.name || b), undefined, { sensitivity: 'base' });
+      });
+      items.push(...missing);
+    }
+
+    return { version: 1, active: 'apps', pages: [{ id: 'apps', name: 'Apps', items }] };
+  }
+
   async function refreshAppsPagesState(installedApps) {
     if (!appsPagesLoaded) {
       try {
@@ -1890,7 +1928,7 @@
       } catch {}
       appsPagesLoaded = true;
     }
-    appsPagesState = normalizePagesState(appsPagesState, installedApps);
+    appsPagesState = collapseLauncherPagesState(appsPagesState, installedApps);
     activeAppsPageId = String(appsPagesState.active || '').trim().toLowerCase();
   }
 
@@ -9759,6 +9797,7 @@
 
   function renderAppsLauncher(apps) {
     if (!appsLauncherGridEl || !appsLauncherEmptyEl) return;
+    const prevScroll = paneAppsLauncherEl?.scrollTop ?? 0;
     appsLauncherGridEl.innerHTML = '';
     const list = Array.isArray(apps) ? apps : [];
     appsLauncherEmptyEl.classList.toggle('hidden', list.length > 0);
@@ -9778,7 +9817,7 @@
       return;
     }
 
-    appsPagesState = normalizePagesState(appsPagesState, list);
+    appsPagesState = collapseLauncherPagesState(appsPagesState, list);
     activeAppsPageId = String(activeAppsPageId || appsPagesState.active || '').trim().toLowerCase();
     if (!activeAppsPageId) activeAppsPageId = String(appsPagesState.active || '').trim().toLowerCase();
 
@@ -9873,6 +9912,12 @@
       if (!displayAll && activePage) attachLauncherDnD(btn, id, String(activePage.id || '').trim().toLowerCase(), ids);
 
       appsLauncherGridEl.appendChild(btn);
+    }
+
+    if (paneAppsLauncherEl && prevScroll > 0) {
+      try {
+        paneAppsLauncherEl.scrollTop = prevScroll;
+      } catch {}
     }
   }
 

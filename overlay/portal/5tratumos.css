@@ -2146,6 +2146,7 @@ body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric--c
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: 2px 2px 0;
 }
 
@@ -2575,6 +2576,7 @@ body.forgeos-topbar-compact:not(.forgeos-topbar-open) .forgeos-desktop-metric--c
 .forgeos-table-wrap {
   max-height: 280px;
   overflow: auto;
+  scrollbar-gutter: stable;
   border-radius: 14px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   background: rgba(0, 0, 0, 0.14);
@@ -3601,14 +3603,20 @@ body.forgeos-workspace #btn-open-store {
 
 /* Scrollbars (dark theme) */
 .forgeos-view,
+.forgeos-home,
 .forgeos-modal__body,
+.forgeos-table-wrap,
+.forgeos-terminal__output,
 .forgeos-taskbar__apps {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.32) rgba(0, 0, 0, 0.55);
 }
 
 .forgeos-view::-webkit-scrollbar,
-.forgeos-modal__body::-webkit-scrollbar {
+.forgeos-home::-webkit-scrollbar,
+.forgeos-modal__body::-webkit-scrollbar,
+.forgeos-table-wrap::-webkit-scrollbar,
+.forgeos-terminal__output::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
@@ -3714,7 +3722,10 @@ body.forgeos-workspace #btn-open-store {
 }
 
 .forgeos-view::-webkit-scrollbar-thumb,
+.forgeos-home::-webkit-scrollbar-thumb,
 .forgeos-modal__body::-webkit-scrollbar-thumb,
+.forgeos-table-wrap::-webkit-scrollbar-thumb,
+.forgeos-terminal__output::-webkit-scrollbar-thumb,
 .forgeos-taskbar__apps::-webkit-scrollbar-thumb {
   background: rgba(148, 163, 184, 0.28);
   border-radius: 9999px;
@@ -3722,7 +3733,10 @@ body.forgeos-workspace #btn-open-store {
 }
 
 .forgeos-view::-webkit-scrollbar-track,
+.forgeos-home::-webkit-scrollbar-track,
 .forgeos-modal__body::-webkit-scrollbar-track,
+.forgeos-table-wrap::-webkit-scrollbar-track,
+.forgeos-terminal__output::-webkit-scrollbar-track,
 .forgeos-taskbar__apps::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.55);
   border-radius: 9999px;
