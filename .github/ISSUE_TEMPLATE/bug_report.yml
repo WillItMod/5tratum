@@ -1,0 +1,79 @@
+name: Bug report
+description: Report a bug in 5tratum/5tratumOS
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Please include as much detail as you can so we can reproduce and fix it quickly.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / Tag
+      description: The 5tratumOS version (e.g. v0.3.173-dev) shown in Settings → About.
+      placeholder: v0.3.xxx-dev
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Channel
+      description: Which update channel are you running?
+      options:
+        - dev
+        - main
+        - unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A concise description of the issue.
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What is currently happening?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Paste relevant logs or screenshots (redact secrets). Tip: include `journalctl -u 5tratumosd.service -n 200`.
+      render: shell
+    validations:
+      required: false
+
