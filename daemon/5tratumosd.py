@@ -4930,12 +4930,20 @@ def _maybe_localize_store_url(channel: str, app_dir_path: Path, app_dir_name: st
             rel = u.path[idx + len(marker) :].lstrip("/").replace("\\", "/")
             if rel and (app_dir_path / rel).is_file():
                 return store_asset_url(channel, app_dir_name, rel)
+            if rel and (channel or "").strip().lower() == "global":
+                localized = _global_assets_raw_url(app_dir_name, rel)
+                if localized and not _is_remote_url(localized):
+                    return localized
 
         fn = Path(u.path).name
         for base in ("images", "screenshots", "gallery", ""):
             rel = f"{base}/{fn}".strip("/")
             if fn and rel and (app_dir_path / rel).is_file():
                 return store_asset_url(channel, app_dir_name, rel)
+            if fn and rel and (channel or "").strip().lower() == "global":
+                localized = _global_assets_raw_url(app_dir_name, rel)
+                if localized and not _is_remote_url(localized):
+                    return localized
         return raw
 
     # Relative path
@@ -7703,10 +7711,22 @@ def _detect_ui_port(app_id: str, store_port: int | None, *, require_http: bool) 
     return int(candidates[0]) if candidates else None
 
 
-def _nginx_proxy_block(app_id: str, port: int) -> str:
+def _normalize_store_path(path: str) -> str:
+    raw = str(path or "").strip()
+    if not raw or raw == "/":
+        return ""
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    if not raw.endswith("/"):
+        raw = raw + "/"
+    return raw
+
+
+def _nginx_proxy_block(app_id: str, port: int, *, default_path: str = "") -> str:
     aid = str(app_id or "").strip()
     p = int(port)
     app_prefix = f"/apps/{aid}"
+    default_path = _normalize_store_path(default_path)
     # Nginx sub_filter can't do conditional/regex rewrites, so we combine:
     # - targeted sub_filter rewrites for common static asset prefixes, and
     # - an injected JS shim to prefix root-absolute XHR/fetch calls at runtime.
@@ -7724,11 +7744,18 @@ def _nginx_proxy_block(app_id: str, port: int) -> str:
         "XMLHttpRequest.prototype.open=function(m,u){try{u=f(u);}catch(e){}arguments[1]=u;return oo.apply(this,arguments);};}"
         "}catch(e){}})();</script>"
     )
+    root_redirect = ""
+    if default_path:
+        root_redirect = f"""
+
+  location = /apps/{aid}/ {{
+    return 302 /apps/{aid}{default_path};
+  }}"""
     return f"""
 
   location = /apps/{aid} {{
     return 301 /apps/{aid}/;
-  }}
+  }}{root_redirect}
 
   location /apps/{aid}/ {{
     proxy_http_version 1.1;
@@ -7816,10 +7843,18 @@ def system_proxy_repair() -> dict:
                 break
 
         store_port = _store_declared_ui_port(app_id, store_meta)
+        store_path = _normalize_store_path(str(store_meta.get("path") or "").strip())
         port = _detect_ui_port(app_id, store_port, require_http=True) or _detect_ui_port(app_id, store_port, require_http=False)
         if not port:
             continue
-        installed.append({"id": app_id, "port": int(port), "store_port": int(store_port) if store_port else None})
+        installed.append(
+            {
+                "id": app_id,
+                "port": int(port),
+                "store_port": int(store_port) if store_port else None,
+                "path": store_path,
+            }
+        )
 
     try:
         original = conf_path.read_text(encoding="utf-8")
@@ -7837,7 +7872,7 @@ def system_proxy_repair() -> dict:
             return text.rstrip() + "\n" + block.strip() + "\n"
         return text[: m.start()] + "\n" + block.strip() + text[m.start() :]
 
-    def patch_existing_block(text: str, *, app_id: str, port: int) -> tuple[str, bool]:
+    def patch_existing_block(text: str, *, app_id: str, port: int, default_path: str) -> tuple[str, bool]:
         """
         Ensure existing per-app proxy blocks contain the current set of sub_filter
         rules needed for subpath-mounted apps, without clobbering any extra
@@ -7846,12 +7881,13 @@ def system_proxy_repair() -> dict:
         aid = str(app_id or "").strip()
         if not aid or port <= 0:
             return text, False
+        default_path = _normalize_store_path(default_path)
 
         # Narrowly find the /apps/<id>/ location block and inject missing lines
         # just before proxy_pass. We keep this conservative to avoid touching
         # unrelated server blocks.
         block_pat = re.compile(
-            rf"(location\s+/apps/{re.escape(aid)}/\s*\{{.*?)(\n\s*proxy_pass\s+http://127\.0\.0\.1:{port}/;)",
+            rf"(location\s+/apps/{re.escape(aid)}/\s*\{{.*?)(\n\s*proxy_pass\s+http://127\.0\.0\.1:{port}[^;]*;)",
             re.S,
         )
         m = block_pat.search(text)
@@ -7911,19 +7947,38 @@ def system_proxy_repair() -> dict:
             insertion.append(f"    sub_filter 'url(/icons/' 'url(/apps/{aid}/icons/';")
 
         if not insertion:
-            return text, False
+            text_out = text
+        else:
+            inject = "\n" + "\n".join(insertion)
+            text_out = text[: m.start(2)] + inject + text[m.start(2) :]
 
-        inject = "\n" + "\n".join(insertion)
-        new_text = text[: m.start(2)] + inject + text[m.start(2) :]
-        return new_text, True
+        # If the store recipe declares a default subpath (e.g. /admin/), add an exact-match
+        # redirect so /apps/<id>/ reliably lands on the correct page.
+        did_path_redirect = False
+        if default_path:
+            has = re.search(rf"(?m)^\s*location\s*=\s*/apps/{re.escape(aid)}/\s*\{{", text_out)
+            if not has:
+                loc_line = re.search(rf"(?m)^(\s*)location\s+/apps/{re.escape(aid)}/\s*\{{", text_out)
+                if loc_line:
+                    indent = loc_line.group(1)
+                    redirect_block = (
+                        f"{indent}location = /apps/{aid}/ {{\n"
+                        f"{indent}  return 302 /apps/{aid}{default_path};\n"
+                        f"{indent}}}\n\n"
+                    )
+                    text_out = text_out[: loc_line.start()] + redirect_block + text_out[loc_line.start() :]
+                    did_path_redirect = True
+
+        return text_out, bool(insertion) or did_path_redirect
 
     for entry in installed:
         app_id = str(entry.get("id") or "").strip()
         port = int(entry.get("port") or 0)
+        default_path = str(entry.get("path") or "").strip()
         if not app_id or port <= 0:
             continue
         pat = re.compile(
-            rf"(location\s+/apps/{re.escape(app_id)}/\s*\{{.*?\bproxy_pass\s+http://127\.0\.0\.1:)(\d+)(/;)",
+            rf"(location\s+/apps/{re.escape(app_id)}/\s*\{{.*?\bproxy_pass\s+http://127\.0\.0\.1:)(\d+)([^;]*;)",
             re.S,
         )
 
@@ -7935,12 +7990,31 @@ def system_proxy_repair() -> dict:
 
         next2, n = pat.subn(_repl, next_conf, count=1)
         if n == 0:
-            block = _nginx_proxy_block(app_id, port)
-            next_conf = insert_before_final_brace(next_conf, block)
-            added.append({"id": app_id, "port": port})
+            # Older configs may have a proxy_pass without a trailing slash or with a non-local upstream.
+            # Prefer patching the existing location block over inserting a duplicate (nginx would reject it).
+            pat2 = re.compile(
+                rf"(location\s+/apps/{re.escape(app_id)}/\s*\{{.*?\bproxy_pass\s+)([^;]+)(;)",
+                re.S,
+            )
+
+            def _repl2(m: re.Match) -> str:
+                return f"{m.group(1)}http://127.0.0.1:{port}/;"
+
+            next3, n2 = pat2.subn(_repl2, next_conf, count=1)
+            if n2 == 0:
+                block = _nginx_proxy_block(app_id, port, default_path=default_path)
+                next_conf = insert_before_final_brace(next_conf, block)
+                added.append({"id": app_id, "port": port})
+                continue
+
+            next_conf = next3
+            next4, did_patch = patch_existing_block(next_conf, app_id=app_id, port=port, default_path=default_path)
+            if did_patch:
+                patched.append({"id": app_id})
+            next_conf = next4
         else:
             next_conf = next2
-            next3, did_patch = patch_existing_block(next_conf, app_id=app_id, port=port)
+            next3, did_patch = patch_existing_block(next_conf, app_id=app_id, port=port, default_path=default_path)
             if did_patch:
                 patched.append({"id": app_id})
             next_conf = next3
