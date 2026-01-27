@@ -14,6 +14,14 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ## Downloads
 
+### OS update bundle (existing installs)
+
+- Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
+- Latest MAIN update bundle: **v0.3.184** (assets: `5tratumos-update.tgz` + `.sha256`)
+  - https://github.com/WillItMod/5tratum/releases/tag/v0.3.184
+
+### Installer media
+
 **AMD/INTEL only (x86_64 / amd64) for the installer ISO.**
 
 - **AMD/INTEL installer ISO (v0.3.124)**

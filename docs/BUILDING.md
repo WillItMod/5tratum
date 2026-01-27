@@ -30,7 +30,11 @@ In the build repo (`WillItMod/5tratum_Build`) on Windows:
 
 ```powershell
 cd C:\VSC\5tratumOS
-powershell -ExecutionPolicy Bypass -File .\scripts\build-update-bundle.ps1 -BuildTag vX.Y.Z
+# MAIN bundle
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-update-bundle.ps1 -BuildTag vX.Y.Z -Channel main -UpdateRepo WillItMod/5tratum
+
+# DEV bundle
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-update-bundle.ps1 -BuildTag vX.Y.Z-dev -Channel dev -UpdateRepo WillItMod/5tratum
 ```
 
 Or on Linux:

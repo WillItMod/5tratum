@@ -4,7 +4,7 @@ Legend:
 - `*-dev` = DEV-only pre-release
 - MAIN = non-pre-release and/or `releases/latest`
 
-This file captures the shipped release notes for `v0.3.134` through `v0.3.166`.
+This file captures the shipped release notes for `v0.3.134` through `v0.3.184`.
 
 - `v0.3.134` (2026-01-24): Notifications: status "not-created" -> "not running"; Fleet pool list stays stable if installed-app listing briefly drops entries.
 - `v0.3.135-dev` (2026-01-24): DEV-only: remove pin buttons; logo toggle + right-click menu; theme selection persists across refresh; fix mojibake/encoding artifacts.
@@ -38,8 +38,28 @@ This file captures the shipped release notes for `v0.3.134` through `v0.3.166`.
 - `v0.3.164-dev` (2026-01-26): DEV-only: uninstall progress bar no longer pulses on refresh/re-render; includes v0.3.163-dev proxy shim.
 - `v0.3.165-dev` (2026-01-26): DEV-only: donut rain renders as proper donuts + sprinkles; runs once every 5 minutes (rate-limited per browser).
 - `v0.3.165` (2026-01-26): MAIN: promotes the above; includes /apps/<id>/ proxy shim + uninstall progress stabilization.
+- `v0.3.166-dev` (2026-01-26): DEV-only: keep system metrics responsive for slow/bare-metal installs (CPU temp sampled in background); WebUI caches last-good metrics with longer timeout.
+- `v0.3.166` (2026-01-26): MAIN: promotes the above.
+- `v0.3.167-dev` (2026-01-27): DEV-only: system hostname save + mDNS toggle.
+- `v0.3.168-dev` (2026-01-27): DEV-only: Wi‑Fi toggle label fix + show DEV channel.
+- `v0.3.169-dev` (2026-01-27): DEV-only: remove Umbrel wording in custom store hint.
+- `v0.3.170-dev` (2026-01-27): DEV-only: Store sync made atomic + cache TTL tweaks.
+- `v0.3.171-dev` (2026-01-27): DEV-only: app uninstall more idempotent + longer uninstall timeout.
+- `v0.3.172-dev` (2026-01-27): DEV-only: Wi‑Fi enable/scan reliability (rfkill unblock, bring link up before scan).
+- `v0.3.173-dev` (2026-01-27): DEV-only: auth sessions persist across daemon restart.
+- `v0.3.174-dev` (2026-01-27): DEV-only: Legal modal word wrapping fix.
+- `v0.3.175-dev` (2026-01-27): DEV-only: Wi‑Fi scan compatibility (no `nmcli --separator`) + longer install timeout.
+- `v0.3.176-dev` (2026-01-27): DEV-only: updater cancel + clearer progress UX.
+- `v0.3.177-dev` (2026-01-27): DEV-only: global store assets localization + proxy routing fixes.
+- `v0.3.178-dev` (2026-01-27): DEV-only: uninstall `--purge` removes migrated app data; repair reports recovered state instead of hard-failing.
+- `v0.3.179-dev` (2026-01-27): DEV-only: Apps page launcher becomes a single scrollable list + scrollbar polish.
+- `v0.3.180-dev` (2026-01-27): DEV-only: per-app network bandwidth breakdown.
+- `v0.3.181-dev` (2026-01-27): DEV-only: per-app storage usage + fleet network difficulty.
+- `v0.3.182-dev` (2026-01-27): DEV-only: hotfix daemon startup (fix IndentationError).
+- `v0.3.183-dev` (2026-01-27): DEV-only: add node app bandwidth limits.
+- `v0.3.184-dev` (2026-01-27): DEV-only: mobile/topbar UX polish.
+- `v0.3.184` (2026-01-27): MAIN: promotes the above (update bundle promoted from `v0.3.184-dev`).
 
 Notes:
 - Some intermediate build tags may exist without published GitHub releases; this list reflects published releases.
 - For newer releases, see the GitHub releases page.
-
