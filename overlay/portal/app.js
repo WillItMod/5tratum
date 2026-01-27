@@ -3672,7 +3672,7 @@
     const prev = btnWifiScan.textContent;
     btnWifiScan.textContent = 'Scanning...';
     try {
-      const res = await apiJsonTimeout('/api/v0/system/wifi/scan', {}, 20000).catch(() => null);
+      const res = await apiJsonTimeout('/api/v0/system/wifi/scan', {}, 30000).catch(() => null);
       if (!res || res.ok !== true) throw new Error((res && res.error) || 'scan failed');
       renderWifiNetworks(res.networks);
     } catch (e) {

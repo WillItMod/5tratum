@@ -1288,6 +1288,23 @@ def _wifi_device() -> str:
     return ""
 
 
+def _wifi_prepare(dev: str) -> None:
+    """
+    Best-effort: un-block WiFi (rfkill), bring the link up, and ensure NM networking is on.
+    This matches the manual steps users often need on fresh installs.
+    """
+    d = (dev or "").strip()
+    if not d:
+        return
+    if shutil.which("rfkill"):
+        run_cmd(["rfkill", "unblock", "wifi"], timeout_s=5)
+        run_cmd(["rfkill", "unblock", "wlan"], timeout_s=5)
+    run_cmd(["ip", "link", "set", d, "up"], timeout_s=5)
+    _nmcli(["networking", "on"], timeout_s=10)
+    _nmcli(["device", "set", d, "managed", "yes"], timeout_s=10)
+    _nmcli(["radio", "wifi", "on"], timeout_s=10)
+
+
 def system_wifi_status() -> dict:
     nm = _ensure_network_manager()
     if not nm.get("ok"):
@@ -1327,9 +1344,16 @@ def system_wifi_scan() -> dict:
     if not dev:
         return {"ok": False, "error": "no wifi device detected"}
 
+    st = system_wifi_status()
+    if not st.get("ok"):
+        return {"ok": False, "error": st.get("error") or "wifi unavailable"}
+    if not bool(st.get("enabled")):
+        return {"ok": False, "error": "wifi is disabled", "enabled": False, "device": dev, "networks": []}
+
+    _wifi_prepare(dev)
     proc = _nmcli(
         ["-t", "--separator", "\t", "-f", "IN-USE,SSID,SECURITY,SIGNAL", "device", "wifi", "list", "--rescan", "yes"],
-        timeout_s=20,
+        timeout_s=30,
     )
     if proc.returncode != 0:
         return {"ok": False, "error": (proc.stderr or proc.stdout or "scan failed").strip()}
@@ -1365,7 +1389,10 @@ def system_wifi_toggle(body: dict) -> dict:
     proc = _nmcli(["radio", "wifi", "on" if enabled else "off"], timeout_s=10)
     if proc.returncode != 0:
         return {"ok": False, "error": (proc.stderr or proc.stdout or "toggle failed").strip()}
-    return {"ok": True, "enabled": enabled}
+    dev = _wifi_device()
+    if enabled and dev:
+        _wifi_prepare(dev)
+    return {"ok": True, "enabled": enabled, "status": system_wifi_status()}
 
 
 def system_wifi_disconnect() -> dict:
