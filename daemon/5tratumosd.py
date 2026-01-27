@@ -3844,17 +3844,18 @@ def system_update_apply(channel: str | None = None) -> dict:
                                 except Exception:
                                     pass
                         has_display = os.path.exists("/dev/dri/card0") or os.path.exists("/dev/fb0")
-                        if has_display and os.path.isfile(os.path.join(ROOT_DIR, "console", "install.sh")):
-                    if shutil.which("systemd-run"):
-                        run_cmd(
-                            [
-                                "systemd-run",
-                                "--unit=5tratumos-console-install",
+                        install_sh = os.path.join(ROOT_DIR, "console", "install.sh")
+                        if has_display and os.path.isfile(install_sh):
+                            if shutil.which("systemd-run"):
+                                run_cmd(
+                                    [
+                                        "systemd-run",
+                                        "--unit=5tratumos-console-install",
                                         "--collect",
                                         "--property=After=network-online.target",
                                         "--property=Wants=network-online.target",
                                         "/bin/bash",
-                                        os.path.join(ROOT_DIR, "console", "install.sh"),
+                                        install_sh,
                                     ],
                                     timeout_s=30,
                                 )
@@ -3863,7 +3864,7 @@ def system_update_apply(channel: str | None = None) -> dict:
                                     [
                                         "/bin/bash",
                                         "-lc",
-                                        f"nohup /bin/bash {shlex.quote(os.path.join(ROOT_DIR,'console','install.sh'))} >/var/log/5tratumos-console-install.log 2>&1 &",
+                                        f"nohup /bin/bash {shlex.quote(install_sh)} >/var/log/5tratumos-console-install.log 2>&1 &",
                                     ],
                                     timeout_s=30,
                                 )
