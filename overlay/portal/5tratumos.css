@@ -4524,6 +4524,19 @@ select.forgeos-input optgroup {
     display: none;
   }
 
+  body:not(.forgeos-topbar-open) .forgeos-desktop-topbar {
+    justify-content: center;
+  }
+
+  body:not(.forgeos-topbar-open) .forgeos-desktop-topbar__version {
+    display: none;
+  }
+
+  body:not(.forgeos-topbar-open) .forgeos-desktop-topbar__brand {
+    width: 100%;
+    justify-content: center;
+  }
+
   body.forgeos-topbar-open .forgeos-desktop-topbar {
     flex-direction: column;
     align-items: stretch;
