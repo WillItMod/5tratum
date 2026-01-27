@@ -6697,6 +6697,146 @@ def _cpu_temp_sampler_loop() -> None:
         time.sleep(interval_s)
 
 
+_NETWORK_APPS_SAMPLE_LOCK = threading.Lock()
+_NETWORK_APPS_SAMPLE: dict[str, object] = {"ok": False, "time": "", "sample_s": 0.0, "apps": [], "error": ""}
+NETWORK_APPS_SAMPLE_S = float(str(_env("NETWORK_APPS_SAMPLE_S", "3") or "3").strip() or "3")
+
+
+def _installed_app_ids_set() -> set[str]:
+    installed_defs = set(list_installed_app_ids())
+    installed_reg = _installed_registry_installed_set()
+    out: set[str] = set()
+    for v in (set(installed_defs) | set(installed_reg)):
+        s = str(v or "").strip().lower()
+        if s:
+            out.add(s)
+    return out
+
+
+def _app_id_from_compose_project(project: str, installed: set[str]) -> str:
+    p = str(project or "").strip()
+    if not p:
+        return ""
+    low = p.lower()
+    for prefix in ("5tratumos-", "forgeos-"):
+        if low.startswith(prefix):
+            cand = low[len(prefix) :].strip("-")
+            return cand if (not installed or cand in installed) else ""
+    return low if (not installed or low in installed) else ""
+
+
+def _sample_network_apps(prev_time: float, prev_totals: dict[str, tuple[int, int]]) -> tuple[dict, dict[str, tuple[int, int]]]:
+    now = time.time()
+    dt_s = (now - float(prev_time or 0.0)) if prev_time else 0.0
+    if dt_s < 0:
+        dt_s = 0.0
+
+    installed = _installed_app_ids_set()
+    proc = run_cmd(
+        ["docker", "ps", "--format", "{{.Names}}\t{{.Label \"com.docker.compose.project\"}}"],
+        timeout_s=6,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip() or "docker ps failed"
+        return {"ok": False, "time": _now_iso(), "sample_s": dt_s, "apps": [], "error": err}, prev_totals
+
+    name_to_app: dict[str, str] = {}
+    for ln in (proc.stdout or "").splitlines():
+        raw = ln.rstrip("\n")
+        if not raw.strip():
+            continue
+        parts = raw.split("\t", 1)
+        name = parts[0].strip()
+        project = parts[1].strip() if len(parts) > 1 else ""
+        if not name:
+            continue
+        app_id = _app_id_from_compose_project(project, installed)
+        if not app_id or app_id == "overlay":
+            continue
+        name_to_app[name] = app_id
+
+    if not name_to_app:
+        return {"ok": True, "time": _now_iso(), "sample_s": dt_s, "apps": [], "error": ""}, {}
+
+    stats_by_name = docker_stats_for(sorted(name_to_app.keys()))
+    if not stats_by_name:
+        return {"ok": False, "time": _now_iso(), "sample_s": dt_s, "apps": [], "error": "docker stats unavailable"}, prev_totals
+    totals_by_app: dict[str, list[int]] = {}
+    for name, app_id in name_to_app.items():
+        st = stats_by_name.get(name) or {}
+        net_rx, net_tx = _parse_pair_to_bytes(str(st.get("NetIO") or ""))
+        rx = int(net_rx or 0)
+        tx = int(net_tx or 0)
+        cur = totals_by_app.get(app_id)
+        if not cur:
+            totals_by_app[app_id] = [rx, tx, 1]
+        else:
+            cur[0] += rx
+            cur[1] += tx
+            cur[2] += 1
+
+    out_apps: list[dict] = []
+    next_prev: dict[str, tuple[int, int]] = {}
+    for app_id, triple in totals_by_app.items():
+        rx_total, tx_total, containers = int(triple[0]), int(triple[1]), int(triple[2])
+        next_prev[app_id] = (rx_total, tx_total)
+        prev_rx, prev_tx = prev_totals.get(app_id, (rx_total, tx_total))
+        d_rx = max(0, rx_total - int(prev_rx))
+        d_tx = max(0, tx_total - int(prev_tx))
+        rx_bps = (d_rx / dt_s) if dt_s > 0 else 0.0
+        tx_bps = (d_tx / dt_s) if dt_s > 0 else 0.0
+        out_apps.append(
+            {
+                "id": app_id,
+                "rx_bps": float(rx_bps),
+                "tx_bps": float(tx_bps),
+                "rx_bytes": rx_total,
+                "tx_bytes": tx_total,
+                "containers": containers,
+            }
+        )
+
+    out_apps.sort(
+        key=lambda a: (
+            float(a.get("rx_bps") or 0.0) + float(a.get("tx_bps") or 0.0),
+            str(a.get("id") or ""),
+        ),
+        reverse=True,
+    )
+    return {"ok": True, "time": _now_iso(), "sample_s": dt_s, "apps": out_apps, "error": ""}, next_prev
+
+
+def _network_apps_sampler_loop() -> None:
+    interval_s = NETWORK_APPS_SAMPLE_S if NETWORK_APPS_SAMPLE_S > 0.5 else 0.5
+    prev_time = 0.0
+    prev_totals: dict[str, tuple[int, int]] = {}
+    while True:
+        try:
+            sample, next_prev = _sample_network_apps(prev_time, prev_totals)
+            prev_time = time.time()
+            prev_totals = next_prev
+            with _NETWORK_APPS_SAMPLE_LOCK:
+                _NETWORK_APPS_SAMPLE.clear()
+                _NETWORK_APPS_SAMPLE.update(sample)
+        except Exception as e:
+            with _NETWORK_APPS_SAMPLE_LOCK:
+                _NETWORK_APPS_SAMPLE.clear()
+                _NETWORK_APPS_SAMPLE.update({"ok": False, "time": _now_iso(), "sample_s": 0.0, "apps": [], "error": str(e)})
+        time.sleep(interval_s)
+
+
+def system_network_apps() -> dict:
+    with _NETWORK_APPS_SAMPLE_LOCK:
+        snap = dict(_NETWORK_APPS_SAMPLE)
+    # Ensure shape is stable for clients.
+    snap.setdefault("ok", False)
+    snap.setdefault("time", _now_iso())
+    snap.setdefault("sample_s", 0.0)
+    snap.setdefault("apps", [])
+    snap.setdefault("error", "")
+    return snap
+
+
 _CPU_STAT_LOCK = threading.Lock()
 _CPU_STAT_CACHE: dict[str, object] = {"time": 0.0, "samples": []}
 
@@ -8289,6 +8429,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_metrics())
             return
 
+        if path == "/api/v0/system/network/apps":
+            json_response(self, HTTPStatus.OK, system_network_apps())
+            return
+
         if path == "/api/v0/system/processes":
             sort = (qs.get("sort") or ["cpu"])[0]
             limit_raw = (qs.get("limit") or ["30"])[0]
@@ -9057,6 +9201,7 @@ def main() -> int:
     threading.Thread(target=_fleet_sampler_loop, daemon=True).start()
     threading.Thread(target=_dashboard_sampler_loop, daemon=True).start()
     threading.Thread(target=_cpu_temp_sampler_loop, daemon=True).start()
+    threading.Thread(target=_network_apps_sampler_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

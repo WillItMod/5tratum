@@ -11163,6 +11163,172 @@
     refreshSystemDetail().catch(() => {});
   }
 
+  function openNetworkAppsModal() {
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    if (modalKindEl) modalKindEl.textContent = 'System';
+    modalTitleEl.textContent = 'Network';
+    modalBodyEl.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'forgeos-power';
+
+    const head = document.createElement('div');
+    head.className = 'flex items-center justify-between gap-2 flex-wrap';
+
+    const info = document.createElement('div');
+    info.className = 'min-w-0';
+
+    const ip = String(metricIp?.textContent || '').trim();
+    const host = (() => {
+      try {
+        return String(window.location.hostname || '').trim();
+      } catch {
+        return '';
+      }
+    })();
+    const label = ip || host ? `Host: ${ip || host}` : 'Host: -';
+
+    const title = document.createElement('div');
+    title.className = 'forgeos-sysdetail__title';
+    title.textContent = label;
+
+    const sub = document.createElement('div');
+    sub.className = 'forgeos-muted';
+    sub.textContent = 'Loading...';
+
+    info.appendChild(title);
+    info.appendChild(sub);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2';
+
+    const btnCopy = document.createElement('button');
+    btnCopy.className = 'axe-btn';
+    btnCopy.type = 'button';
+    btnCopy.textContent = 'Copy IP';
+    btnCopy.disabled = !ip;
+    btnCopy.addEventListener('click', async () => {
+      if (!ip) return;
+      try {
+        await navigator.clipboard.writeText(ip);
+        showToast('IP copied', null);
+      } catch {
+        showToast('Copy failed', 'error');
+      }
+    });
+
+    actions.appendChild(btnCopy);
+
+    head.appendChild(info);
+    head.appendChild(actions);
+    wrap.appendChild(head);
+
+    const hint = document.createElement('div');
+    hint.className = 'text-sm text-slate-300 mt-2';
+    hint.textContent = 'Per-app bandwidth usage (approx, docker stats sampling).';
+    wrap.appendChild(hint);
+
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'forgeos-table-wrap mt-3';
+
+    const table = document.createElement('table');
+    table.className = 'forgeos-table';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const labelTxt of ['App', 'RX', 'TX', 'Total']) {
+      const th = document.createElement('th');
+      th.textContent = labelTxt;
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+    tableWrap.appendChild(table);
+    wrap.appendChild(tableWrap);
+
+    modalBodyEl.appendChild(wrap);
+
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+
+    let timer = 0;
+    let inFlight = false;
+
+    function stop() {
+      if (timer) window.clearTimeout(timer);
+      timer = 0;
+    }
+
+    modalOnClose = stop;
+
+    function formatRate(value) {
+      const v = Number(value);
+      if (!Number.isFinite(v) || v <= 0) return '0 B/s';
+      return `${formatBytes(v)}/s`;
+    }
+
+    function renderRows(list) {
+      tbody.innerHTML = '';
+      const items = Array.isArray(list) ? list : [];
+      if (!items.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 4;
+        td.textContent = 'No running app traffic detected.';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      for (const a of items.slice(0, 40)) {
+        if (!a || typeof a !== 'object') continue;
+        const id = String(a.id || '').trim().toLowerCase();
+        if (!id) continue;
+        const meta = metaFor(id);
+        const name = String(meta.name || id);
+        const rx = Number(a.rx_bps);
+        const tx = Number(a.tx_bps);
+        const total = (Number.isFinite(rx) ? rx : 0) + (Number.isFinite(tx) ? tx : 0);
+
+        const tr = document.createElement('tr');
+        const cols = [name, formatRate(rx), formatRate(tx), formatRate(total)];
+        for (const c of cols) {
+          const td = document.createElement('td');
+          td.textContent = c;
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+    }
+
+    async function poll() {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const res = await apiJsonTimeout('/api/v0/system/network/apps', {}, 2500).catch(() => null);
+        if (!res || res.ok !== true) {
+          sub.textContent = String((res && res.error) || 'Unavailable');
+          renderRows([]);
+          return;
+        }
+        const t = formatTimeShort(res.time);
+        const sampleS = Number(res.sample_s);
+        const suffix = Number.isFinite(sampleS) && sampleS > 0.5 ? ` (Δ${sampleS.toFixed(1)}s)` : '';
+        sub.textContent = `Updated ${t || '-'}${suffix}`;
+        renderRows(res.apps);
+      } finally {
+        inFlight = false;
+        if (!timer) timer = window.setTimeout(poll, 1300);
+      }
+    }
+
+    poll().catch(() => {});
+  }
+
   function openPowerModal() {
     if (!modalEl || !modalBodyEl || !modalTitleEl) return;
     if (modalKindEl) modalKindEl.textContent = 'System';
@@ -12551,16 +12717,7 @@
   metricCardCpu?.addEventListener('click', () => openSystemDetailModal('cpu'));
   metricCardMem?.addEventListener('click', () => openSystemDetailModal('mem'));
   metricCardDisk?.addEventListener('click', () => openSystemDetailModal('disk'));
-  metricCardIp?.addEventListener('click', async () => {
-    const ip = String(metricIp?.textContent || '').trim();
-    if (!ip) return;
-    try {
-      await navigator.clipboard.writeText(ip);
-      showToast('IP copied', null);
-    } catch {
-      openSystemDetailModal('cpu');
-    }
-  });
+  metricCardIp?.addEventListener('click', () => openNetworkAppsModal());
   btnWidgetsRefresh?.addEventListener('click', () => refreshWidgets({ force: true }).catch(() => {}));
   btnFleetRefresh?.addEventListener('click', () => refreshFleet({ force: true }).catch(() => {}));
   btnAppsPagePrev?.addEventListener('click', () => stepAppsPage(-1));
