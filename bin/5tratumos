@@ -1894,7 +1894,29 @@ PY
         fi
 
         if [ "${purge}" = "true" ]; then
-          rm -rf "${STATE_DIR}/apps/${app_id}"
+          app_state_dir="${STATE_DIR}/apps/${app_id}"
+          target=""
+          if [ -L "${app_state_dir}" ]; then
+            target="$(readlink -f "${app_state_dir}" 2>/dev/null || true)"
+            rm -f "${app_state_dir}"
+          fi
+
+          # Always remove the local state path and common migration artifacts.
+          rm -rf "${app_state_dir}"
+          rm -rf "${STATE_DIR}/apps/${app_id}.bak."* "${STATE_DIR}/apps/${app_id}.migrating."*
+
+          # If the app was migrated to external storage, the state dir is a symlink.
+          # Purge should remove the real data directory too (only if it matches the expected layout).
+          if [ -n "${target}" ] && [ "${target}" != "${app_state_dir}" ]; then
+            case "${target}" in
+              */5tratumos/apps/${app_id}|*/5tratumos/apps/${app_id}/|*/5tratumos/apps/${app_id}/*)
+                rm -rf "${target}"
+                ;;
+              *)
+                echo "warn: purge target not recognized; leaving external data at ${target}" >&2
+                ;;
+            esac
+          fi
           echo "uninstalled ${app_id} (purged)"
         else
           echo "uninstalled ${app_id}"

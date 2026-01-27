@@ -8889,6 +8889,17 @@ class Handler(BaseHTTPRequestHandler):
             if ch:
                 args += ["--channel", ch]
             res = stratumos_cmd(args, timeout_s=1800)
+            if not res.get("ok"):
+                try:
+                    st = summarize_project_status(docker_compose_project(app_id))
+                    status = str(st.get("status") or "").strip().lower()
+                    if status in {"running", "degraded"}:
+                        res["ok"] = True
+                        res["recovered"] = True
+                        res["warning"] = "repair exited non-zero but app appears running"
+                        res["status"] = st
+                except Exception:
+                    pass
             if res.get("ok"):
                 proxy_res = system_proxy_repair()
                 res["proxy"] = proxy_res
