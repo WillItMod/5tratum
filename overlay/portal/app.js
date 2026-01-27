@@ -16,7 +16,12 @@
   const btnWifiScan = document.getElementById('btn-wifi-scan');
   const btnWifiDisconnect = document.getElementById('btn-wifi-disconnect');
   const wifiNetworksEl = document.getElementById('wifi-networks');
+  const networkLimitsStatusEl = document.getElementById('network-limits-status');
+  const networkLimitsBodyEl = document.getElementById('network-limits-body');
+  const btnNetworkLimitsSave = document.getElementById('btn-network-limits-save');
+  const btnNetworkLimitsRefresh = document.getElementById('btn-network-limits-refresh');
   let wifiStateCache = { enabled: false, connected: false, ssid: '' };
+  let networkLimitsCache = null;
   const metricCpu = document.getElementById('metric-cpu');
   const metricMem = document.getElementById('metric-mem');
   const metricDisk = document.getElementById('metric-disk');
@@ -7274,6 +7279,235 @@
     }
   }
 
+  function renderNetworkLimits() {
+    if (!networkLimitsBodyEl && !networkLimitsStatusEl) return;
+    const res = networkLimitsCache && typeof networkLimitsCache === 'object' ? networkLimitsCache : null;
+    if (!res || res.ok !== true) {
+      if (networkLimitsStatusEl) networkLimitsStatusEl.textContent = 'Unavailable.';
+      if (networkLimitsBodyEl) networkLimitsBodyEl.textContent = 'Bandwidth limits unavailable.';
+      return;
+    }
+
+    const apps = Array.isArray(res.apps) ? res.apps : [];
+    const cfg = res.config && typeof res.config === 'object' ? res.config : {};
+    const appCfg = cfg.apps && typeof cfg.apps === 'object' ? cfg.apps : {};
+    const caps = res.capabilities && typeof res.capabilities === 'object' ? res.capabilities : {};
+    const state = res.state && typeof res.state === 'object' ? res.state : {};
+
+    const tcOk = !!caps.tc;
+    if (networkLimitsStatusEl) {
+      if (!tcOk) {
+        networkLimitsStatusEl.textContent = 'Unavailable (tc missing).';
+      } else if (!apps.length) {
+        networkLimitsStatusEl.textContent = 'No node apps installed.';
+      } else {
+        const enabledCount = apps.filter((a) => {
+          const id = String(a && a.id ? a.id : '').trim().toLowerCase();
+          const cur = id && appCfg[id] && typeof appCfg[id] === 'object' ? appCfg[id] : {};
+          const enabled = !!cur.enabled;
+          const rx = Number(cur.rx_mbps || 0);
+          const tx = Number(cur.tx_mbps || 0);
+          return enabled && (rx > 0 || tx > 0);
+        }).length;
+        networkLimitsStatusEl.textContent = enabledCount ? `Enabled: ${enabledCount}` : 'Disabled';
+      }
+    }
+
+    if (!networkLimitsBodyEl) return;
+    networkLimitsBodyEl.innerHTML = '';
+
+    if (!tcOk) {
+      const warn = document.createElement('div');
+      warn.className = 'forgeos-muted text-sm';
+      warn.textContent = 'Traffic control (tc) is not available on this host, so limits cannot be enforced.';
+      networkLimitsBodyEl.appendChild(warn);
+      return;
+    }
+
+    if (!apps.length) {
+      const empty = document.createElement('div');
+      empty.className = 'forgeos-muted text-sm';
+      empty.textContent = 'No AxeSuite node apps detected.';
+      networkLimitsBodyEl.appendChild(empty);
+      return;
+    }
+
+    const tableWrap = document.createElement('div');
+    tableWrap.className = 'forgeos-table-wrap mt-2';
+
+    const table = document.createElement('table');
+    table.className = 'forgeos-table';
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (const labelTxt of ['App', 'Enabled', 'RX (Mbps)', 'TX (Mbps)', 'Status']) {
+      const th = document.createElement('th');
+      th.textContent = labelTxt;
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    table.appendChild(tbody);
+
+    const safeNum = (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) return 0;
+      return n;
+    };
+
+    const makeNumber = (id, value) => {
+      const input = document.createElement('input');
+      input.id = id;
+      input.type = 'number';
+      input.min = '0';
+      input.step = '0.1';
+      input.className = 'forgeos-input';
+      input.value = String(safeNum(value));
+      return input;
+    };
+
+    for (const app of apps) {
+      if (!app || typeof app !== 'object') continue;
+      const id = String(app.id || '').trim().toLowerCase();
+      if (!id) continue;
+      const name = String(app.name || id);
+      const cur = appCfg[id] && typeof appCfg[id] === 'object' ? appCfg[id] : {};
+      const curState = state[id] && typeof state[id] === 'object' ? state[id] : {};
+
+      const tr = document.createElement('tr');
+
+      const tdName = document.createElement('td');
+      tdName.textContent = name;
+      tr.appendChild(tdName);
+
+      const tdEnabled = document.createElement('td');
+      const label = document.createElement('label');
+      label.className = 'forgeos-toggle';
+      const enabledInput = document.createElement('input');
+      enabledInput.type = 'checkbox';
+      enabledInput.id = `nl-enabled-${id}`;
+      enabledInput.checked = !!cur.enabled;
+      const span = document.createElement('span');
+      span.textContent = enabledInput.checked ? 'On' : 'Off';
+      enabledInput.addEventListener('change', () => {
+        span.textContent = enabledInput.checked ? 'On' : 'Off';
+      });
+      label.appendChild(enabledInput);
+      label.appendChild(span);
+      tdEnabled.appendChild(label);
+      tr.appendChild(tdEnabled);
+
+      const tdRx = document.createElement('td');
+      tdRx.appendChild(makeNumber(`nl-rx-${id}`, cur.rx_mbps));
+      tr.appendChild(tdRx);
+
+      const tdTx = document.createElement('td');
+      tdTx.appendChild(makeNumber(`nl-tx-${id}`, cur.tx_mbps));
+      tr.appendChild(tdTx);
+
+      const tdStatus = document.createElement('td');
+      const ok = curState.ok === true;
+      const err = String(curState.error || '').trim();
+      tdStatus.textContent = err ? `Error: ${err}` : ok ? 'Applied' : '';
+      tr.appendChild(tdStatus);
+
+      tbody.appendChild(tr);
+    }
+
+    tableWrap.appendChild(table);
+    networkLimitsBodyEl.appendChild(tableWrap);
+  }
+
+  async function refreshNetworkLimits() {
+    if (!networkLimitsBodyEl && !networkLimitsStatusEl) return;
+    try {
+      const ok = await ensureHealthy();
+      if (!ok) return;
+      const res = await apiJsonTimeout('/api/v0/system/network/limits', {}, 6000).catch(() => null);
+      if (!res || res.ok !== true) throw new Error((res && res.error) || 'load failed');
+      networkLimitsCache = res;
+      renderNetworkLimits();
+    } catch {
+      networkLimitsCache = null;
+      renderNetworkLimits();
+    }
+  }
+
+  async function saveNetworkLimits() {
+    if (!networkLimitsBodyEl) return;
+    const res = networkLimitsCache && typeof networkLimitsCache === 'object' ? networkLimitsCache : null;
+    const apps = res && Array.isArray(res.apps) ? res.apps : [];
+    if (!apps.length) return;
+
+    const payloadApps = {};
+    for (const app of apps) {
+      if (!app || typeof app !== 'object') continue;
+      const id = String(app.id || '').trim().toLowerCase();
+      if (!id) continue;
+      const enabled = document.getElementById(`nl-enabled-${id}`);
+      const rx = document.getElementById(`nl-rx-${id}`);
+      const tx = document.getElementById(`nl-tx-${id}`);
+      const enabledVal = enabled instanceof HTMLInputElement ? !!enabled.checked : false;
+      const rxVal = rx instanceof HTMLInputElement ? Number(rx.value) : 0;
+      const txVal = tx instanceof HTMLInputElement ? Number(tx.value) : 0;
+      payloadApps[id] = {
+        enabled: enabledVal,
+        rx_mbps: Number.isFinite(rxVal) && rxVal > 0 ? rxVal : 0,
+        tx_mbps: Number.isFinite(txVal) && txVal > 0 ? txVal : 0,
+      };
+    }
+
+    if (btnNetworkLimitsSave) {
+      btnNetworkLimitsSave.disabled = true;
+      btnNetworkLimitsSave.textContent = 'Saving...';
+    }
+    try {
+      const saveRes = await apiJsonTimeout(
+        '/api/v0/system/network/limits',
+        { method: 'POST', body: JSON.stringify({ apps: payloadApps }) },
+        20000,
+      ).catch(() => null);
+      if (!saveRes || saveRes.ok !== true) throw new Error((saveRes && saveRes.error) || 'save failed');
+      showToast('Bandwidth limits saved', null);
+
+      const apply = saveRes.apply && typeof saveRes.apply === 'object' ? saveRes.apply : {};
+      const results = Array.isArray(apply.results) ? apply.results : [];
+      const bad = results.filter((r) => r && typeof r === 'object' && r.ok !== true);
+      if (bad.length) {
+        const lines = bad
+          .map((r) => {
+            const id = String(r.id || '').trim();
+            const err = String(r.error || '').trim();
+            return id ? `${id}: ${err || 'apply failed'}` : '';
+          })
+          .filter(Boolean)
+          .join('\n');
+        await openNoticeModal({
+          kind: 'Network',
+          title: 'Some limits failed to apply',
+          message: lines || 'One or more limits failed to apply.',
+          danger: true,
+        });
+      }
+    } catch (e) {
+      showToast('Bandwidth limits save failed', 'error');
+      await openNoticeModal({
+        kind: 'Error',
+        title: 'Bandwidth limits save failed',
+        message: e && e.message ? String(e.message) : String(e),
+        danger: true,
+      });
+    } finally {
+      if (btnNetworkLimitsSave) {
+        btnNetworkLimitsSave.disabled = false;
+        btnNetworkLimitsSave.textContent = 'Save & apply';
+      }
+      await refreshNetworkLimits();
+    }
+  }
+
   async function refreshUiConfig() {
     try {
       const ok = await ensureHealthy();
@@ -12834,6 +13068,8 @@
       btnWifiDisconnect.textContent = prev;
     }
   });
+  btnNetworkLimitsRefresh?.addEventListener('click', () => refreshNetworkLimits().catch(() => {}));
+  btnNetworkLimitsSave?.addEventListener('click', () => saveNetworkLimits().catch(() => {}));
   btnMqttSave?.addEventListener('click', () => saveMqttConfig().catch(() => {}));
   btnDiscordSave?.addEventListener('click', () => saveDiscordConfig().catch(() => {}));
   btnWatchdogSave?.addEventListener('click', () => saveWatchdogConfig().catch(() => {}));
@@ -13303,6 +13539,7 @@
   refreshUiConfig().catch(() => {});
   refreshSessionConfig().catch(() => {});
   refreshHttpsConfig().catch(() => {});
+  refreshNetworkLimits().catch(() => {});
   refreshMdnsStatus().catch(() => {});
   refreshMqttConfig().catch(() => {});
   refreshDiscordConfig().catch(() => {});

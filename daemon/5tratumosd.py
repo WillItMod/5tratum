@@ -86,6 +86,7 @@ KEYBOARD_FILE = str(_env("KEYBOARD_FILE", "/etc/default/keyboard") or "/etc/defa
 STORAGE_CONFIG_FILE = str(_env("STORAGE_CONFIG_FILE", "/etc/5tratumos/storage.json") or "/etc/5tratumos/storage.json")
 WATCHDOG_CONFIG_FILE = str(_env("WATCHDOG_CONFIG_FILE", "/etc/5tratumos/watchdog.json") or "/etc/5tratumos/watchdog.json")
 UI_CONFIG_FILE = str(_env("UI_CONFIG_FILE", "/etc/5tratumos/ui.json") or "/etc/5tratumos/ui.json")
+NETWORK_LIMITS_FILE = str(_env("NETWORK_LIMITS_FILE", "/etc/5tratumos/network_limits.json") or "/etc/5tratumos/network_limits.json")
 API_CACHE_DIR = str(_env("API_CACHE_DIR", "/var/cache/5tratumos/api") or "/var/cache/5tratumos/api")
 UPDATE_TOKEN_ENV = str(_env("UPDATE_TOKEN", "") or os.environ.get("GITHUB_TOKEN") or "").strip()
 UPDATE_ALLOW_UNVERIFIED = str(_env("UPDATE_ALLOW_UNVERIFIED", "0") or "0").strip() == "1"
@@ -2074,6 +2075,20 @@ AXE_WIDGET_APP_IDS = {
     "axedgb",
     "axebtc",
     "axebsv",
+}
+
+AXE_NODE_APP_IDS = {
+    "axebch",
+    "axedgb",
+    "axebtc",
+    "axebsv",
+}
+
+AXE_NODE_SERVICE_BY_APP_ID: dict[str, str] = {
+    "axebch": "bchn",
+    "axedgb": "dgbd",
+    "axebtc": "bitcoind",
+    "axebsv": "bsvd",
 }
 
 AXE_WIDGET_DEFS = [
@@ -6838,6 +6853,358 @@ def system_network_apps() -> dict:
     return snap
 
 
+def _network_limits_defaults() -> dict:
+    return {
+        "apps": {app_id: {"enabled": False, "rx_mbps": 0.0, "tx_mbps": 0.0} for app_id in sorted(AXE_NODE_APP_IDS)},
+        "total": {"enabled": False, "rx_mbps": 0.0, "tx_mbps": 0.0},
+    }
+
+
+def _normalize_mbps(value: object) -> float:
+    raw = str(value or "").strip()
+    if not raw:
+        return 0.0
+    try:
+        mbps = float(raw)
+    except Exception:
+        return 0.0
+    if not math.isfinite(mbps):
+        return 0.0
+    return float(max(0.0, min(100000.0, mbps)))
+
+
+def _normalize_network_limits(raw: dict) -> dict:
+    base = _network_limits_defaults()
+    out = {"apps": dict(base["apps"]), "total": dict(base["total"])}
+
+    src_apps = raw.get("apps") if isinstance(raw.get("apps"), dict) else {}
+    for app_id in sorted(AXE_NODE_APP_IDS):
+        entry = src_apps.get(app_id) if isinstance(src_apps, dict) else None
+        if not isinstance(entry, dict):
+            continue
+        cur = dict(out["apps"].get(app_id) or {})
+        if "enabled" in entry:
+            cur["enabled"] = bool(entry.get("enabled"))
+        if "rx_mbps" in entry or "rx" in entry:
+            cur["rx_mbps"] = _normalize_mbps(entry.get("rx_mbps") if "rx_mbps" in entry else entry.get("rx"))
+        if "tx_mbps" in entry or "tx" in entry:
+            cur["tx_mbps"] = _normalize_mbps(entry.get("tx_mbps") if "tx_mbps" in entry else entry.get("tx"))
+        out["apps"][app_id] = cur
+
+    src_total = raw.get("total") if isinstance(raw.get("total"), dict) else {}
+    if isinstance(src_total, dict) and src_total:
+        cur_total = dict(out["total"])
+        if "enabled" in src_total:
+            cur_total["enabled"] = bool(src_total.get("enabled"))
+        if "rx_mbps" in src_total or "rx" in src_total:
+            cur_total["rx_mbps"] = _normalize_mbps(src_total.get("rx_mbps") if "rx_mbps" in src_total else src_total.get("rx"))
+        if "tx_mbps" in src_total or "tx" in src_total:
+            cur_total["tx_mbps"] = _normalize_mbps(src_total.get("tx_mbps") if "tx_mbps" in src_total else src_total.get("tx"))
+        out["total"] = cur_total
+
+    return out
+
+
+def _read_network_limits() -> dict:
+    cfg = _read_json(NETWORK_LIMITS_FILE)
+    if not isinstance(cfg, dict) or not cfg:
+        return _network_limits_defaults()
+    return _normalize_network_limits(cfg)
+
+
+def _write_network_limits(cfg: dict) -> None:
+    _write_json_atomic(NETWORK_LIMITS_FILE, cfg)
+    try:
+        os.chmod(NETWORK_LIMITS_FILE, 0o600)
+    except Exception:
+        pass
+
+
+def _tc_path() -> str:
+    cand = _which("tc")
+    if cand:
+        return cand
+    for p in ("/sbin/tc", "/usr/sbin/tc"):
+        if os.path.isfile(p):
+            return p
+    return ""
+
+
+def _nsenter_path() -> str:
+    cand = _which("nsenter")
+    if cand:
+        return cand
+    for p in ("/usr/bin/nsenter", "/bin/nsenter"):
+        if os.path.isfile(p):
+            return p
+    return ""
+
+
+def _docker_container_pid(name: str) -> int | None:
+    cn = str(name or "").strip()
+    if not cn:
+        return None
+    proc = run_cmd(["docker", "inspect", "-f", "{{.State.Pid}}", cn], timeout_s=10)
+    if proc.returncode != 0:
+        return None
+    try:
+        pid = int(str(proc.stdout or "").strip() or "0")
+    except Exception:
+        return None
+    return pid if pid > 0 else None
+
+
+def _node_container_name_for_app(app_id: str) -> str | None:
+    aid = str(app_id or "").strip().lower()
+    if aid not in AXE_NODE_APP_IDS:
+        return None
+    want_svc = str(AXE_NODE_SERVICE_BY_APP_ID.get(aid) or "").strip().lower()
+    if not want_svc:
+        return None
+
+    project = docker_compose_project(aid)
+    for c in docker_containers_for_project(project):
+        name = str(c.get("Names") or "").strip()
+        if not name:
+            continue
+        labels = _parse_docker_labels(str(c.get("Labels") or ""))
+        svc = str(labels.get("com.docker.compose.service") or "").strip().lower()
+        if svc == want_svc:
+            return name
+
+    for c in docker_containers_for_project(project):
+        name = str(c.get("Names") or "").strip()
+        if not name:
+            continue
+        name_l = name.lower()
+        if f"-{want_svc}-" in name_l or name_l.endswith(f"-{want_svc}") or name_l.startswith(f"{want_svc}-"):
+            return name
+
+    return None
+
+
+def _mbps_to_kbit(mbps: float) -> int:
+    return int(max(1.0, float(mbps)) * 1000.0)
+
+
+def _tbf_burst_bytes(mbps: float) -> int:
+    # Aim for ~100ms worth of data, with a reasonable floor/ceiling.
+    bps = float(max(0.0, mbps)) * 1_000_000.0
+    burst = int((bps / 8.0) * 0.10)
+    return int(max(16_000, min(2_000_000, burst)))
+
+
+def _run_tc(pid: int, args: list[str], *, timeout_s: int = 10) -> subprocess.CompletedProcess:
+    nsenter = _nsenter_path()
+    tc = _tc_path()
+    if not nsenter:
+        raise RuntimeError("nsenter not found")
+    if not tc:
+        raise RuntimeError("tc not found")
+    return run_cmd([nsenter, "-t", str(int(pid)), "-n", tc, *args], timeout_s=timeout_s)
+
+
+def _tc_clear_limits(pid: int) -> None:
+    # Best-effort cleanup: ignore failures for missing qdiscs/filters.
+    for args in (
+        ["qdisc", "del", "dev", "eth0", "root"],
+        ["qdisc", "del", "dev", "eth0", "ingress"],
+    ):
+        try:
+            _run_tc(pid, args, timeout_s=6)
+        except Exception:
+            pass
+
+
+def _tc_apply_limits(pid: int, *, rx_mbps: float, tx_mbps: float) -> tuple[bool, str]:
+    try:
+        if tx_mbps > 0.0:
+            kbit = _mbps_to_kbit(tx_mbps)
+            burst = _tbf_burst_bytes(tx_mbps)
+            proc = _run_tc(
+                pid,
+                [
+                    "qdisc",
+                    "replace",
+                    "dev",
+                    "eth0",
+                    "root",
+                    "tbf",
+                    "rate",
+                    f"{kbit}kbit",
+                    "burst",
+                    str(burst),
+                    "latency",
+                    "50ms",
+                ],
+                timeout_s=10,
+            )
+            if proc.returncode != 0:
+                return False, (proc.stderr or proc.stdout or "").strip() or "tc failed (egress)"
+        else:
+            try:
+                _run_tc(pid, ["qdisc", "del", "dev", "eth0", "root"], timeout_s=6)
+            except Exception:
+                pass
+
+        if rx_mbps > 0.0:
+            kbit = _mbps_to_kbit(rx_mbps)
+            burst = _tbf_burst_bytes(rx_mbps)
+            _run_tc(pid, ["qdisc", "replace", "dev", "eth0", "handle", "ffff:", "ingress"], timeout_s=8)
+            for proto in ("ip", "ipv6"):
+                proc = _run_tc(
+                    pid,
+                    [
+                        "filter",
+                        "replace",
+                        "dev",
+                        "eth0",
+                        "parent",
+                        "ffff:",
+                        "protocol",
+                        proto,
+                        "u32",
+                        "match",
+                        "u32",
+                        "0",
+                        "0",
+                        "police",
+                        "rate",
+                        f"{kbit}kbit",
+                        "burst",
+                        str(burst),
+                        "drop",
+                    ],
+                    timeout_s=10,
+                )
+                if proc.returncode != 0:
+                    return False, (proc.stderr or proc.stdout or "").strip() or f"tc failed (ingress {proto})"
+        else:
+            try:
+                _run_tc(pid, ["qdisc", "del", "dev", "eth0", "ingress"], timeout_s=6)
+            except Exception:
+                pass
+
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+_NET_LIMITS_LOCK = threading.Lock()
+_NET_LIMITS_STATE: dict[str, dict] = {}
+_NET_LIMITS_APPLIED: dict[str, dict] = {}
+
+
+def _network_limits_apply_once(*, reason: str) -> dict:
+    cfg = _read_network_limits()
+    installed = _installed_app_ids_set()
+    results: list[dict] = []
+
+    for app_id in sorted(AXE_NODE_APP_IDS):
+        if app_id not in installed:
+            continue
+        entry = cfg.get("apps", {}).get(app_id, {}) if isinstance(cfg.get("apps"), dict) else {}
+        enabled = bool(entry.get("enabled"))
+        rx = float(entry.get("rx_mbps") or 0.0)
+        tx = float(entry.get("tx_mbps") or 0.0)
+        if not enabled:
+            rx, tx = 0.0, 0.0
+
+        name = _node_container_name_for_app(app_id)
+        pid = _docker_container_pid(name or "")
+        prev = _NET_LIMITS_APPLIED.get(app_id) or {}
+        desired = {"enabled": enabled, "rx_mbps": rx, "tx_mbps": tx, "pid": pid or 0}
+
+        ok = True
+        err = ""
+        changed = desired != prev
+        if pid:
+            if rx <= 0.0 and tx <= 0.0:
+                if prev.get("pid") != pid or prev.get("rx_mbps") or prev.get("tx_mbps"):
+                    _tc_clear_limits(pid)
+            else:
+                if changed:
+                    ok, err = _tc_apply_limits(pid, rx_mbps=rx, tx_mbps=tx)
+        else:
+            ok = False if (rx > 0.0 or tx > 0.0) else True
+            err = "node container not running" if not pid and (rx > 0.0 or tx > 0.0) else ""
+
+        results.append(
+            {
+                "id": app_id,
+                "container": name or "",
+                "pid": int(pid or 0),
+                "enabled": bool(enabled),
+                "rx_mbps": float(rx),
+                "tx_mbps": float(tx),
+                "changed": bool(changed),
+                "ok": bool(ok),
+                "error": str(err or "").strip(),
+            }
+        )
+
+        with _NET_LIMITS_LOCK:
+            _NET_LIMITS_STATE[app_id] = {"time": _now_iso(), "reason": reason, **results[-1]}
+            _NET_LIMITS_APPLIED[app_id] = desired
+
+    return {"ok": True, "time": _now_iso(), "reason": reason, "results": results}
+
+
+def _network_limits_loop() -> None:
+    # Give docker time to settle after boots/updates.
+    time.sleep(10)
+    while True:
+        try:
+            _network_limits_apply_once(reason="reconcile")
+        except Exception:
+            pass
+        time.sleep(30)
+
+
+def system_network_limits_get() -> dict:
+    installed = _installed_app_ids_set()
+    apps: list[dict] = []
+    for app_id in sorted(AXE_NODE_APP_IDS):
+        if app_id not in installed:
+            continue
+        meta = store_app_by_id(app_id) or {}
+        name = _display_app_name(app_id, str(meta.get("name") or "").strip() or None)
+        apps.append({"id": app_id, "name": name})
+
+    with _NET_LIMITS_LOCK:
+        state = {k: dict(v) for k, v in _NET_LIMITS_STATE.items()}
+
+    return {
+        "ok": True,
+        "time": _now_iso(),
+        "apps": apps,
+        "config": _read_network_limits(),
+        "capabilities": {"tc": bool(_tc_path()), "nsenter": bool(_nsenter_path())},
+        "state": state,
+    }
+
+
+def system_network_limits_set(body: dict) -> dict:
+    if not isinstance(body, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    payload = body.get("config") if isinstance(body.get("config"), dict) else body
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "invalid body"}
+
+    cur = _read_network_limits()
+    merged = dict(cur)
+    if isinstance(payload.get("apps"), dict):
+        merged["apps"] = {**(cur.get("apps") if isinstance(cur.get("apps"), dict) else {}), **payload["apps"]}
+    if isinstance(payload.get("total"), dict):
+        merged["total"] = {**(cur.get("total") if isinstance(cur.get("total"), dict) else {}), **payload["total"]}
+
+    cfg = _normalize_network_limits(merged)
+    _write_network_limits(cfg)
+    applied = _network_limits_apply_once(reason="config_update")
+    return {"ok": True, "saved": True, "time": _now_iso(), "config": cfg, "apply": applied}
+
+
 _APP_STORAGE_LOCK = threading.Lock()
 _APP_STORAGE_CACHE: dict[str, object] = {
     "ok": False,
@@ -8540,6 +8907,10 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK, system_network_apps())
             return
 
+        if path == "/api/v0/system/network/limits":
+            json_response(self, HTTPStatus.OK, system_network_limits_get())
+            return
+
         if path == "/api/v0/system/processes":
             sort = (qs.get("sort") or ["cpu"])[0]
             limit_raw = (qs.get("limit") or ["30"])[0]
@@ -8963,6 +9334,11 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
             return
 
+        if path == "/api/v0/system/network/limits":
+            res = system_network_limits_set(body if isinstance(body, dict) else {})
+            json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
+            return
+
         if path == "/api/v0/system/channel":
             res = system_channel_set(body if isinstance(body, dict) else {})
             json_response(self, HTTPStatus.OK if res.get("ok") else HTTPStatus.BAD_REQUEST, res)
@@ -9316,6 +9692,7 @@ def main() -> int:
     threading.Thread(target=_dashboard_sampler_loop, daemon=True).start()
     threading.Thread(target=_cpu_temp_sampler_loop, daemon=True).start()
     threading.Thread(target=_network_apps_sampler_loop, daemon=True).start()
+    threading.Thread(target=_network_limits_loop, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
