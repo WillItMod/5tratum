@@ -1881,13 +1881,18 @@ PY
           shift || true
         fi
         app_dir="${ROOT_DIR}/apps/${app_id}"
-        [ -d "${app_dir}" ] || die "app not installed: ${app_id} (${app_dir})"
-        ensure_app_env "${app_id}" "${app_dir}"
-
         project="$(app_project_name "${app_id}")"
-        compose_down_safe "${project}" "${app_dir}" "${purge}"
+        if [ -d "${app_dir}" ]; then
+          ensure_app_env "${app_id}" "${app_dir}"
+          compose_down_safe "${project}" "${app_dir}" "${purge}"
+          cleanup_project_artifacts "${project}" "${purge}"
+          rm -rf "${app_dir}"
+        else
+          echo "warn: app directory missing; cleaning up docker artifacts for ${app_id}" >&2
+          force_stop_project "${project}"
+          cleanup_project_artifacts "${project}" "${purge}"
+        fi
 
-        rm -rf "${app_dir}"
         if [ "${purge}" = "true" ]; then
           rm -rf "${STATE_DIR}/apps/${app_id}"
           echo "uninstalled ${app_id} (purged)"

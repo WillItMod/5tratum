@@ -8542,7 +8542,7 @@ class Handler(BaseHTTPRequestHandler):
                 args = ["app", "uninstall", app_id]
                 if purge:
                     args.append("--purge")
-                res = stratumos_cmd(args, timeout_s=600)
+                res = stratumos_cmd(args, timeout_s=1800)
                 if res.get("ok"):
                     _installed_registry_set(app_id, False)
                     res["proxy"] = system_proxy_repair()
