@@ -6841,6 +6841,27 @@
     const inactive =
       payload && typeof payload === 'object' && Array.isArray(payload.workers_inactive) ? payload.workers_inactive : [];
 
+    const pools = payload && typeof payload === 'object' && Array.isArray(payload.pools) ? payload.pools : [];
+    const netDiffByCoin = new Map();
+    for (const p of pools) {
+      if (!p || typeof p !== 'object') continue;
+      const pool = p.pool && typeof p.pool === 'object' ? p.pool : null;
+      if (!pool) continue;
+      const coin = String(p.coin || p.id || '').trim().toUpperCase();
+      if (!coin) continue;
+      const net =
+        pool.network_difficulty ??
+        pool.networkDifficulty ??
+        pool.net_difficulty ??
+        pool.netDifficulty ??
+        pool.difficulty ??
+        pool.netdiff ??
+        null;
+      const netNum = net === null || net === undefined ? NaN : Number(net);
+      if (!Number.isFinite(netNum) || netNum <= 0) continue;
+      netDiffByCoin.set(coin, netNum);
+    }
+
     if (!workers.length && !inactive.length) {
       const hint = document.createElement('div');
       hint.className = 'forgeos-muted';
@@ -6856,7 +6877,7 @@
 
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (const label of ['Worker', 'Coin', 'Hashrate', 'Best share', 'Last share']) {
+    for (const label of ['Worker', 'Coin', 'Hashrate', 'Best share', 'Net diff', 'Last share']) {
       const th = document.createElement('th');
       th.textContent = label;
       headRow.appendChild(th);
@@ -6902,6 +6923,8 @@
       if (!raw || typeof raw !== 'object') continue;
       const name = workerName(raw);
       const coin = String(raw.coin || '').trim() || '-';
+      const netDiff = coin && coin !== '-' ? netDiffByCoin.get(String(coin).trim().toUpperCase()) : null;
+      const netDiffTxt = netDiff === null || netDiff === undefined ? '-' : formatCompactNumber(netDiff);
       const rate =
         raw.hashrate_1m_ths ?? raw.hashrate_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
       const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
@@ -6928,7 +6951,7 @@
             : String(lastAgo);
 
       const tr = document.createElement('tr');
-      const cols = [name, coin, rateTxt, bestShareTxt, lastTxt];
+      const cols = [name, coin, rateTxt, bestShareTxt, netDiffTxt, lastTxt];
       for (const c of cols) {
         const td = document.createElement('td');
         td.textContent = c;
@@ -6958,7 +6981,7 @@
     inactiveTable.className = 'forgeos-table';
     const inactiveHead = document.createElement('thead');
     const inactiveHeadRow = document.createElement('tr');
-    for (const label of ['Worker', 'Coin', 'Hashrate', 'Best share', 'Last share']) {
+    for (const label of ['Worker', 'Coin', 'Hashrate', 'Best share', 'Net diff', 'Last share']) {
       const th = document.createElement('th');
       th.textContent = label;
       inactiveHeadRow.appendChild(th);
@@ -6971,6 +6994,8 @@
       if (!raw || typeof raw !== 'object') continue;
       const name = workerName(raw);
       const coin = String(raw.coin || '').trim() || '-';
+      const netDiff = coin && coin !== '-' ? netDiffByCoin.get(String(coin).trim().toUpperCase()) : null;
+      const netDiffTxt = netDiff === null || netDiff === undefined ? '-' : formatCompactNumber(netDiff);
       const rate =
         raw.hashrate_1m_ths ?? raw.hashrate_ths ?? raw.hashrate_5m_ths ?? raw.hashrate ?? raw.rate_ths ?? raw.rate ?? null;
       const rateTxt = rate === null || rate === undefined ? '-' : `${formatHashrateThs(rate)} TH/s`;
@@ -6997,7 +7022,7 @@
             : String(lastAgo);
 
       const tr = document.createElement('tr');
-      const cols = [name, coin, rateTxt, bestShareTxt, lastTxt];
+      const cols = [name, coin, rateTxt, bestShareTxt, netDiffTxt, lastTxt];
       for (const c of cols) {
         const td = document.createElement('td');
         td.textContent = c;
@@ -10856,6 +10881,11 @@
     return apiJsonTimeout(`/api/v0/system/processes${q ? `?${q}` : ''}`, {}, 3500);
   }
 
+  async function apiSystemAppStorage(refresh) {
+    const q = refresh ? '?refresh=1' : '';
+    return apiJsonTimeout(`/api/v0/system/storage/apps${q}`, {}, 4500);
+  }
+
   function renderProcessTable(bodyEl, procs) {
     if (!(bodyEl instanceof HTMLElement)) return;
     bodyEl.innerHTML = '';
@@ -10990,6 +11020,150 @@
     bodyEl.appendChild(wrap);
   }
 
+  function renderAppStorageTable(bodyEl, payload) {
+    if (!(bodyEl instanceof HTMLElement)) return;
+    bodyEl.innerHTML = '';
+
+    const data = payload && typeof payload === 'object' ? payload : {};
+    const inProgress = data.in_progress === true;
+    const done = Number(data.done) || 0;
+    const total = Number(data.total) || 0;
+    const err = String(data.error || '').trim();
+    const t = formatTimeShort(data.time);
+
+    const head = document.createElement('div');
+    head.className = 'flex items-center justify-between gap-2 flex-wrap';
+
+    const left = document.createElement('div');
+    left.className = 'min-w-0';
+
+    const title = document.createElement('div');
+    title.className = 'forgeos-sysdetail__title';
+    title.textContent = 'App storage';
+
+    const sub = document.createElement('div');
+    sub.className = 'forgeos-muted';
+    if (inProgress) {
+      const denom = total > 0 ? `${total}` : '?';
+      sub.textContent = `Scanning sizes\u2026 ${Math.max(0, done)}/${denom}`;
+    } else {
+      sub.textContent = `Last scan ${t || '-'}`;
+    }
+    if (err) sub.textContent = `${sub.textContent} \u2022 ${err}`;
+
+    left.appendChild(title);
+    left.appendChild(sub);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2';
+
+    const btnRefresh = document.createElement('button');
+    btnRefresh.className = 'axe-btn';
+    btnRefresh.type = 'button';
+    btnRefresh.textContent = inProgress ? 'Scanning\u2026' : 'Refresh sizes';
+    btnRefresh.disabled = inProgress;
+    btnRefresh.addEventListener('click', async () => {
+      btnRefresh.disabled = true;
+      const prev = btnRefresh.textContent;
+      btnRefresh.textContent = 'Starting\u2026';
+      try {
+        const res = await apiSystemAppStorage(true).catch(() => null);
+        if (res && (res.started === true || res.in_progress === true)) showToast('Scanning app sizes\u2026', null);
+        else showToast('Scan not started', 'error');
+      } catch {
+        showToast('Scan failed', 'error');
+      } finally {
+        btnRefresh.textContent = prev;
+        btnRefresh.disabled = false;
+        refreshSystemDetail().catch(() => {});
+      }
+    });
+    actions.appendChild(btnRefresh);
+
+    head.appendChild(left);
+    head.appendChild(actions);
+    bodyEl.appendChild(head);
+
+    const list = Array.isArray(data.apps) ? data.apps : [];
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'forgeos-muted mt-2';
+      empty.textContent = inProgress ? 'Scanning\u2026' : 'No app size data yet.';
+      bodyEl.appendChild(empty);
+      return;
+    }
+
+    const rows = list
+      .filter((x) => x && typeof x === 'object' && String(x.id || '').trim())
+      .slice()
+      .sort((a, b) => (Number(b.size_bytes) || -1) - (Number(a.size_bytes) || -1));
+
+    const wrap = document.createElement('div');
+    wrap.className = 'forgeos-table-wrap mt-2';
+    const table = document.createElement('table');
+    table.className = 'forgeos-table';
+
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    for (const label of ['App', 'Size', 'Path']) {
+      const th = document.createElement('th');
+      th.textContent = label;
+      trh.appendChild(th);
+    }
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    for (const a of rows.slice(0, 40)) {
+      const id = String(a.id || '').trim().toLowerCase();
+      const meta = metaFor(id);
+      const name = String(meta.name || id);
+      const sizeBytes = a.size_bytes == null ? null : Number(a.size_bytes);
+      const sizeTxt = sizeBytes == null || !Number.isFinite(sizeBytes) ? '-' : formatBytes(sizeBytes);
+      const path = String(a.path || '').trim() || '-';
+
+      const tr = document.createElement('tr');
+
+      const tdApp = document.createElement('td');
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2 min-w-0';
+      const icon = document.createElement('img');
+      icon.alt = '';
+      icon.loading = 'lazy';
+      icon.decoding = 'async';
+      icon.style.width = '22px';
+      icon.style.height = '22px';
+      icon.style.borderRadius = '8px';
+      const fallbackLogo = fallbackLogoFor(id, name);
+      icon.src = String(meta.logo || '').trim() || fallbackLogo;
+      icon.addEventListener('error', () => {
+        if (icon.dataset.fallbackApplied === '1') return;
+        icon.dataset.fallbackApplied = '1';
+        icon.src = fallbackLogo;
+      });
+      const label = document.createElement('div');
+      label.className = 'min-w-0';
+      label.textContent = name;
+      row.appendChild(icon);
+      row.appendChild(label);
+      tdApp.appendChild(row);
+      tr.appendChild(tdApp);
+
+      const tdSize = document.createElement('td');
+      tdSize.textContent = sizeTxt;
+      tr.appendChild(tdSize);
+
+      const tdPath = document.createElement('td');
+      tdPath.textContent = path;
+      tr.appendChild(tdPath);
+
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    bodyEl.appendChild(wrap);
+  }
+
   async function refreshSystemDetail() {
     if (!systemDetailMode || !modalEl || modalEl.classList.contains('hidden')) {
       stopSystemDetailPoll();
@@ -11009,11 +11183,14 @@
 
       const mode = String(systemDetailMode || 'cpu').toLowerCase();
       const sort = mode === 'mem' ? 'mem' : mode === 'disk' ? 'cpu' : 'cpu';
-      const res = await apiSystemProcesses(sort, 30).catch(() => null);
+      const procsPromise = apiSystemProcesses(sort, 30).catch(() => null);
+      const storagePromise = mode === 'disk' ? apiSystemAppStorage(false).catch(() => null) : Promise.resolve(null);
+      const [res, storageApps] = await Promise.all([procsPromise, storagePromise]);
 
       const summaryEl = document.getElementById('sysdetail-summary');
       const procsEl = document.getElementById('sysdetail-procs');
       const disksEl = document.getElementById('sysdetail-disks');
+      const appsEl = document.getElementById('sysdetail-apps');
       const titleEl = document.getElementById('sysdetail-title');
       const subEl = document.getElementById('sysdetail-sub');
 
@@ -11065,12 +11242,15 @@
 
       if (mode === 'disk') {
         if (disksEl) disksEl.classList.remove('hidden');
+        if (appsEl) appsEl.classList.remove('hidden');
         if (procsEl) procsEl.classList.remove('hidden');
         if (m) renderDiskTable(disksEl, m.disks);
+        renderAppStorageTable(appsEl, storageApps);
         if (res && res.ok === true) renderProcessTable(procsEl, res.procs);
         else renderProcessTable(procsEl, []);
       } else {
         if (disksEl) disksEl.classList.add('hidden');
+        if (appsEl) appsEl.classList.add('hidden');
         if (procsEl) procsEl.classList.remove('hidden');
         if (res && res.ok === true) renderProcessTable(procsEl, res.procs);
         else renderProcessTable(procsEl, []);
@@ -11150,7 +11330,12 @@
     disks.id = 'sysdetail-disks';
     disks.className = 'hidden';
 
+    const apps = document.createElement('div');
+    apps.id = 'sysdetail-apps';
+    apps.className = 'hidden';
+
     content.appendChild(disks);
+    content.appendChild(apps);
     content.appendChild(procs);
 
     modalBodyEl.appendChild(head);

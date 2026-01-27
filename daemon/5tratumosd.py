@@ -6837,6 +6837,112 @@ def system_network_apps() -> dict:
     return snap
 
 
+_APP_STORAGE_LOCK = threading.Lock()
+_APP_STORAGE_CACHE: dict[str, object] = {
+    "ok": False,
+    "time": "",
+    "apps": [],
+    "in_progress": False,
+    "done": 0,
+    "total": 0,
+    "error": "",
+}
+APP_STORAGE_DU_TIMEOUT_S = float(str(_env("APP_STORAGE_DU_TIMEOUT_S", "120") or "120").strip() or "120")
+
+
+def _app_storage_scan_start() -> bool:
+    with _APP_STORAGE_LOCK:
+        if bool(_APP_STORAGE_CACHE.get("in_progress")):
+            return False
+        _APP_STORAGE_CACHE["in_progress"] = True
+        _APP_STORAGE_CACHE["error"] = ""
+        _APP_STORAGE_CACHE["done"] = 0
+        _APP_STORAGE_CACHE["total"] = 0
+        _APP_STORAGE_CACHE["time"] = _now_iso()
+        _APP_STORAGE_CACHE["apps"] = []
+
+    def worker() -> None:
+        try:
+            installed = sorted(_installed_app_ids_set())
+            results: list[dict] = []
+            with _APP_STORAGE_LOCK:
+                _APP_STORAGE_CACHE["total"] = len(installed)
+                _APP_STORAGE_CACHE["apps"] = []
+                _APP_STORAGE_CACHE["done"] = 0
+                _APP_STORAGE_CACHE["time"] = _now_iso()
+
+            for idx, app_id in enumerate(installed):
+                p = app_storage_dir(app_id)
+                real = os.path.realpath(p)
+                size_bytes: int | None = None
+                err = ""
+                if not os.path.exists(real):
+                    err = "missing"
+                else:
+                    proc = run_cmd(["du", "-sb", real], timeout_s=APP_STORAGE_DU_TIMEOUT_S)
+                    if proc.returncode == 0:
+                        try:
+                            size_bytes = int(str((proc.stdout or "").split()[0]).strip() or "0")
+                        except Exception:
+                            size_bytes = None
+                            err = "parse failed"
+                    else:
+                        err = (proc.stderr or "").strip() or "du failed"
+
+                results.append(
+                    {
+                        "id": app_id,
+                        "path": real,
+                        "size_bytes": size_bytes,
+                        "size": _human_bytes(size_bytes),
+                        "error": err,
+                    }
+                )
+                with _APP_STORAGE_LOCK:
+                    _APP_STORAGE_CACHE["apps"] = list(results)
+                    _APP_STORAGE_CACHE["done"] = idx + 1
+                    _APP_STORAGE_CACHE["time"] = _now_iso()
+
+            with _APP_STORAGE_LOCK:
+                _APP_STORAGE_CACHE["ok"] = True
+                _APP_STORAGE_CACHE["in_progress"] = False
+                _APP_STORAGE_CACHE["time"] = _now_iso()
+        except Exception as e:
+            with _APP_STORAGE_LOCK:
+                _APP_STORAGE_CACHE["ok"] = False
+                _APP_STORAGE_CACHE["in_progress"] = False
+                _APP_STORAGE_CACHE["error"] = str(e)
+                _APP_STORAGE_CACHE["time"] = _now_iso()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return True
+
+
+def system_storage_apps(*, refresh: bool = False) -> dict:
+    started = False
+    with _APP_STORAGE_LOCK:
+        snap = dict(_APP_STORAGE_CACHE)
+        in_progress = bool(snap.get("in_progress"))
+        ok = bool(snap.get("ok"))
+
+    # Auto-start on first request so the UI gets results without extra clicks.
+    if (refresh or not ok) and not in_progress:
+        started = _app_storage_scan_start()
+
+    with _APP_STORAGE_LOCK:
+        snap = dict(_APP_STORAGE_CACHE)
+
+    snap.setdefault("ok", False)
+    snap.setdefault("time", _now_iso())
+    snap.setdefault("apps", [])
+    snap.setdefault("in_progress", False)
+    snap.setdefault("done", 0)
+    snap.setdefault("total", 0)
+    snap.setdefault("error", "")
+    snap["started"] = bool(started)
+    return snap
+
+
 _CPU_STAT_LOCK = threading.Lock()
 _CPU_STAT_CACHE: dict[str, object] = {"time": 0.0, "samples": []}
 
@@ -8461,6 +8567,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/v0/system/storage":
             json_response(self, HTTPStatus.OK, system_storage_status())
+            return
+
+        if path == "/api/v0/system/storage/apps":
+            refresh = False
+            if "refresh" in qs and qs["refresh"]:
+                refresh = str(qs["refresh"][0] or "").strip().lower() in {"1", "true", "yes", "y"}
+            json_response(self, HTTPStatus.OK, system_storage_apps(refresh=refresh))
             return
 
         if path == "/api/v0/system/wifi/status":
