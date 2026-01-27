@@ -8612,7 +8612,7 @@
 
     const hint = document.createElement('div');
     hint.className = 'text-sm text-slate-300';
-    hint.textContent = 'Paste a GitHub repo URL or a direct .tar.gz archive URL for an Umbrel community store.';
+    hint.textContent = 'Paste a GitHub repo URL or a direct .tar.gz archive URL for a compatible community store.';
     wrap.appendChild(hint);
 
     const urlLabel = document.createElement('label');
