@@ -17,19 +17,22 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 ### OS update bundle (existing installs)
 
 - Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Latest MAIN update bundle: **v0.3.184** (assets: `5tratumos-update.tgz` + `.sha256`)
-  - https://github.com/WillItMod/5tratum/releases/tag/v0.3.184
+- Latest MAIN update bundle: **v0.3.186** (assets: `5tratumos-update.tgz` + `.sha256`)
+  - https://github.com/WillItMod/5tratum/releases/tag/v0.3.186
 
 ### Installer media
 
 **AMD/INTEL only (x86_64 / amd64) for the installer ISO.**
 
-- **AMD/INTEL installer ISO (v0.3.124)**
-  - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.124/5tratumos-installer-v0.3.124.iso)
-  - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.124/5tratumos-installer-v0.3.124.iso.sha256)
-- **Raspberry Pi (arm64) image (v0.3.122)**
-  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.122/5tratumos-raspios-trixie-arm64-lite-v0.3.122.img.xz)
-  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.122/5tratumos-raspios-trixie-arm64-lite-v0.3.122.img.xz.sha256)
+Installer ISOs and Raspberry Pi images are **not attached to every release tag**. If the newest tag does not include these assets, use the **newest tag that does**.
+
+- **AMD/INTEL installer ISO (latest published: v0.3.184)**
+  - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-installer-v0.3.184.iso)
+  - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-installer-v0.3.184.iso.sha256)
+  - Optional: diagnostics ISO `5tratumos-installer-v0.3.184-diagnostics.iso` (same tag)
+- **Raspberry Pi (arm64) image (latest published: v0.3.184)**
+  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-raspios-lite-v0.3.184.img.xz)
+  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-raspios-lite-v0.3.184.img.xz.sha256)
 
 ## Requirements
 
@@ -41,6 +44,8 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 ## Flashing / Install
 
 - Full install guide: [docs/install/README.md](docs/install/README.md)
+- Firmware (BIOS/UEFI/Secure Boot) prerequisites: [docs/install/FIRMWARE.md](docs/install/FIRMWARE.md)
+- Model-specific BIOS/UEFI guides: [docs/hardware/README.md](docs/hardware/README.md)
 - Verify downloads: [docs/install/VERIFY.md](docs/install/VERIFY.md)
 - Raspberry Pi: [docs/rpi/README.md](docs/rpi/README.md)
 

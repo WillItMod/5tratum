@@ -1,6 +1,6 @@
 # Install 5tratumOS
 
-5tratumOS is distributed as **boot media** attached to each GitHub Release.
+5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer ISO.
 
 ## Requirements
 
@@ -10,27 +10,30 @@
 
 This will not run on a potato. But it will run on a donut. Actually, it runs on donuts.
 
-## Latest release
+## Get the installer ISO (x86_64 / amd64)
 
-- v0.3.113 release: https://github.com/WillItMod/5tratum/releases/tag/v0.3.113
-- v0.3.113 installer ISO: https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-installer-v0.3.113.iso
-- v0.3.113 checksum: https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-installer-v0.3.113.iso.sha256
-- v0.3.113 Raspberry Pi image (.img.xz): https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz
-- v0.3.113 Raspberry Pi checksum: https://github.com/WillItMod/5tratum/releases/download/v0.3.113/5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz.sha256
+1) Open the releases page:
+- https://github.com/WillItMod/5tratum/releases
 
-Note: release asset filenames are versioned (e.g. `...-v0.3.113.iso`).
+2) Download the newest asset that matches:
+- `5tratumos-installer-v<version>.iso`
+- `5tratumos-installer-v<version>.iso.sha256`
+
+At the time of writing, the newest installer ISO is under tag **v0.3.184**.
+
+Note: release asset filenames are versioned (e.g. `...-v0.3.184.iso`).
 
 ## Downloads (per release)
 
 Releases include:
 
-1) **Installer ISO (AMD/INTEL)** (recommended)
-   - Filename: `5tratumos-installer-v0.3.113.iso`
+1) **Installer ISO (AMD/INTEL)** (recommended for fresh installs)
+   - Filename: `5tratumos-installer-v<version>.iso`
    - Purpose: boot into an installer that will **wipe the selected target disk** and install 5tratumOS onto it.
    - Works for: Proxmox/VM CD-ROM boot, USB stick boot (Etcher/Rufus), and writing the installer ISO directly to a drive.
 
-2) **Raspberry Pi image (arm64)**
-   - Filename: `5tratumos-raspios-trixie-arm64-lite-<version>.img.xz`
+2) **Raspberry Pi image (arm64)** (when published)
+   - Filename: `5tratumos-raspios-*.img.xz`
    - Purpose: flash directly to microSD, then boot and configure via Raspberry Pi Imager options.
 
 If you're unsure: use the **Installer ISO** (AMD/INTEL).
@@ -39,21 +42,23 @@ If you're unsure: use the **Installer ISO** (AMD/INTEL).
 
 - Back up anything important. The installer will wipe the selected disk.
 - Use a **USB stick (1GB+)** for the installer, or attach the ISO to a VM.
+- Configure firmware (BIOS/UEFI) correctly or the installer may not boot/see your disk:
+  - `docs/install/FIRMWARE.md`
 - After install completes, remove the USB/ISO and reboot into the installed OS.
 
 ## Proxmox / VM
 
 1. Create a VM (UEFI recommended).
-2. Attach `5tratumos-installer-v0.3.113.iso` as a CD-ROM.
+2. Attach `5tratumos-installer-v<version>.iso` as a CD-ROM.
 3. Boot the VM and follow the on-screen installer prompts.
 4. When the installer finishes, detach the ISO and reboot.
 
 ## Physical hardware (USB via Balena Etcher)
 
-1. Download `5tratumos-installer-v0.3.113.iso` from the Release assets.
+1. Download `5tratumos-installer-v<version>.iso` from the Release assets.
 2. (Optional) Verify the download: `docs/install/VERIFY.md`
 3. Open **Balena Etcher**:
-   - Flash from file: `5tratumos-installer-v0.3.113.iso`
+   - Flash from file: `5tratumos-installer-v<version>.iso`
    - Select target: your USB stick
    - Flash
 4. Boot the target machine from the USB stick.
@@ -64,10 +69,10 @@ If you're unsure: use the **Installer ISO** (AMD/INTEL).
 
 ## Physical hardware (USB via Win32 Disk Imager / "WinImager")
 
-1. Download `5tratumos-installer-v0.3.113.iso` from the Release assets.
+1. Download `5tratumos-installer-v<version>.iso` from the Release assets.
 2. (Optional) Verify the download: `docs/install/VERIFY.md`
 3. Open **Win32 Disk Imager**:
-   - Image file: select `5tratumos-installer-v0.3.113.iso` (you may need to choose "*.* / All files")
+   - Image file: select `5tratumos-installer-v<version>.iso` (you may need to choose "*.* / All files")
    - Device: select your USB drive letter
    - Write
 4. Boot the target machine from the USB stick.

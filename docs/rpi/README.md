@@ -11,11 +11,13 @@ This guide is for the **Raspberry Pi image** distributed in GitHub Releases.
 
 From the release assets:
 
-- `5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz`
-- `5tratumos-raspios-trixie-arm64-lite-v0.3.113.img.xz.sha256`
+- `5tratumos-raspios-*.img.xz`
+- `5tratumos-raspios-*.img.xz.sha256`
 
 Release page:
-- https://github.com/WillItMod/5tratum/releases/tag/v0.3.113
+- https://github.com/WillItMod/5tratum/releases
+
+At the time of writing, the newest Raspberry Pi image is under tag **v0.3.184** (asset `5tratumos-raspios-lite-v0.3.184.img.xz`).
 
 ## Flash with Raspberry Pi Imager (recommended)
 
