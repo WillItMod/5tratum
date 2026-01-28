@@ -1,6 +1,14 @@
 # Install Media (Etcher Image + Bootable Installer ISO)
 
-5tratumOS supports two “bare metal” install paths:
+5tratumOS supports two "bare metal" install paths.
+
+## Firmware prerequisites (BIOS/UEFI)
+
+If firmware is not configured correctly, the installer may not boot or may not detect the target disk (AHCI/VMD is a common reason).
+
+End-user checklist + troubleshooting:
+- https://github.com/WillItMod/5tratum/blob/main/docs/install/FIRMWARE.md
+- https://github.com/WillItMod/5tratum/blob/main/docs/hardware/README.md
 
 ## 1) Etcher disk image (recommended first)
 
@@ -23,7 +31,7 @@ You ship a bootable ISO that runs an unattended Debian netinst and installs the 
 
 Pros:
 - guided UX (select disk, confirm)
-- works even when the user doesn’t want to install Etcher
+- works even when the user doesn't want to install Etcher
 
 Cons:
 - more engineering and testing than Etcher image
