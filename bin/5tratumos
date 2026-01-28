@@ -717,7 +717,17 @@ PY
         store_dir=""
         store_port=""
         dst="${ROOT_DIR}/apps/${app_id}"
-        [ ! -e "${dst}" ] || die "app already installed: ${app_id} (${dst})"
+        if [ -e "${dst}" ]; then
+          # Idempotency: if the app is already installed, treat install as a no-op.
+          # This avoids confusing "already installed" failures when the UI state is stale.
+          if [ -f "${dst}/docker-compose.yml" ]; then
+            echo "app already installed: ${app_id} (${dst})" >&2
+            exit 0
+          fi
+          # If the directory exists but lacks a compose definition, it's a stale/incomplete install.
+          # Clean it up so install can proceed.
+          rm -rf "${dst}" || die "failed to remove stale app dir: ${dst}"
+        fi
 
         install -d -m 0755 "${dst}"
 
