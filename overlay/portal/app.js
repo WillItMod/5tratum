@@ -526,11 +526,14 @@
     // Explicit allowlist: keep perf alerts focused on non-AxeSuite apps (e.g. Doom).
     // Note: AxeBTCF is distinct from AxeBTC (axebtc vs axebtcf).
     return (
+      id === 'axebc2' ||
       id === 'axebch' ||
       id === 'axedgb' ||
       id === 'axebtc' ||
       id === 'axebsv' ||
+      id === 'axexec' ||
       id === 'axebtcf' ||
+      id === 'axeppc' ||
       id === 'axelive' ||
       id === 'axebench' ||
       id === 'axemig' ||

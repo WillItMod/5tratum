@@ -2051,10 +2051,13 @@ def system_storage_orphans_delete(body: dict) -> dict:
 # Apps that are part of the “AxeSuite” ecosystem.
 # NOTE: Keep pool apps in sync with AXE_SUITE_POOL_APP_IDS below.
 AXE_SUITE_APP_IDS = {
+    "axebc2",
     "axebch",
     "axedgb",
     "axebtc",
     "axebsv",
+    "axexec",
+    "axeppc",
     "axelive",
     "axebench",
     "axemig",
@@ -2063,32 +2066,44 @@ AXE_SUITE_APP_IDS = {
 # Subset: apps that expose a pool API used by Fleet.
 # (Do not include non-pool apps like axebench/axelive here.)
 AXE_SUITE_POOL_APP_IDS = {
+    "axebc2",
     "axebch",
     "axedgb",
     "axebtc",
     "axebsv",
+    "axexec",
+    "axeppc",
     "axemig",
 }
 
 AXE_WIDGET_APP_IDS = {
+    "axebc2",
     "axebch",
     "axedgb",
     "axebtc",
     "axebsv",
+    "axexec",
+    "axeppc",
 }
 
 AXE_NODE_APP_IDS = {
+    "axebc2",
     "axebch",
     "axedgb",
     "axebtc",
     "axebsv",
+    "axexec",
+    "axeppc",
 }
 
 AXE_NODE_SERVICE_BY_APP_ID: dict[str, str] = {
+    "axebc2": "btc2d",
     "axebch": "bchn",
     "axedgb": "dgbd",
     "axebtc": "bitcoind",
     "axebsv": "bsvd",
+    "axexec": "xecd",
+    "axeppc": "ppcd",
 }
 
 AXE_WIDGET_DEFS = [
@@ -2099,6 +2114,8 @@ AXE_WIDGET_DEFS = [
 APP_DISPLAY_NAME_OVERRIDES = {
     # Legacy store metadata may still expose "AxeBTCF" for the axebtc app id.
     "axebtc": "AxeBTC",
+    # Without an override, axexec would become "AxeEXEC" via naive "Axe" + upper() logic.
+    "axexec": "AxeXEC",
 }
 
 
@@ -8248,12 +8265,15 @@ def default_ui_ports(app_id: str) -> int | None:
         "axelive": 5210,
         "axebench": 5000,
         "axedoom": 5300,
+        "axebc2": 21219,
         "axebch": 21212,
         "axebtc": 21215,
         "axebtcf": 21214,
         "axebsv": 21216,
         "axedgb": 21213,
+        "axexec": 21218,
         "axemig": 12150,
+        "axeppc": 21220,
     }.get(app_id)
 
 
