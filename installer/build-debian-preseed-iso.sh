@@ -22,6 +22,7 @@ WORK_DIR="${WORK_DIR:-${SCRIPT_DIR}/work-preseed}"
 OS_TAG="${OS_TAG:-${TRATUMOS_TAG:-${FIVETRATUMOS_TAG:-}}}"
 OS_CHANNEL="${OS_CHANNEL:-main}"
 UPDATE_TOKEN_FILE="${UPDATE_TOKEN_FILE:-${TRATUMOS_UPDATE_TOKEN_FILE:-${FIVETRATUMOS_UPDATE_TOKEN_FILE:-}}}"
+BOOT_MODE="${BOOT_MODE:-hybrid}" # hybrid|uefi|bios
 
 LOGO_SMALL="${LOGO_SMALL:-${ROOT}/overlay/portal/assets/New Logos/5.png}"
 LOGO_WORDMARK="${LOGO_WORDMARK:-${ROOT}/overlay/portal/assets/New Logos/WordOnlyLogo.png}"
@@ -67,6 +68,13 @@ have xorriso || die "xorriso not found (apt-get install -y xorriso)"
 if [ ! -f "${BUNDLE_TGZ}" ]; then
   die "Missing bundle: ${BUNDLE_TGZ}. Build it via ./scripts/build-update-bundle.sh (or .ps1 on Windows)."
 fi
+
+case "${BOOT_MODE}" in
+  hybrid|uefi|bios) ;;
+  *)
+    die "Invalid BOOT_MODE: ${BOOT_MODE}. Use: hybrid|uefi|bios"
+    ;;
+esac
 
 mkdir -p "$(dirname -- "${OUT_ISO}")"
 
@@ -204,13 +212,19 @@ echo "[6/6] Building ISO..."
 isolinux_bin="isolinux/isolinux.bin"
 boot_cat="isolinux/boot.cat"
 
+if [ "${BOOT_MODE}" != "uefi" ]; then
+  [ -f "${WORK_DIR}/iso/${isolinux_bin}" ] || die "Missing isolinux boot image: ${isolinux_bin}"
+fi
+
 efi_img=""
-if [ -f "${WORK_DIR}/iso/boot/grub/efi.img" ]; then
-  efi_img="boot/grub/efi.img"
-elif [ -f "${WORK_DIR}/iso/efi.img" ]; then
-  efi_img="efi.img"
-else
-  die "Unable to find efi.img in extracted ISO"
+if [ "${BOOT_MODE}" != "bios" ]; then
+  if [ -f "${WORK_DIR}/iso/boot/grub/efi.img" ]; then
+    efi_img="boot/grub/efi.img"
+  elif [ -f "${WORK_DIR}/iso/efi.img" ]; then
+    efi_img="efi.img"
+  else
+    die "Unable to find efi.img in extracted ISO"
+  fi
 fi
 
 mbr=""
@@ -249,6 +263,11 @@ if [ -z "${mbr}" ]; then
 fi
 
 VOLID="5TRATUMOS_INSTALLER"
+if [ "${BOOT_MODE}" = "uefi" ]; then
+  VOLID="5TRATUMOS_UEFI"
+elif [ "${BOOT_MODE}" = "bios" ]; then
+  VOLID="5TRATUMOS_BIOS"
+fi
 
 mbr_arg="${mbr}"
 if [ -z "${mbr_arg}" ]; then
@@ -259,22 +278,50 @@ fi
 
 rm -f "${OUT_ISO}" >/dev/null 2>&1 || true
 
-xorriso -as mkisofs \
-  -o "${OUT_ISO}" \
-  -V "${VOLID}" \
-  -r -J -joliet-long \
-  -isohybrid-mbr "${mbr_arg}" \
-  -partition_offset 16 \
-  -b "${isolinux_bin}" \
-  -c "${boot_cat}" \
-  -no-emul-boot \
-  -boot-load-size 4 \
-  -boot-info-table \
-  -eltorito-alt-boot \
-  -e "${efi_img}" \
-  -no-emul-boot \
-  -isohybrid-gpt-basdat \
-  "${WORK_DIR}/iso"
+mkisofs_args=(
+  -as mkisofs
+  -o "${OUT_ISO}"
+  -V "${VOLID}"
+  -r -J -joliet-long
+  -isohybrid-mbr "${mbr_arg}"
+  -partition_offset 16
+)
+
+case "${BOOT_MODE}" in
+  hybrid)
+    mkisofs_args+=(
+      -b "${isolinux_bin}"
+      -c "${boot_cat}"
+      -no-emul-boot
+      -boot-load-size 4
+      -boot-info-table
+      -eltorito-alt-boot
+      -e "${efi_img}"
+      -no-emul-boot
+      -isohybrid-gpt-basdat
+    )
+    ;;
+  bios)
+    mkisofs_args+=(
+      -b "${isolinux_bin}"
+      -c "${boot_cat}"
+      -no-emul-boot
+      -boot-load-size 4
+      -boot-info-table
+    )
+    ;;
+  uefi)
+    mkisofs_args+=(
+      -e "${efi_img}"
+      -no-emul-boot
+      -isohybrid-gpt-basdat
+    )
+    ;;
+esac
+
+mkisofs_args+=("${WORK_DIR}/iso")
+
+xorriso "${mkisofs_args[@]}"
 
 echo "Wrote:"
 echo "  ${OUT_ISO}"

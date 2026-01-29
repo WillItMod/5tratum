@@ -14,6 +14,11 @@ Behavior:
 
 Build entrypoint: `installer/build-debian-preseed-iso.sh`
 
+Boot modes:
+- `BOOT_MODE=hybrid` (default): BIOS + UEFI in one ISO
+- `BOOT_MODE=uefi`: UEFI-only
+- `BOOT_MODE=bios`: Legacy BIOS-only
+
 Prereqs on the build machine (Debian recommended):
 - `bsdtar`
 - `xorriso`
