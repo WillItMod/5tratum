@@ -8,6 +8,7 @@ If firmware is not configured correctly, the installer may not boot or may not d
 
 End-user checklist + troubleshooting:
 - https://github.com/WillItMod/5tratum/blob/main/docs/install/FIRMWARE.md
+- https://github.com/WillItMod/5tratum/blob/main/docs/install/TROUBLESHOOTING.md
 - https://github.com/WillItMod/5tratum/blob/main/docs/hardware/README.md
 
 ## 1) Etcher disk image (recommended first)
