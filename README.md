@@ -26,10 +26,13 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 Installer ISOs and Raspberry Pi images are **not attached to every release tag**. If the newest tag does not include these assets, use the **newest tag that does**.
 
-- **AMD/INTEL installer ISO (latest published: v0.3.184)**
-  - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-installer-v0.3.184.iso)
-  - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-installer-v0.3.184.iso.sha256)
-  - Optional: diagnostics ISO `5tratumos-installer-v0.3.184-diagnostics.iso` (same tag)
+- **AMD/INTEL installer ISO (latest published: v0.3.186)**
+  - UEFI-only (recommended):
+    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.186/5tratumos-installer-v0.3.186-uefi.iso)
+    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.186/5tratumos-installer-v0.3.186-uefi.iso.sha256)
+  - Legacy BIOS-only (older hardware / CSM):
+    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.186/5tratumos-installer-v0.3.186-bios.iso)
+    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.186/5tratumos-installer-v0.3.186-bios.iso.sha256)
 - **Raspberry Pi (arm64) image (latest published: v0.3.184)**
   - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-raspios-lite-v0.3.184.img.xz)
   - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-raspios-lite-v0.3.184.img.xz.sha256)

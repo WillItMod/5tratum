@@ -16,19 +16,22 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 - https://github.com/WillItMod/5tratum/releases
 
 2) Download the newest asset that matches:
-- `5tratumos-installer-v<version>.iso`
-- `5tratumos-installer-v<version>.iso.sha256`
+- `5tratumos-installer-v<version>-uefi.iso` (recommended)
+- `5tratumos-installer-v<version>-bios.iso` (legacy BIOS/CSM only)
+- matching `.sha256`
 
-At the time of writing, the newest installer ISO is under tag **v0.3.184**.
+At the time of writing, the newest installer ISOs are under tag **v0.3.186**.
 
-Note: release asset filenames are versioned (e.g. `...-v0.3.184.iso`).
+Note: release asset filenames are versioned (e.g. `...-v0.3.186-uefi.iso`).
 
 ## Downloads (per release)
 
 Releases include:
 
 1) **Installer ISO (AMD/INTEL)** (recommended for fresh installs)
-   - Filename: `5tratumos-installer-v<version>.iso`
+   - Filename:
+     - `5tratumos-installer-v<version>-uefi.iso` (recommended)
+     - `5tratumos-installer-v<version>-bios.iso` (legacy BIOS/CSM)
    - Purpose: boot into an installer that will **wipe the selected target disk** and install 5tratumOS onto it.
    - Works for: Proxmox/VM CD-ROM boot, USB stick boot (Etcher/Rufus), and writing the installer ISO directly to a drive.
 
