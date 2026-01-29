@@ -6207,6 +6207,11 @@
                   disabled: pendingAppActions.has(appId),
                   onClick: async () => openMoveAppDataModal(appId),
                 },
+                {
+                  label: 'View logs',
+                  hint: 'Show recent Docker Compose logs',
+                  onClick: async () => openAppLogsModal(appId),
+                },
                 { type: 'sep' },
                 { label: 'Remove', danger: true, onClick: async () => unpinFromDesktop(appId) },
               ],
@@ -9731,6 +9736,11 @@
         disabled: pendingAppActions.has(id),
         onClick: async () => openMoveAppDataModal(id),
       },
+      {
+        label: 'View logs',
+        hint: 'Show recent Docker Compose logs',
+        onClick: async () => openAppLogsModal(id),
+      },
       { type: 'sep' },
       {
         label: 'Uninstall...',
@@ -11952,6 +11962,148 @@
     modalEl.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
     window.setTimeout(() => input.focus(), 50);
+  }
+
+  function openAppLogsModal(appId, opts) {
+    const id = String(appId || '').trim();
+    if (!id) return;
+    if (!modalEl || !modalBodyEl || !modalTitleEl) return;
+    const options = opts && typeof opts === 'object' ? opts : {};
+    const meta = metaFor(id);
+    const label = meta.name || id;
+
+    if (modalKindEl) modalKindEl.textContent = 'Logs';
+    modalTitleEl.textContent = `${label} logs`;
+    modalBodyEl.innerHTML = '';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'flex flex-col gap-3';
+
+    const desc = document.createElement('div');
+    desc.className = 'text-sm text-slate-300';
+    desc.textContent = 'Docker Compose logs (tail).';
+    wrap.appendChild(desc);
+
+    const controls = document.createElement('div');
+    controls.className = 'flex items-center justify-between gap-2 flex-wrap';
+
+    const left = document.createElement('div');
+    left.className = 'flex items-center gap-2 flex-wrap';
+
+    const tailLabel = document.createElement('div');
+    tailLabel.className = 'text-xs text-slate-300';
+    tailLabel.textContent = 'Tail';
+
+    const selectTail = document.createElement('select');
+    selectTail.className = 'forgeos-input';
+    const tailValues = [200, 500, 1000, 2000];
+    for (const v of tailValues) {
+      const opt = document.createElement('option');
+      opt.value = String(v);
+      opt.textContent = String(v);
+      selectTail.appendChild(opt);
+    }
+    const initialTail = tailValues.includes(Number(options.tail)) ? Number(options.tail) : 200;
+    selectTail.value = String(initialTail);
+
+    const status = document.createElement('div');
+    status.className = 'text-xs text-slate-400';
+    status.textContent = '';
+
+    left.appendChild(tailLabel);
+    left.appendChild(selectTail);
+    left.appendChild(status);
+
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center gap-2 flex-wrap';
+
+    const btnRefresh = document.createElement('button');
+    btnRefresh.type = 'button';
+    btnRefresh.className = 'axe-btn';
+    btnRefresh.textContent = 'Refresh';
+
+    const btnCopy = document.createElement('button');
+    btnCopy.type = 'button';
+    btnCopy.className = 'axe-btn';
+    btnCopy.textContent = 'Copy';
+
+    actions.appendChild(btnRefresh);
+    actions.appendChild(btnCopy);
+
+    controls.appendChild(left);
+    controls.appendChild(actions);
+    wrap.appendChild(controls);
+
+    const output = document.createElement('pre');
+    output.className = 'forgeos-terminal__output';
+    output.textContent = 'Loading...';
+    wrap.appendChild(output);
+
+    let lastText = '';
+    let reqId = 0;
+
+    function nowLabel() {
+      const d = new Date();
+      const pad2 = (n) => String(Math.max(0, Math.floor(Number(n) || 0))).padStart(2, '0');
+      return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    }
+
+    async function loadLogs() {
+      const myReq = ++reqId;
+      const tail = Math.max(1, Math.min(2000, Number(selectTail.value) || 200));
+
+      btnRefresh.disabled = true;
+      btnCopy.disabled = true;
+      selectTail.disabled = true;
+      status.textContent = 'Loading...';
+
+      try {
+        const ok = await ensureHealthy();
+        if (!ok) throw new Error('Backend unavailable (UI only)');
+        const res = await apiJsonTimeout(`/api/v0/apps/logs?id=${encodeURIComponent(id)}&tail=${tail}`, {}, 35000);
+        if (myReq !== reqId) return;
+        const stdout = res && res.stdout ? String(res.stdout) : '';
+        const stderr = res && res.stderr ? String(res.stderr) : '';
+        const code = res && typeof res.code === 'number' ? res.code : null;
+        const joined = [stdout.trimEnd(), stderr.trimEnd()].filter(Boolean).join('\n');
+        const text = joined || '(no output)';
+        lastText = text;
+        output.textContent = text;
+        const badge = res && res.ok === false ? ` • exit ${code ?? 'error'}` : '';
+        status.textContent = `Updated ${nowLabel()} • ${tail} lines${badge}`;
+      } catch (e) {
+        if (myReq !== reqId) return;
+        const msg = e && e.message ? String(e.message) : String(e);
+        lastText = `Error: ${msg}`;
+        output.textContent = lastText;
+        status.textContent = `Error • ${nowLabel()}`;
+      } finally {
+        if (myReq !== reqId) return;
+        btnRefresh.disabled = false;
+        btnCopy.disabled = !lastText;
+        selectTail.disabled = false;
+      }
+    }
+
+    btnRefresh.addEventListener('click', () => loadLogs().catch(() => {}));
+    selectTail.addEventListener('change', () => loadLogs().catch(() => {}));
+    btnCopy.addEventListener('click', async () => {
+      const text = String(lastText || '').trimEnd();
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Copied logs', null);
+      } catch (e) {
+        showToast('Copy failed', 'error');
+      }
+    });
+
+    modalBodyEl.appendChild(wrap);
+    modalEl.classList.remove('hidden');
+    modalEl.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    window.setTimeout(() => btnRefresh.focus(), 50);
+    loadLogs().catch(() => {});
   }
 
   function channelCandidates(prefer) {
