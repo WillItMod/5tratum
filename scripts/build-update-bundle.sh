@@ -47,6 +47,10 @@ if [ -d "${ROOT_DIR}/console" ]; then
   cp -a "${ROOT_DIR}/console/." "${tmp}/console/"
 fi
 
+# Exclude accidental local artifacts from bundles (browser downloads, cache dumps, etc.).
+rm -rf "${tmp}/overlay/portal/assets/face_files" >/dev/null 2>&1 || true
+find "${tmp}" -type f -name '*.download' -delete >/dev/null 2>&1 || true
+
 # Ensure bundles always ship valid build metadata.
 printf '{"channel":"%s","repo":"%s","tag":"%s","built_at":"%s"}\n' \
   "$(json_escape "${TRATUMOS_CHANNEL}")" \

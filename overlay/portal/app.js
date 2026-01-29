@@ -8966,6 +8966,12 @@
       await refreshStore().catch(() => {});
     } finally {
       storeOpenSyncInFlight = false;
+      // Re-render once the sync flag is cleared so Install buttons become clickable again.
+      // (refreshStore() renders while storeOpenSyncInFlight=true, which disables installs.)
+      try {
+        const installedSet = new Set((installedAppsCache || []).map((a) => a.id));
+        renderStore(storeAppsCache, installedSet);
+      } catch {}
     }
   }
 

@@ -89,6 +89,20 @@ try {
     Copy-Item -Recurse -Force -Path (Join-Path $root "console\\*") -Destination $stageConsole
   }
 
+  # Exclude accidental local artifacts from bundles (browser downloads, cache dumps, etc.).
+  # Bundles should be deterministic and only contain runtime assets.
+  $junkDirs = @(
+    (Join-Path $stageOverlay "portal\\assets\\face_files")
+  )
+  foreach ($d in $junkDirs) {
+    if (-not [string]::IsNullOrWhiteSpace($d) -and (Test-Path $d)) {
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $d
+    }
+  }
+  Get-ChildItem -Recurse -File -ErrorAction SilentlyContinue -Path $tmp -Filter "*.download" | ForEach-Object {
+    try { Remove-Item -Force -ErrorAction SilentlyContinue $_.FullName } catch {}
+  }
+
   # Ensure bundles always ship valid build metadata.
   # (Some prior builds accidentally wrote a literal "\\n" suffix, making JSON invalid.)
   $builtAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
