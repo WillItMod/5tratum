@@ -3073,16 +3073,37 @@
     return Math.min(max, Math.max(min, v));
   }
 
+  function normalizeDirectPath(p) {
+    let out = typeof p === 'string' ? p : '';
+    out = String(out || '').trim();
+    if (!out || out === '/') return '/';
+    if (!out.startsWith('/')) out = `/${out}`;
+    if (!out.endsWith('/')) out = `${out}/`;
+    return out;
+  }
+
+  function appDirectUrl(id) {
+    const appId = String(id || '').trim().toLowerCase();
+    try {
+      const st = installedById && installedById.get ? installedById.get(appId) : null;
+      const ui = st && typeof st === 'object' ? st.ui : null;
+      const port = ui && typeof ui.port === 'number' ? ui.port : Number(ui && ui.port);
+      const host = window.location.hostname || '';
+      const directPath = normalizeDirectPath(ui && ui.direct_path);
+      if (host && Number.isFinite(port) && port > 0) return `http://${host}:${port}${directPath}`;
+    } catch {}
+    return '';
+  }
+
   function appLaunchUrl(id) {
     const appId = String(id || '').trim().toLowerCase();
     try {
       const st = installedById && installedById.get ? installedById.get(appId) : null;
       const ui = st && typeof st === 'object' ? st.ui : null;
       const mode = ui && typeof ui.mode === 'string' ? String(ui.mode).trim().toLowerCase() : '';
-      const port = ui && typeof ui.port === 'number' ? ui.port : Number(ui && ui.port);
-      const host = window.location.hostname || '';
-      if (mode === 'direct' && host && Number.isFinite(port) && port > 0) {
-        return `http://${host}:${port}/`;
+      if (mode === 'direct') {
+        const direct = appDirectUrl(appId);
+        if (direct) return direct;
       }
     } catch {}
     return `${window.location.origin}/apps/${encodeURIComponent(id)}/`;
@@ -4130,8 +4151,11 @@
 
   function docLooksLikeNotFound(doc) {
     if (!doc) return false;
-    const bodyText = String((doc.body && doc.body.innerText) || '').toLowerCase();
-    if (bodyText.includes('page not found') && bodyText.includes('404')) return true;
+    const titleText = String(doc.title || '');
+    const bodyText = String((doc.body && doc.body.innerText) || '');
+    const text = (titleText + '\n' + bodyText).toLowerCase();
+    if (text.includes('page not found')) return true;
+    if (text.includes('404') && text.includes('not found')) return true;
     return false;
   }
 
@@ -5310,7 +5334,8 @@
     const ui = installed && installed.ui && typeof installed.ui === 'object' ? installed.ui : null;
     const port = ui && ui.port ? Number(ui.port) : 0;
     const host = window.location.hostname;
-    const fallbackUrl = port ? `http://${host}:${port}/` : 'about:blank';
+    const directPath = normalizeDirectPath(ui && ui.direct_path);
+    const fallbackUrl = port ? `http://${host}:${port}${directPath}` : 'about:blank';
     attachCompatFallback(iframe, id, pathUrl, fallbackUrl);
 
     frameWrap.appendChild(iframe);

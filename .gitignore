@@ -9,6 +9,7 @@
 dist/
 *.sig
 *.sha256
+*.download
 
 # Runtime / generated
 __pycache__/
@@ -35,3 +36,6 @@ id_*_5tratumos
 id_*_5tratumos.pub
 *.key
 *.pem
+
+# Accidental local artifacts (browser downloads, cache dumps, etc.)
+overlay/portal/assets/face_files/

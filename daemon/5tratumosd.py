@@ -9106,6 +9106,9 @@ class Handler(BaseHTTPRequestHandler):
                 st = summarize_project_status_from_containers(containers)
                 resources = summarize_resources_from_stats(containers, stats_by_name)
                 store_port = _store_declared_ui_port(app_id, store_meta)
+                store_path = _normalize_store_path(str(store_meta.get("path") or "").strip())
+                store_channel = str(store_meta.get("channel") or "").strip().lower()
+                ui_mode = "direct" if store_channel == "global" else ""
                 port = store_port
                 if str(st.get("status") or "") == "running":
                     port = _detect_ui_port(app_id, store_port, require_http=True) or store_port
@@ -9153,6 +9156,8 @@ class Handler(BaseHTTPRequestHandler):
                         "ui": {
                             "path": f"/apps/{app_id}/",
                             "port": port,
+                            "direct_path": store_path,
+                            **({"mode": ui_mode} if ui_mode else {}),
                         },
                     }
                 )
