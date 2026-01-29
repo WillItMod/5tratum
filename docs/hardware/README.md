@@ -3,6 +3,7 @@
 ## Install prerequisites
 
 - Firmware (BIOS/UEFI) checklist and troubleshooting: [docs/install/FIRMWARE.md](../install/FIRMWARE.md)
+- Install/boot troubleshooting (common problems): [docs/install/TROUBLESHOOTING.md](../install/TROUBLESHOOTING.md)
 
 ## Model-specific BIOS/UEFI guides
 

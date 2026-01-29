@@ -45,6 +45,7 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 
 - Full install guide: [docs/install/README.md](docs/install/README.md)
 - Firmware (BIOS/UEFI/Secure Boot) prerequisites: [docs/install/FIRMWARE.md](docs/install/FIRMWARE.md)
+- Install/boot troubleshooting (common problems): [docs/install/TROUBLESHOOTING.md](docs/install/TROUBLESHOOTING.md)
 - Model-specific BIOS/UEFI guides: [docs/hardware/README.md](docs/hardware/README.md)
 - Verify downloads: [docs/install/VERIFY.md](docs/install/VERIFY.md)
 - Raspberry Pi: [docs/rpi/README.md](docs/rpi/README.md)

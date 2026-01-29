@@ -44,6 +44,8 @@ If you're unsure: use the **Installer ISO** (AMD/INTEL).
 - Use a **USB stick (1GB+)** for the installer, or attach the ISO to a VM.
 - Configure firmware (BIOS/UEFI) correctly or the installer may not boot/see your disk:
   - `docs/install/FIRMWARE.md`
+- If you hit a common failure mode, see:
+  - `docs/install/TROUBLESHOOTING.md`
 - After install completes, remove the USB/ISO and reboot into the installed OS.
 
 ## Proxmox / VM

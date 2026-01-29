@@ -4,22 +4,25 @@ If these settings are not configured correctly, **5tratumOS may not boot**, the 
 
 BIOS/UEFI menus vary by vendor and firmware version, so look for **similar wording** if the exact option name differs.
 
+If you’re stuck in one of the common situations (installer won’t boot, fails after reboot, issues when disabling kiosk mode), also see:
+- `docs/install/TROUBLESHOOTING.md`
+
 ## Quick checklist (recommended)
 
 - **Boot mode:** UEFI (not Legacy/CSM)
-- **Secure Boot:** Disabled (or set to *Other OS*)
+- **Secure Boot:** Disabled (or set to "Other OS")
 - **Fast Boot:** Disabled
 - **USB boot:** Enabled
 - **Boot order:** USB first (for install), then internal disk (after install)
 - **Storage mode:** AHCI (not RAID/Intel RST)
-- **Intel VMD / Intel RST VMD:** Disabled (common reason NVMe is “missing” in installers)
+- **Intel VMD / Intel RST VMD:** Disabled (common reason NVMe is "missing" in installers)
 
 ## UEFI vs Legacy (CSM)
 
 **Use UEFI** unless you have a specific reason not to.
 
 - If you boot the installer USB in **UEFI** mode, the installed system will expect to boot in **UEFI** mode.
-- If you later switch the machine to **Legacy/CSM**, you may see “No boot device”, “No bootable device”, or it may boot to a blank screen.
+- If you later switch the machine to **Legacy/CSM**, you may see "No boot device", "No bootable device", or it may boot to a blank screen.
 
 If the USB shows twice in the boot menu (example):
 - `UEFI: <USB name>` (choose this)
@@ -32,8 +35,8 @@ Pick the **UEFI** entry.
 Secure Boot frequently blocks community images and custom kernels/bootloaders.
 
 Typical symptoms:
-- “Security Violation”
-- “Selected boot image did not authenticate”
+- "Security Violation"
+- "Selected boot image did not authenticate"
 - The USB never appears as bootable
 
 Fix:
@@ -78,7 +81,16 @@ Recommended defaults:
 
 ## Model-specific guides
 
-If you want screenshots/menu paths for common mini PCs, see:
+If you want screenshots/menu paths for common mini PCs (including Beelink), see:
 
 - Hardware index: [docs/hardware/README.md](../hardware/README.md)
 - Firmware guides by model: [docs/hardware/firmware/README.md](../hardware/firmware/README.md)
+
+## Extra stability settings (optional)
+
+Not required, but often helps on quirky hardware:
+
+- Update BIOS/UEFI to the latest stable version.
+- Load "Optimized Defaults" / "Setup Defaults", then apply the checklist above.
+- Disable CPU/memory overclocks (XMP/EXPO/PBO) until the system is stable.
+
