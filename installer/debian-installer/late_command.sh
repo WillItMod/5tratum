@@ -143,7 +143,14 @@ if [ -f "${STAGE_DIR}/bin/5tratumos" ]; then
 fi
 
 # Ensure update channel defaults to main and update repo is public repo.
-echo "main" >/etc/5tratumos/channel
+ch="main"
+if command -v jq >/dev/null 2>&1 && [ -f /etc/5tratumos/build.json ]; then
+  ch="$(jq -r '.channel // empty' /etc/5tratumos/build.json 2>/dev/null || true)"
+fi
+if [ -z "${ch}" ] || [ "${ch}" = "null" ]; then
+  ch="main"
+fi
+echo "${ch}" >/etc/5tratumos/channel
 cat >/etc/5tratumos/update.json <<'JSON'
 {"repo":"WillItMod/5tratum","token":""}
 JSON
