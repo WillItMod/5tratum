@@ -22,6 +22,7 @@ Boot modes:
 Prereqs on the build machine (Debian recommended):
 - `bsdtar`
 - `xorriso`
+- `mtools` (for UEFI: patches `efi.img` with `EFI/BOOT/grub.cfg`)
 - `syslinux-common` (for `isohdpfx.bin`)
 
 Embedded files:

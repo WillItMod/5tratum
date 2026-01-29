@@ -202,6 +202,58 @@ if have_imagemagick_convert; then
   fi
 fi
 
+# Ensure UEFI removable-media boot can find a GRUB config.
+# Some firmware / USB writers expect `EFI/BOOT/grub.cfg` (not just `/boot/grub/grub.cfg`).
+if [ "${BOOT_MODE}" != "bios" ]; then
+  efi_boot_dir=""
+  if [ -d "${WORK_DIR}/iso/EFI/BOOT" ]; then
+    efi_boot_dir="${WORK_DIR}/iso/EFI/BOOT"
+  elif [ -d "${WORK_DIR}/iso/EFI/boot" ]; then
+    efi_boot_dir="${WORK_DIR}/iso/EFI/boot"
+  fi
+
+  id_file_path="$(ls -1 "${WORK_DIR}/iso/.disk/id/"* 2>/dev/null | head -n 1 || true)"
+  id_file=""
+  if [ -n "${id_file_path}" ]; then
+    id_file="$(basename -- "${id_file_path}")"
+  fi
+  if [ -n "${efi_boot_dir}" ] && [ -n "${id_file}" ]; then
+    cat >"${efi_boot_dir}/grub.cfg" <<EOF
+search --file --set=root /.disk/id/${id_file}
+set prefix=(\$root)/boot/grub
+source \$prefix/\${grub_cpu}-efi/grub.cfg
+EOF
+  fi
+
+  # Patch the embedded EFI System Partition image (boot/grub/efi.img) so UEFI USB boots work reliably.
+  if [ -f "${WORK_DIR}/iso/boot/grub/efi.img" ] && [ -f "${efi_boot_dir}/grub.cfg" ]; then
+    mcopy_bin="$(command -v mcopy 2>/dev/null || true)"
+    if [ -z "${mcopy_bin}" ]; then
+      echo "warn: mcopy not found; attempting to download mtools to extract it..." >&2
+      pkg_dir="${WORK_DIR}/pkg-mtools"
+      rm -rf "${pkg_dir}"
+      mkdir -p "${pkg_dir}"
+      if command -v apt-get >/dev/null 2>&1; then
+        (
+          cd "${pkg_dir}"
+          apt-get download mtools >/dev/null 2>&1 || true
+        )
+        deb="$(ls -1 "${pkg_dir}"/mtools_*.deb 2>/dev/null | head -n 1 || true)"
+        if [ -n "${deb}" ] && command -v dpkg-deb >/dev/null 2>&1; then
+          dpkg-deb -x "${deb}" "${pkg_dir}/extract" >/dev/null 2>&1 || true
+          if [ -x "${pkg_dir}/extract/usr/bin/mcopy" ]; then
+            mcopy_bin="${pkg_dir}/extract/usr/bin/mcopy"
+          fi
+        fi
+      fi
+    fi
+    [ -n "${mcopy_bin}" ] || die "mtools (mcopy) not found (apt-get install -y mtools)"
+
+    chmod u+w "${WORK_DIR}/iso/boot/grub/efi.img" >/dev/null 2>&1 || true
+    "${mcopy_bin}" -o -i "${WORK_DIR}/iso/boot/grub/efi.img" "${efi_boot_dir}/grub.cfg" ::/efi/boot/grub.cfg
+  fi
+fi
+
 echo "[5/6] Updating md5sum.txt (if present)..."
 if [ -f "${WORK_DIR}/iso/md5sum.txt" ]; then
   chmod u+w "${WORK_DIR}/iso/md5sum.txt" >/dev/null 2>&1 || true
