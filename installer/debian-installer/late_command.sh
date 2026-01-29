@@ -61,8 +61,25 @@ cat >/etc/systemd/system/console-setup.service.d/5tratumos.conf <<'EOF'
 ConditionPathExists=/dev/tty0
 EOF
 
+KIOSK_PACKAGES_OK=0
 log "Installing kiosk packages (cage + chromium)..."
-apt-get install -y --no-install-recommends cage chromium || true
+if apt-get install -y --no-install-recommends cage chromium; then
+  KIOSK_PACKAGES_OK=1
+else
+  log "warn: kiosk packages failed to install; kiosk console will be disabled"
+fi
+
+log "Installing X11 fallback packages (optional)..."
+apt-get install -y --no-install-recommends \
+  kbd \
+  matchbox-window-manager \
+  x11-xserver-utils \
+  xinit \
+  xserver-xorg-core \
+  xserver-xorg-video-fbdev \
+  xserver-xorg-video-vesa \
+  xserver-xorg-video-qxl \
+  || true
 
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.
@@ -140,7 +157,7 @@ if [ -f "${STAGE_DIR}/systemd/5tratumos-firstboot-update.service" ]; then
 fi
 
 # Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
-if [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
+if [ "${KIOSK_PACKAGES_OK}" = "1" ] && [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
   if [ -f "${STAGE_DIR}/console/5tratumos-x11-session.sh" ]; then

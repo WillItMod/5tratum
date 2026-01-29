@@ -2,14 +2,12 @@
 Description=5tratumOS Console (kiosk) for %i
 After=network-online.target 5tratumos-overlay.service 5tratumosd.service
 Wants=network-online.target
-Conflicts=getty@tty1.service
-After=getty@tty1.service
 
 [Service]
 Type=simple
 User=%i
 PAMName=login
-TTYPath=/dev/tty1
+TTYPath=/dev/tty7
 TTYReset=yes
 TTYVHangup=yes
 TTYVTDisallocate=yes
@@ -20,6 +18,7 @@ Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=TRATUMOS_CONSOLE_URL=http://127.0.0.1/login.html
 Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/login.html
 Environment=TRATUMOS_CONSOLE_WAIT_SECS=90
+Environment=TRATUMOS_CONSOLE_VT=7
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8

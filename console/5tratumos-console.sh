@@ -4,6 +4,7 @@ set -euo pipefail
 URL="${TRATUMOS_CONSOLE_URL:-http://127.0.0.1/login.html}"
 HEALTH_URL="${TRATUMOS_CONSOLE_HEALTH_URL:-http://127.0.0.1/login.html}"
 WAIT_SECS="${TRATUMOS_CONSOLE_WAIT_SECS:-90}"
+VT="${TRATUMOS_CONSOLE_VT:-}"
 
 log() {
   printf '[5tratumos-console] %s\n' "$*" >&2
@@ -65,6 +66,15 @@ if [ ! -d "${XDG_RUNTIME_DIR}" ]; then
   exit 1
 fi
 
+if [ -z "${VT}" ]; then
+  tty_path="$(tty 2>/dev/null || true)"
+  if [[ "${tty_path}" =~ ^/dev/tty([0-9]+)$ ]]; then
+    VT="${BASH_REMATCH[1]}"
+  fi
+fi
+VT="${VT:-7}"
+VT_ARG="vt${VT}"
+
 detect_backend() {
   local b="${TRATUMOS_CONSOLE_BACKEND:-}"
   b="$(printf '%s' "${b}" | tr '[:upper:]' '[:lower:]' | tr -d ' \t\r\n')"
@@ -102,7 +112,7 @@ if [ "${backend}" = "x11" ]; then
     log "missing x11 session script: ${session}"
     exit 1
   fi
-  exec /usr/bin/xinit "${session}" -- :0 -nolisten tcp vt1 -keeptty
+  exec /usr/bin/xinit "${session}" -- :0 -nolisten tcp "${VT_ARG}" -keeptty
 fi
 
 export XDG_SESSION_TYPE=wayland
@@ -148,4 +158,22 @@ if [ -n "${TRATUMOS_CONSOLE_CHROMIUM_FLAGS:-}" ]; then
   chromium_args+=(${TRATUMOS_CONSOLE_CHROMIUM_FLAGS})
 fi
 
-exec /usr/bin/cage -- /usr/bin/chromium "${chromium_args[@]}"
+try_wayland() {
+  /usr/bin/cage -- /usr/bin/chromium "${chromium_args[@]}"
+}
+
+if ! try_wayland; then
+  log "wayland backend failed; retrying with WLR_NO_HARDWARE_CURSORS=1"
+  export WLR_NO_HARDWARE_CURSORS=1
+  if ! try_wayland; then
+    log "wayland backend failed; falling back to x11"
+    export XDG_SESSION_TYPE=x11
+    unset MOZ_ENABLE_WAYLAND || true
+    session="/usr/local/lib/5tratumos/5tratumos-x11-session"
+    if [ ! -x "${session}" ]; then
+      log "missing x11 session script: ${session}"
+      exit 1
+    fi
+    exec /usr/bin/xinit "${session}" -- :0 -nolisten tcp "${VT_ARG}" -keeptty
+  fi
+fi
