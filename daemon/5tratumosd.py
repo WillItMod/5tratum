@@ -8368,8 +8368,10 @@ def _nginx_proxy_block(app_id: str, port: int, *, default_path: str = "") -> str
     js_prefix_shim = (
         "<script>(function(){try{var p=\""
         + app_prefix
-        + "\";if(window.__f5p===p)return;window.__f5p=p;function f(u){if(typeof u!==\"string\")return u;"
-        "if(u.startsWith(\"//\"))return u;if(!u.startsWith(\"/\"))return u;if(u.startsWith(p+\"/\"))return u;"
+        + "\";if(window.__f5p===p&&window.__f5pv>=2)return;window.__f5p=p;window.__f5pv=2;function f(u){if(typeof u!==\"string\")return u;"
+        "if(u.startsWith(\"//\"))return u;try{var U=new URL(u,window.location.origin);"
+        "if(U&&U.origin===window.location.origin){u=U.pathname+U.search+U.hash;}}catch(e){}"
+        "if(!u.startsWith(\"/\"))return u;if(u.startsWith(p+\"/\"))return u;"
         "if(u.startsWith(\"/apps/\"))return u;return p+u;}"
         "if(typeof window.fetch===\"function\"){var of=window.fetch.bind(window);window.fetch=function(i,o){try{"
         "if(typeof i===\"string\")i=f(i);else if(i&&typeof i.url===\"string\")i=new Request(f(i.url),i);}catch(e){}"
@@ -8534,14 +8536,17 @@ def system_proxy_repair() -> dict:
         if "proxy_set_header X-Forwarded-Prefix" not in block:
             insertion.append(f"    proxy_set_header X-Forwarded-Prefix /apps/{aid};")
 
-        # Only add the shim once per app block.
-        if "__f5p" not in block:
+        # Shim: patch fetch/XHR to respect the /apps/<id>/ prefix.
+        # We version it so existing configs can be upgraded without destructive edits.
+        if "__f5pv=2" not in block:
             app_prefix = f"/apps/{aid}"
             js_prefix_shim = (
                 "<script>(function(){try{var p=\""
                 + app_prefix
-                + "\";if(window.__f5p===p)return;window.__f5p=p;function f(u){if(typeof u!==\"string\")return u;"
-                "if(u.startsWith(\"//\"))return u;if(!u.startsWith(\"/\"))return u;if(u.startsWith(p+\"/\"))return u;"
+                + "\";if(window.__f5p===p&&window.__f5pv>=2)return;window.__f5p=p;window.__f5pv=2;function f(u){if(typeof u!==\"string\")return u;"
+                "if(u.startsWith(\"//\"))return u;try{var U=new URL(u,window.location.origin);"
+                "if(U&&U.origin===window.location.origin){u=U.pathname+U.search+U.hash;}}catch(e){}"
+                "if(!u.startsWith(\"/\"))return u;if(u.startsWith(p+\"/\"))return u;"
                 "if(u.startsWith(\"/apps/\"))return u;return p+u;}"
                 "if(typeof window.fetch===\"function\"){var of=window.fetch.bind(window);window.fetch=function(i,o){try{"
                 "if(typeof i===\"string\")i=f(i);else if(i&&typeof i.url===\"string\")i=new Request(f(i.url),i);}catch(e){}"

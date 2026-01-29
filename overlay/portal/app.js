@@ -3075,15 +3075,12 @@
 
   function appLaunchUrl(id) {
     const appId = String(id || '').trim().toLowerCase();
-    const host = window.location.hostname || '';
-    if (appId === 'tailscale' && host) {
-      return `${window.location.protocol}//${host}:8240/`;
-    }
     try {
       const st = installedById && installedById.get ? installedById.get(appId) : null;
       const ui = st && typeof st === 'object' ? st.ui : null;
       const mode = ui && typeof ui.mode === 'string' ? String(ui.mode).trim().toLowerCase() : '';
       const port = ui && typeof ui.port === 'number' ? ui.port : Number(ui && ui.port);
+      const host = window.location.hostname || '';
       if (mode === 'direct' && host && Number.isFinite(port) && port > 0) {
         return `http://${host}:${port}/`;
       }
