@@ -246,6 +246,47 @@ if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
   sed -i 's/Debian installer/5tratumOS installer/g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
 fi
 
+# Debian-installer (GUI) header branding.
+# The graphical installer draws its top banner from images inside the initrd
+# (`/usr/share/graphics/logo_debian*.png`). Earlier 5tratumOS ISOs replaced
+# these; newer Debian netinst images reverted to Debian defaults.
+#
+# NOTE: We rebuild the initrd to guarantee the images are actually replaced.
+# While concatenating cpio archives can work in some initramfs consumers, the
+# Debian installer is safest when the main archive contains the desired files.
+patch_d_i_initrd_branding() {
+  local initrd_gz="$1"
+  local tmp_root=""
+
+  tmp_root="$(mktemp -d)"
+
+  # Extract the full initrd into a Linux filesystem (mktemp -> /tmp by default).
+  # This avoids mknod failures seen when extracting onto Windows-mounted paths.
+  gzip -dc "${initrd_gz}" | (cd "${tmp_root}" && cpio -idmu --quiet) >/dev/null 2>&1 || true
+
+  install -d -m 0755 "${tmp_root}/usr/share/graphics"
+  install -m 0644 "${SCRIPT_DIR}/files/debian-installer/usr/share/graphics/logo_debian.png" \
+    "${tmp_root}/usr/share/graphics/logo_debian.png"
+  install -m 0644 "${SCRIPT_DIR}/files/debian-installer/usr/share/graphics/logo_debian_dark.png" \
+    "${tmp_root}/usr/share/graphics/logo_debian_dark.png"
+
+  (
+    cd "${tmp_root}"
+    find . -print0 | cpio --null -o -H newc --quiet
+  ) | gzip -9n >"${initrd_gz}.tmp"
+  mv "${initrd_gz}.tmp" "${initrd_gz}"
+
+  rm -rf "${tmp_root}"
+}
+
+if [ -f "${SCRIPT_DIR}/files/debian-installer/usr/share/graphics/logo_debian.png" ] && \
+   [ -f "${SCRIPT_DIR}/files/debian-installer/usr/share/graphics/logo_debian_dark.png" ]; then
+  for initrd_gz in "${WORK_DIR}/iso/install.amd/gtk/initrd.gz" "${WORK_DIR}/iso/install.amd/initrd.gz"; do
+    [ -f "${initrd_gz}" ] || continue
+    patch_d_i_initrd_branding "${initrd_gz}"
+  done
+fi
+
 # GRUB menu background.
 if [ -f "${SCRIPT_DIR}/files/grub/background.png" ]; then
   bg="${WORK_DIR}/iso/boot/grub/background.png"
