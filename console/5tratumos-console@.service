@@ -25,10 +25,16 @@ Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8
 KillMode=mixed
-# Allow kiosk to start in VMs even if /dev/dri isn't exposed (e.g. QXL), so the
-# console can fall back to the X11 session. On bare metal, still require a GPU
-# device to avoid starting a kiosk on headless systems.
-ExecCondition=/bin/bash -lc 'systemd-detect-virt -q || test -e /dev/dri/card0 -o -e /dev/fb0'
+# Do NOT use ExecCondition for GPU/VT gating: if it fails once at boot (udev timing),
+# systemd marks the unit "skipped" and it will never retry. Use ExecStartPre to wait
+# and let Restart= handle retries.
+StartLimitIntervalSec=0
+
+# Ensure the runtime dir exists early (PAM/logind can race at boot for system services).
+ExecStartPre=/usr/bin/install -d -m 0700 -o %U -g %G /run/user/%U
+
+# Wait for basic graphics devices to appear (when available). In VMs, allow X11 fallback.
+ExecStartPre=/bin/bash -lc 'if systemd-detect-virt -q; then exit 0; fi; for i in $(seq 1 30); do test -e /dev/dri/card0 -o -e /dev/fb0 && exit 0; sleep 1; done; exit 0'
 ExecStart=/usr/local/bin/5tratumos-console
 ExecStartPost=/usr/local/bin/5tratumos-console-vt-switch start %i
 ExecStopPost=/usr/local/bin/5tratumos-console-vt-switch stop
