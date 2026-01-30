@@ -266,6 +266,29 @@ elif have_imagemagick_convert && [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOn
   fi
 fi
 
+# Prefer the dedicated GRUB background over the syslinux splash when available.
+# This allows distinct "first" (BIOS/syslinux) and "second" (UEFI/grub) branding screens.
+if [ -f "${WORK_DIR}/iso/boot/grub/background.png" ]; then
+  if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
+    sed -i 's#background_image /isolinux/splash.png#background_image /boot/grub/background.png#g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+  fi
+
+  if [ -d "${WORK_DIR}/iso/boot/grub/theme" ]; then
+    # Switch the GRUB theme desktop image to our branded background.
+    grep -rl 'desktop-image: "/isolinux/splash.png"' "${WORK_DIR}/iso/boot/grub/theme" 2>/dev/null \
+      | while IFS= read -r theme_file; do
+          sed -i 's#desktop-image: "/isolinux/splash.png"#desktop-image: "/boot/grub/background.png"#g' "${theme_file}" || true
+        done
+
+    # Reduce "Debian" branding in the GRUB menu UI (background stays Debian-installer).
+    for theme_file in "${WORK_DIR}/iso/boot/grub/theme/"*; do
+      [ -f "${theme_file}" ] || continue
+      sed -i 's#title-text: "Debian GNU/Linux.*"#title-text: "5tratumOS Installer"#g' "${theme_file}" || true
+      sed -i 's/Debian GNU\/Linux UEFI Installer menu/5tratumOS UEFI Installer menu/g' "${theme_file}" || true
+    done
+  fi
+fi
+
 # Ensure UEFI removable-media boot can find a GRUB config.
 # Some firmware / USB writers expect `EFI/BOOT/grub.cfg` (not just `/boot/grub/grub.cfg`).
 if [ "${BOOT_MODE}" != "bios" ]; then
