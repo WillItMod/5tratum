@@ -20,9 +20,9 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 - `5tratumos-installer-v<version>-bios.iso` (legacy BIOS/CSM only)
 - matching `.sha256`
 
-At the time of writing, the newest installer ISOs are under tag **v0.3.192**.
+At the time of writing, the newest installer ISOs are under tag **v0.3.193**.
 
-Note: release asset filenames are versioned (e.g. `...-v0.3.192-uefi.iso`).
+Note: release asset filenames are versioned (e.g. `...-v0.3.193-uefi.iso`).
 
 ## Downloads (per release)
 

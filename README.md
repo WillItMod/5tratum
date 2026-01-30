@@ -17,8 +17,8 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 ### OS update bundle (existing installs)
 
 - Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Latest MAIN update bundle: **v0.3.192** (assets: `5tratumos-update.tgz` + `.sha256`)
-  - https://github.com/WillItMod/5tratum/releases/tag/v0.3.192
+- Latest MAIN update bundle: **v0.3.193** (assets: `5tratumos-update.tgz` + `.sha256`)
+  - https://github.com/WillItMod/5tratum/releases/tag/v0.3.193
 
 ### Installer media
 
@@ -26,13 +26,13 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 Installer ISOs and Raspberry Pi images are **not attached to every release tag**. If the newest tag does not include these assets, use the **newest tag that does**.
 
-- **AMD/INTEL installer ISO (latest published: v0.3.192)**
+- **AMD/INTEL installer ISO (latest published: v0.3.193)**
   - UEFI-only (recommended):
-    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.192/5tratumos-installer-v0.3.192-uefi.iso)
-    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.192/5tratumos-installer-v0.3.192-uefi.iso.sha256)
+    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.193/5tratumos-installer-v0.3.193-uefi.iso)
+    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.193/5tratumos-installer-v0.3.193-uefi.iso.sha256)
   - Legacy BIOS-only (older hardware / CSM):
-    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.192/5tratumos-installer-v0.3.192-bios.iso)
-    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.192/5tratumos-installer-v0.3.192-bios.iso.sha256)
+    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.3.193/5tratumos-installer-v0.3.193-bios.iso)
+    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.193/5tratumos-installer-v0.3.193-bios.iso.sha256)
 - **Raspberry Pi (arm64) image (latest published: v0.3.184)**
   - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-raspios-lite-v0.3.184.img.xz)
   - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.184/5tratumos-raspios-lite-v0.3.184.img.xz.sha256)
