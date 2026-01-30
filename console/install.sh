@@ -42,6 +42,9 @@ done
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 install -m 0755 "${SCRIPT_DIR}/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+if [ -f "${SCRIPT_DIR}/5tratumos-console-vt-switch.sh" ]; then
+  install -m 0755 "${SCRIPT_DIR}/5tratumos-console-vt-switch.sh" /usr/local/bin/5tratumos-console-vt-switch
+fi
 install -m 0644 "${SCRIPT_DIR}/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
 install -d -m 0755 /usr/local/lib/5tratumos
 if [ -f "${SCRIPT_DIR}/5tratumos-x11-session.sh" ]; then

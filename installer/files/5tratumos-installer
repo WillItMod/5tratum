@@ -271,9 +271,24 @@ install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/systemd/5tratumos-firstboot.ser
 # Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
 if [ -f "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console.sh" ] && [ -f "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console@.service" ]; then
   install -m 0755 "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console.sh" "${TARGET_MNT}/usr/local/bin/5tratumos-console"
+  if [ -f "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console-vt-switch.sh" ]; then
+    install -m 0755 "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console-vt-switch.sh" "${TARGET_MNT}/usr/local/bin/5tratumos-console-vt-switch"
+  fi
   install -m 0644 "${TARGET_MNT}/opt/5tratumos-src/console/5tratumos-console@.service" "${TARGET_MNT}/etc/systemd/system/5tratumos-console@.service"
   systemctl --root "${TARGET_MNT}" enable "5tratumos-console@forge.service" >/dev/null 2>&1 || true
 fi
+
+cat >"${TARGET_MNT}/etc/issue" <<'EOF'
+5tratumOS local console (\l)
+
+If the kiosk UI is not visible:
+  - Switch to kiosk: Ctrl+Alt+F7 (or Fn+Ctrl+Alt+F7)
+  - Back to this console: Ctrl+Alt+F1
+
+TTY switching requires a physical keyboard/monitor.
+Remote users: use the WebUI/SSH (a browser cannot switch TTYs).
+EOF
+cp -f "${TARGET_MNT}/etc/issue" "${TARGET_MNT}/etc/issue.net" >/dev/null 2>&1 || true
 
 systemctl --root "${TARGET_MNT}" daemon-reload || true
 systemctl --root "${TARGET_MNT}" enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service || true

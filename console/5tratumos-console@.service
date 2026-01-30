@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=%i
 PAMName=login
+PermissionsStartOnly=yes
 TTYPath=/dev/tty7
 TTYReset=yes
 TTYVHangup=yes
@@ -19,12 +20,15 @@ Environment=TRATUMOS_CONSOLE_URL=http://127.0.0.1/login.html
 Environment=TRATUMOS_CONSOLE_HEALTH_URL=http://127.0.0.1/login.html
 Environment=TRATUMOS_CONSOLE_WAIT_SECS=90
 Environment=TRATUMOS_CONSOLE_VT=7
+Environment=TRATUMOS_CONSOLE_AUTO_CHVT=1
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8
 KillMode=mixed
 ExecCondition=/bin/bash -lc test -e /dev/dri/card0 -o -e /dev/fb0
 ExecStart=/usr/local/bin/5tratumos-console
+ExecStartPost=/usr/local/bin/5tratumos-console-vt-switch start
+ExecStopPost=/usr/local/bin/5tratumos-console-vt-switch stop
 
 [Install]
 WantedBy=multi-user.target

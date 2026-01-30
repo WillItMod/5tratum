@@ -99,6 +99,9 @@ install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" /etc/sy
 
 if [ -f "${SRC_ROOT}/console/5tratumos-console.sh" ] && [ -f "${SRC_ROOT}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${SRC_ROOT}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+  if [ -f "${SRC_ROOT}/console/5tratumos-console-vt-switch.sh" ]; then
+    install -m 0755 "${SRC_ROOT}/console/5tratumos-console-vt-switch.sh" /usr/local/bin/5tratumos-console-vt-switch
+  fi
   install -m 0644 "${SRC_ROOT}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
   for grp in video input render; do
     if getent group "${grp}" >/dev/null 2>&1; then
@@ -107,6 +110,18 @@ if [ -f "${SRC_ROOT}/console/5tratumos-console.sh" ] && [ -f "${SRC_ROOT}/consol
   done
   systemctl enable --now "5tratumos-console@${CONSOLE_USER}.service" || true
 fi
+
+cat >/etc/issue <<'EOF'
+5tratumOS local console (\l)
+
+If the kiosk UI is not visible:
+  - Switch to kiosk: Ctrl+Alt+F7 (or Fn+Ctrl+Alt+F7)
+  - Back to this console: Ctrl+Alt+F1
+
+TTY switching requires a physical keyboard/monitor.
+Remote users: use the WebUI/SSH (a browser cannot switch TTYs).
+EOF
+cp -f /etc/issue /etc/issue.net >/dev/null 2>&1 || true
 
 systemctl daemon-reload
 systemctl enable --now 5tratumosd.service

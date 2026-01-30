@@ -166,6 +166,9 @@ fi
 # Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
 if [ "${KIOSK_PACKAGES_OK}" = "1" ] && [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
+  if [ -f "${STAGE_DIR}/console/5tratumos-console-vt-switch.sh" ]; then
+    install -m 0755 "${STAGE_DIR}/console/5tratumos-console-vt-switch.sh" /usr/local/bin/5tratumos-console-vt-switch
+  fi
   install -m 0644 "${STAGE_DIR}/console/5tratumos-console@.service" /etc/systemd/system/5tratumos-console@.service
   if [ -f "${STAGE_DIR}/console/5tratumos-x11-session.sh" ]; then
     install -d -m 0755 /usr/local/lib/5tratumos
@@ -178,6 +181,19 @@ if [ "${KIOSK_PACKAGES_OK}" = "1" ] && [ -d "${STAGE_DIR}/console" ] && [ -f "${
   done
   SYSTEMD_OFFLINE=1 systemctl enable "5tratumos-console@forge.service" >/dev/null 2>&1 || true
 fi
+
+log "Adding tty1 login banner (kiosk hint)..."
+cat >/etc/issue <<'EOF'
+5tratumOS local console (\l)
+
+If the kiosk UI is not visible:
+  - Switch to kiosk: Ctrl+Alt+F7 (or Fn+Ctrl+Alt+F7)
+  - Back to this console: Ctrl+Alt+F1
+
+TTY switching requires a physical keyboard/monitor.
+Remote users: use the WebUI/SSH (a browser cannot switch TTYs).
+EOF
+cp -f /etc/issue /etc/issue.net >/dev/null 2>&1 || true
 
 # Fallback for distros without docker compose plugin: use docker-compose if available.
 if ! docker compose version >/dev/null 2>&1 && command -v docker-compose >/dev/null 2>&1; then
