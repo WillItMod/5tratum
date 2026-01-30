@@ -25,7 +25,10 @@ Restart=on-failure
 RestartSec=2
 TimeoutStopSec=8
 KillMode=mixed
-ExecCondition=/bin/bash -lc test -e /dev/dri/card0 -o -e /dev/fb0
+# Allow kiosk to start in VMs even if /dev/dri isn't exposed (e.g. QXL), so the
+# console can fall back to the X11 session. On bare metal, still require a GPU
+# device to avoid starting a kiosk on headless systems.
+ExecCondition=/bin/bash -lc 'systemd-detect-virt -q || test -e /dev/dri/card0 -o -e /dev/fb0'
 ExecStart=/usr/local/bin/5tratumos-console
 ExecStartPost=/usr/local/bin/5tratumos-console-vt-switch start %i
 ExecStopPost=/usr/local/bin/5tratumos-console-vt-switch stop

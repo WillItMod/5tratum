@@ -75,11 +75,38 @@ apt-get install -y --no-install-recommends \
   matchbox-window-manager \
   x11-xserver-utils \
   xinit \
+  xserver-xorg-input-libinput \
   xserver-xorg-core \
   xserver-xorg-video-fbdev \
   xserver-xorg-video-vesa \
   xserver-xorg-video-qxl \
   || true
+
+log "Hiding GRUB menu (fast boot)..."
+# Default Debian config shows an OS selection menu for a few seconds which confuses users
+# and looks like a failed boot. Hide it unless GRUB detects a failure.
+if [ -f /etc/default/grub ]; then
+  if grep -q '^GRUB_TIMEOUT=' /etc/default/grub; then
+    sed -i 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' /etc/default/grub || true
+  else
+    echo 'GRUB_TIMEOUT=0' >>/etc/default/grub
+  fi
+  if grep -q '^GRUB_TIMEOUT_STYLE=' /etc/default/grub; then
+    sed -i 's/^GRUB_TIMEOUT_STYLE=.*/GRUB_TIMEOUT_STYLE=hidden/' /etc/default/grub || true
+  else
+    echo 'GRUB_TIMEOUT_STYLE=hidden' >>/etc/default/grub
+  fi
+  if grep -q '^GRUB_RECORDFAIL_TIMEOUT=' /etc/default/grub; then
+    sed -i 's/^GRUB_RECORDFAIL_TIMEOUT=.*/GRUB_RECORDFAIL_TIMEOUT=0/' /etc/default/grub || true
+  else
+    echo 'GRUB_RECORDFAIL_TIMEOUT=0' >>/etc/default/grub
+  fi
+fi
+
+# Best-effort regenerate config (may fail in some installer environments; don't abort install).
+if command -v update-grub >/dev/null 2>&1; then
+  update-grub >/dev/null 2>&1 || true
+fi
 
 log "Enabling SSH..."
 # Provide SSH access on first boot so remote administration doesn't require console access.
