@@ -161,7 +161,7 @@ patch_syslinux_cfg() {
 patch_syslinux_cfg "${WORK_DIR}/iso/isolinux/txt.cfg" "${append_args_base}"
 patch_syslinux_cfg "${WORK_DIR}/iso/isolinux/gtk.cfg" "${append_args_gui}"
 
-if [ -f "${WORK_DIR}/iso/isolinux/isolinux.cfg" ]; then
+  if [ -f "${WORK_DIR}/iso/isolinux/isolinux.cfg" ]; then
   if [ -f "${WORK_DIR}/iso/isolinux/gtk.cfg" ]; then
     sed -i "s/^default .*/default installgui/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
   else
@@ -178,9 +178,12 @@ if [ -d "${WORK_DIR}/iso/isolinux" ]; then
   done
 fi
 
-# Optional: generate a Syslinux splash background (requires ImageMagick's `convert`).
-if [ -d "${WORK_DIR}/iso/isolinux" ] && have_imagemagick_convert; then
-  if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
+# Syslinux splash background (BIOS) + shared GRUB theme background.
+# Prefer a repo-provided asset so we don't rely on ImageMagick being available in the build environment.
+if [ -d "${WORK_DIR}/iso/isolinux" ]; then
+  if [ -f "${SCRIPT_DIR}/files/isolinux/splash.png" ]; then
+    install -m 0644 "${SCRIPT_DIR}/files/isolinux/splash.png" "${WORK_DIR}/iso/isolinux/splash.png"
+  elif have_imagemagick_convert && [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
     tmp_splash="${WORK_DIR}/iso/isolinux/splash.png"
     convert -size 640x480 xc:'#07090e' \
       "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 520x -gravity north -geometry +0+60 -composite \
@@ -243,18 +246,22 @@ if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
   sed -i 's/Debian installer/5tratumOS installer/g' "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
 fi
 
-# Optional: Grub background (requires ImageMagick's `convert`).
-if have_imagemagick_convert; then
-  if [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
-    bg="${WORK_DIR}/iso/boot/grub/background.png"
-    convert -size 1024x768 xc:'#07090e' \
-      "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 820x -gravity center -geometry +0-40 -composite \
-      "${WORK_DIR}/iso/5tratumos/branding/5.png" -resize 120x -gravity southeast -geometry +40+40 -composite \
-      "${bg}" || true
-    if [ -f "${bg}" ]; then
-      if ! grep -q 'background_image' "${WORK_DIR}/iso/boot/grub/grub.cfg"; then
-        sed -i "1i\\insmod png\\nbackground_image -m stretch /boot/grub/background.png\\n" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
-      fi
+# GRUB menu background.
+if [ -f "${SCRIPT_DIR}/files/grub/background.png" ]; then
+  bg="${WORK_DIR}/iso/boot/grub/background.png"
+  install -m 0644 "${SCRIPT_DIR}/files/grub/background.png" "${bg}"
+  if ! grep -q 'background_image' "${WORK_DIR}/iso/boot/grub/grub.cfg"; then
+    sed -i "1i\\insmod png\\nbackground_image -m stretch /boot/grub/background.png\\n" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+  fi
+elif have_imagemagick_convert && [ -f "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" ]; then
+  bg="${WORK_DIR}/iso/boot/grub/background.png"
+  convert -size 1024x768 xc:'#07090e' \
+    "${WORK_DIR}/iso/5tratumos/branding/WordOnlyLogo.png" -resize 820x -gravity center -geometry +0-40 -composite \
+    "${WORK_DIR}/iso/5tratumos/branding/5.png" -resize 120x -gravity southeast -geometry +40+40 -composite \
+    "${bg}" || true
+  if [ -f "${bg}" ]; then
+    if ! grep -q 'background_image' "${WORK_DIR}/iso/boot/grub/grub.cfg"; then
+      sed -i "1i\\insmod png\\nbackground_image -m stretch /boot/grub/background.png\\n" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
     fi
   fi
 fi
