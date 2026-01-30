@@ -293,6 +293,15 @@ fi
 set prefix=(\$root)/boot/grub
 source \$prefix/\${grub_cpu}-efi/grub.cfg
 EOF
+
+    # Debian's GRUB EFI binaries are built with prefix /EFI/debian, so they look for /EFI/debian/grub.cfg on the ISO.
+    # We exclude a root-level "debian" symlink during extraction for Windows compatibility; recreate the needed EFI/debian config here.
+    mkdir -p "${WORK_DIR}/iso/EFI/debian"
+    cat >"${WORK_DIR}/iso/EFI/debian/grub.cfg" <<EOF
+search --file --set=root /.disk/id/${id_file}
+set prefix=(\$root)/boot/grub
+source \$prefix/\${grub_cpu}-efi/grub.cfg
+EOF
   fi
 
   # Patch the embedded EFI System Partition image (boot/grub/efi.img) so UEFI USB boots work reliably.
