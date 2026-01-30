@@ -53,6 +53,19 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 - Verify downloads: [docs/install/VERIFY.md](docs/install/VERIFY.md)
 - Raspberry Pi: [docs/rpi/README.md](docs/rpi/README.md)
 
+## Local Console (Kiosk) on physical hardware
+
+5tratumOS can run a **fullscreen local UI** (kiosk) on an attached monitor/keyboard.
+
+Important:
+- Virtual terminal switching only works **on the physical device** (attached monitor + keyboard).
+- You cannot switch TTYs from a web browser. For remote access, use the WebUI/SSH instead.
+
+If you boot and only see a text login prompt (tty1):
+- The kiosk UI runs on **tty7**.
+- Press `Ctrl+Alt+F7` (sometimes `Fn+Ctrl+Alt+F7` on compact keyboards/laptops) to switch to the kiosk UI.
+- To go back to the text console, press `Ctrl+Alt+F1`.
+
 ### Windows (Balena Etcher)
 
 1) Download `5tratumos-installer-<version>.iso` (from the release assets)
