@@ -62,6 +62,15 @@ If the machine hangs on reboot/shutdown:
 - Disable Fast Boot and update BIOS/UEFI first.
 - If your firmware has power options like “Deep Sleep”, “ErP”, or aggressive power saving, try disabling them temporarily while testing.
 
+### Boots to a console login prompt (tty1) instead of the kiosk UI
+
+If the install completes but you only see a text login prompt on the local display:
+
+- Try switching virtual terminals:
+  - `Ctrl+Alt+F7` (common kiosk/display VT)
+  - `Ctrl+Alt+F1` / `Ctrl+Alt+F2` (some systems map these differently)
+- If the WebUI works over the network, treat this as a local graphics/display issue and continue with section 3.
+
 ## 3) Works until kiosk mode is disabled (local display crashes/black screen)
 
 If the system is stable headless (WebUI/SSH) but becomes unstable when you change kiosk/local-display settings, it’s usually a **graphics initialization/driver** issue.
@@ -83,4 +92,3 @@ If the local display remains unstable:
 
 If you want menu paths for common mini PCs (including Beelink), see:
 - `docs/hardware/firmware/README.md`
-
