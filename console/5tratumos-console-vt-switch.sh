@@ -4,6 +4,7 @@ set -euo pipefail
 ACTIVE_FILE="/sys/class/tty/tty0/active"
 VT="${TRATUMOS_CONSOLE_VT:-7}"
 AUTO_CHVT="${TRATUMOS_CONSOLE_AUTO_CHVT:-1}"
+AUTO_WAIT_SECS="${TRATUMOS_CONSOLE_AUTO_CHVT_WAIT_SECS:-30}"
 
 log() {
   printf '[5tratumos-console-vt] %s\n' "$*" >&2
@@ -34,14 +35,38 @@ do_chvt() {
   return 1
 }
 
+has_kiosk_process() {
+  local user="$1"
+  [ -n "${user}" ] || return 1
+
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -u "${user}" -x cage >/dev/null 2>&1 && return 0
+    pgrep -u "${user}" -x xinit >/dev/null 2>&1 && return 0
+    pgrep -u "${user}" -x chromium >/dev/null 2>&1 && return 0
+    # Chromium may appear as "chromium-browser" on some distros.
+    pgrep -u "${user}" -x chromium-browser >/dev/null 2>&1 && return 0
+    return 1
+  fi
+
+  ps -u "${user}" -o comm= 2>/dev/null | grep -E '^(cage|xinit|chromium|chromium-browser)$' >/dev/null 2>&1
+}
+
 cmd="${1:-}"
 case "${cmd}" in
   start)
     [ "${AUTO_CHVT}" = "1" ] || exit 0
+    user="${2:-}"
     a="$(active_vt || true)"
     if [ "${a}" = "1" ] && [ "${VT}" != "1" ]; then
-      # Give systemd a moment to bind the TTYPath and avoid a flicker to an empty VT.
-      sleep 1
+      # Wait until the kiosk session is actually starting; switching too early can show a blank VT.
+      if [ -n "${user}" ]; then
+        for _ in $(seq 1 "${AUTO_WAIT_SECS}"); do
+          if has_kiosk_process "${user}"; then
+            break
+          fi
+          sleep 1
+        done
+      fi
       if do_chvt "${VT}"; then
         log "switched to tty${VT}"
       else
@@ -65,4 +90,3 @@ case "${cmd}" in
     exit 2
     ;;
 esac
-

@@ -27,7 +27,7 @@ TimeoutStopSec=8
 KillMode=mixed
 ExecCondition=/bin/bash -lc test -e /dev/dri/card0 -o -e /dev/fb0
 ExecStart=/usr/local/bin/5tratumos-console
-ExecStartPost=/usr/local/bin/5tratumos-console-vt-switch start
+ExecStartPost=/usr/local/bin/5tratumos-console-vt-switch start %i
 ExecStopPost=/usr/local/bin/5tratumos-console-vt-switch stop
 
 [Install]
