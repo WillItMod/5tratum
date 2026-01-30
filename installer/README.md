@@ -15,9 +15,15 @@ Behavior:
 Build entrypoint: `installer/build-debian-preseed-iso.sh`
 
 Boot modes:
-- `BOOT_MODE=hybrid` (default): BIOS + UEFI in one ISO
+- `BOOT_MODE=hybrid` (default): BIOS + UEFI in one ISO (useful for local testing)
 - `BOOT_MODE=uefi`: UEFI-only
 - `BOOT_MODE=bios`: Legacy BIOS-only
+
+Release guidance:
+- Publish **two** installer ISOs per release:
+  - `...-uefi.iso` (recommended)
+  - `...-bios.iso` (legacy)
+- The graphical installer entries force the GTK frontend and include `nomodeset` to reduce “graphical install falls back to text” failures on picky GPUs/firmware.
 
 Prereqs on the build machine (Debian recommended):
 - `bsdtar`

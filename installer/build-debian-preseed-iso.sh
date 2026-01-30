@@ -130,29 +130,43 @@ if [ -f "${LOGO_WORDMARK}" ]; then
 fi
 
 echo "[4/6] Branding + preseed boot configs..."
-append_args="auto=true priority=critical preseed/file=/cdrom/preseed.cfg"
+append_args_base="auto=true priority=critical preseed/file=/cdrom/preseed.cfg"
+# Some systems fall back to the text installer even when "Graphical install" is selected.
+# For broad compatibility, force the GTK frontend and disable KMS (use a generic framebuffer).
+append_args_gui="${append_args_base} DEBIAN_FRONTEND=gtk nomodeset"
 
 # BIOS (isolinux)
-if [ -f "${WORK_DIR}/iso/isolinux/txt.cfg" ]; then
-  awk -v args="${append_args}" '
-    BEGIN { OFS=""; }
-    /^[[:space:]]*append[[:space:]]/ {
-      line=$0
-      sub(/^[[:space:]]*append[[:space:]]+/, "", line)
-      split(line, parts, /[[:space:]]+---[[:space:]]+/)
-      if (length(parts) > 1) {
-        print "  append ", args, " ", parts[1], " --- ", parts[2]
-      } else {
-        print "  append ", args, " ", line
+patch_syslinux_cfg() {
+  local file="$1"
+  local args="$2"
+  [ -f "${file}" ] || return 0
+  awk -v args="${args}" '
+      BEGIN { OFS=""; }
+      /^[[:space:]]*append[[:space:]]/ {
+        line=$0
+        sub(/^[[:space:]]*append[[:space:]]+/, "", line)
+        split(line, parts, /[[:space:]]+---[[:space:]]+/)
+        if (length(parts) > 1) {
+          print "  append ", args, " ", parts[1], " --- ", parts[2]
+        } else {
+          print "  append ", args, " ", line
+        }
+        next
       }
-      next
-    }
-    { print $0 }
-  ' "${WORK_DIR}/iso/isolinux/txt.cfg" >"${WORK_DIR}/iso/isolinux/txt.cfg.tmp"
-  mv "${WORK_DIR}/iso/isolinux/txt.cfg.tmp" "${WORK_DIR}/iso/isolinux/txt.cfg"
-fi
+      { print $0 }
+    ' "${file}" >"${file}.tmp"
+  mv "${file}.tmp" "${file}"
+}
+
+patch_syslinux_cfg "${WORK_DIR}/iso/isolinux/txt.cfg" "${append_args_base}"
+patch_syslinux_cfg "${WORK_DIR}/iso/isolinux/gtk.cfg" "${append_args_gui}"
+
 if [ -f "${WORK_DIR}/iso/isolinux/isolinux.cfg" ]; then
-  sed -i "s/^default .*/default install/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
+  if [ -f "${WORK_DIR}/iso/isolinux/gtk.cfg" ]; then
+    sed -i "s/^default .*/default installgui/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
+  else
+    sed -i "s/^default .*/default install/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
+  fi
   sed -i "s/^timeout .*/timeout 30/" "${WORK_DIR}/iso/isolinux/isolinux.cfg" || true
 fi
 if [ -d "${WORK_DIR}/iso/isolinux" ]; then
@@ -177,7 +191,50 @@ fi
 
 # UEFI (grub)
 if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then
-  sed -i "s#\\(linux\\s\\+/install\\.amd/vmlinuz\\s\\+\\)#\\1${append_args} #g" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
+  awk -v base="${append_args_base}" -v gui="${append_args_gui}" '
+    function inject(line, args) {
+      if (index(line, "preseed/file=/cdrom/preseed.cfg") > 0) {
+        if (index(args, "DEBIAN_FRONTEND=gtk") > 0 && index(line, "DEBIAN_FRONTEND=gtk") == 0) {
+          line = line " DEBIAN_FRONTEND=gtk"
+        }
+        if (index(args, "nomodeset") > 0 && index(line, "nomodeset") == 0) {
+          line = line " nomodeset"
+        }
+        return line
+      }
+      sub(/linux[[:space:]]+\/install\.amd\/vmlinuz[[:space:]]+/, "&" args " ", line)
+      return line
+    }
+    BEGIN { pending = 0; pline = "" }
+    /^[[:space:]]*linux[[:space:]]+\/install\.amd\/vmlinuz[[:space:]]/ {
+      pending = 1
+      pline = $0
+      next
+    }
+    {
+      if (pending) {
+        if ($0 ~ /^[[:space:]]*initrd[[:space:]]+/) {
+          args = ($0 ~ /\/install\.amd\/gtk\/initrd\.gz/) ? gui : base
+          print inject(pline, args)
+          pending = 0
+          pline = ""
+          print $0
+          next
+        } else {
+          print inject(pline, base)
+          pending = 0
+          pline = ""
+        }
+      }
+      print $0
+    }
+    END {
+      if (pending) {
+        print inject(pline, base)
+      }
+    }
+  ' "${WORK_DIR}/iso/boot/grub/grub.cfg" >"${WORK_DIR}/iso/boot/grub/grub.cfg.tmp"
+  mv "${WORK_DIR}/iso/boot/grub/grub.cfg.tmp" "${WORK_DIR}/iso/boot/grub/grub.cfg"
   sed -i "s/^set timeout=.*/set timeout=3/" "${WORK_DIR}/iso/boot/grub/grub.cfg" || true
 fi
 if [ -f "${WORK_DIR}/iso/boot/grub/grub.cfg" ]; then

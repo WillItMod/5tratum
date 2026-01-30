@@ -56,14 +56,18 @@ cd /opt/5tratum_Build/5tratumOS
 # 1) build the update bundle
 ./scripts/build-update-bundle.sh
 
-# 2) build the installer ISO
-OS_TAG="v0.x.y" ./installer/build-debian-preseed-iso.sh
+# 2) build installer ISOs (publish UEFI + BIOS separately; do not ship hybrid)
+OS_TAG="v0.x.y" OS_CHANNEL="main" BOOT_MODE="uefi" OUT_ISO="dist/5tratumos-installer-v0.x.y-uefi.iso" ./installer/build-debian-preseed-iso.sh
+OS_TAG="v0.x.y" OS_CHANNEL="main" BOOT_MODE="bios" OUT_ISO="dist/5tratumos-installer-v0.x.y-bios.iso" ./installer/build-debian-preseed-iso.sh
 ```
 
 Optional token injection (without committing secrets):
 
 ```bash
-OS_TAG="v0.x.y" UPDATE_TOKEN_FILE="/root/update.token" ./installer/build-debian-preseed-iso.sh
+OS_TAG="v0.x.y" OS_CHANNEL="main" BOOT_MODE="uefi" OUT_ISO="dist/5tratumos-installer-v0.x.y-uefi.iso" \
+  UPDATE_TOKEN_FILE="/root/update.token" ./installer/build-debian-preseed-iso.sh
+OS_TAG="v0.x.y" OS_CHANNEL="main" BOOT_MODE="bios" OUT_ISO="dist/5tratumos-installer-v0.x.y-bios.iso" \
+  UPDATE_TOKEN_FILE="/root/update.token" ./installer/build-debian-preseed-iso.sh
 ```
 
 ## Proxmox
