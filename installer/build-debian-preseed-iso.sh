@@ -276,7 +276,20 @@ if [ "${BOOT_MODE}" != "bios" ]; then
   fi
   if [ -n "${efi_boot_dir}" ] && [ -n "${id_file}" ]; then
     cat >"${efi_boot_dir}/grub.cfg" <<EOF
-search --file --set=root /.disk/id/${id_file}
+# Load partition/filesystem modules early, otherwise `search --file` can drop to a GRUB prompt on some UEFI firmware.
+insmod part_gpt
+insmod part_msdos
+insmod iso9660
+
+# Prefer common device mappings before falling back to search.
+if [ -e (cd0,msdos2)/.disk/id/${id_file} ]; then
+  set root=(cd0,msdos2)
+elif [ -e (cd0)/.disk/id/${id_file} ]; then
+  set root=(cd0)
+else
+  search --file --set=root /.disk/id/${id_file}
+fi
+
 set prefix=(\$root)/boot/grub
 source \$prefix/\${grub_cpu}-efi/grub.cfg
 EOF
@@ -307,7 +320,7 @@ EOF
     [ -n "${mcopy_bin}" ] || die "mtools (mcopy) not found (apt-get install -y mtools)"
 
     chmod u+w "${WORK_DIR}/iso/boot/grub/efi.img" >/dev/null 2>&1 || true
-    "${mcopy_bin}" -o -i "${WORK_DIR}/iso/boot/grub/efi.img" "${efi_boot_dir}/grub.cfg" ::/efi/boot/grub.cfg
+    "${mcopy_bin}" -o -i "${WORK_DIR}/iso/boot/grub/efi.img" "${efi_boot_dir}/grub.cfg" ::/EFI/BOOT/grub.cfg
   fi
 fi
 
