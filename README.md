@@ -63,7 +63,8 @@ Important:
 
 If you boot and only see a text login prompt (tty1):
 - The kiosk UI runs on **tty7**.
-- Press `Ctrl+Alt+F7` (sometimes `Fn+Ctrl+Alt+F7` on compact keyboards/laptops) to switch to the kiosk UI.
+- Press `Ctrl+Alt+F7` to switch to the kiosk UI (sometimes `Fn+Ctrl+Alt+F7` on compact keyboards/laptops).
+- If you try `Ctrl+Shift+F7`, it will **not** switch TTYs.
 - To go back to the text console, press `Ctrl+Alt+F1`.
 
 ### Windows (Balena Etcher)
