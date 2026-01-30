@@ -276,7 +276,7 @@ if [ "${BOOT_MODE}" != "bios" ]; then
   fi
   if [ -n "${efi_boot_dir}" ] && [ -n "${id_file}" ]; then
     cat >"${efi_boot_dir}/grub.cfg" <<EOF
-# Load partition/filesystem modules early, otherwise `search --file` can drop to a GRUB prompt on some UEFI firmware.
+# Load partition/filesystem modules early; otherwise search --file can drop to a GRUB prompt on some UEFI firmware.
 insmod part_gpt
 insmod part_msdos
 insmod iso9660
