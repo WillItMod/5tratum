@@ -10,6 +10,7 @@ dist/
 *.sig
 *.sha256
 *.download
+installer/work-preseed/
 
 # Runtime / generated
 __pycache__/
