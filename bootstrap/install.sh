@@ -98,6 +98,9 @@ install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot.service" /etc/systemd/s
 install -m 0644 "${SRC_ROOT}/systemd/5tratumos-firstboot-update.service" /etc/systemd/system/5tratumos-firstboot-update.service
 
 if [ -f "${SRC_ROOT}/console/5tratumos-console.sh" ] && [ -f "${SRC_ROOT}/console/5tratumos-console@.service" ]; then
+  if have sed; then
+    sed -i 's/\r$//' "${SRC_ROOT}/console/"*.sh >/dev/null 2>&1 || true
+  fi
   install -m 0755 "${SRC_ROOT}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   if [ -f "${SRC_ROOT}/console/5tratumos-console-vt-switch.sh" ]; then
     install -m 0755 "${SRC_ROOT}/console/5tratumos-console-vt-switch.sh" /usr/local/bin/5tratumos-console-vt-switch

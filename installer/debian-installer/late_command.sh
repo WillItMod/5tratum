@@ -165,6 +165,9 @@ fi
 
 # Install/enable kiosk console (best-effort; it self-gates on /dev/dri/card0).
 if [ "${KIOSK_PACKAGES_OK}" = "1" ] && [ -d "${STAGE_DIR}/console" ] && [ -f "${STAGE_DIR}/console/5tratumos-console.sh" ] && [ -f "${STAGE_DIR}/console/5tratumos-console@.service" ]; then
+  if command -v sed >/dev/null 2>&1; then
+    sed -i 's/\r$//' "${STAGE_DIR}/console/"*.sh >/dev/null 2>&1 || true
+  fi
   install -m 0755 "${STAGE_DIR}/console/5tratumos-console.sh" /usr/local/bin/5tratumos-console
   if [ -f "${STAGE_DIR}/console/5tratumos-console-vt-switch.sh" ]; then
     install -m 0755 "${STAGE_DIR}/console/5tratumos-console-vt-switch.sh" /usr/local/bin/5tratumos-console-vt-switch

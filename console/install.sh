@@ -41,6 +41,11 @@ done
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# Bundles built on Windows may land with CRLF; normalize so systemd can exec scripts via shebang.
+if command -v sed >/dev/null 2>&1; then
+  sed -i 's/\r$//' "${SCRIPT_DIR}"/*.sh >/dev/null 2>&1 || true
+fi
+
 install -m 0755 "${SCRIPT_DIR}/5tratumos-console.sh" /usr/local/bin/5tratumos-console
 if [ -f "${SCRIPT_DIR}/5tratumos-console-vt-switch.sh" ]; then
   install -m 0755 "${SCRIPT_DIR}/5tratumos-console-vt-switch.sh" /usr/local/bin/5tratumos-console-vt-switch
