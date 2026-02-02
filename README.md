@@ -39,8 +39,10 @@ Installer ISOs and Raspberry Pi images are **not attached to every release tag**
 
 ## Requirements
 
-- **USB drive:** 1GB minimum (2GB+ recommended)
-- **RAM:** 16GB absolute minimum
+- **CPU:** Modern x86_64 processor (recommended)
+- **RAM:** 16GB minimum
+- **Storage:** 1TB minimum (2TB recommended)
+- **Installer USB (for ISO installs):** 1GB minimum (2GB+ recommended)
 
 This will not run on a potato. But it will run on a donut. Actually, it runs on donuts.
 
