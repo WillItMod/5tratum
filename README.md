@@ -33,9 +33,9 @@ Installer ISOs and Raspberry Pi images are **not attached to every release tag**
   - Legacy BIOS-only (older hardware / CSM):
     - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-installer-v0.4.0-bios.iso)
     - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-installer-v0.4.0-bios.iso.sha256)
-- **Raspberry Pi (arm64) image (latest published: v0.3.194)**
-  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.3.194/5tratumos-raspios-lite-v0.3.194.img.xz)
-  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.3.194/5tratumos-raspios-lite-v0.3.194.img.xz.sha256)
+- **Raspberry Pi (arm64) image (latest published: v0.4.0)**
+  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-raspios-lite-v0.4.0.img.xz)
+  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-raspios-lite-v0.4.0.img.xz.sha256)
 
 ## Requirements
 
@@ -83,12 +83,22 @@ If you boot and only see a text login prompt (tty1):
 - If you try `Ctrl+Shift+F7`, it will **not** switch TTYs.
 - To go back to the text console, press `Ctrl+Alt+F1`.
 
-### Windows (Balena Etcher)
+### Windows (Rufus) (recommended)
 
-1) Download `5tratumos-installer-<version>.iso` (from the release assets)
-2) Open **Balena Etcher** -> "Flash from file" -> select `5tratumos-installer-<version>.iso`
-3) Select your USB drive -> Flash
-4) Boot the target machine from the USB drive and follow the installer prompts
+Rufus is the most reliable way to create a bootable 5tratumOS USB installer on Windows.
+
+1) Download `5tratumos-installer-<version>-uefi.iso` **or** `5tratumos-installer-<version>-bios.iso` (from the release assets)
+2) Download and run **Rufus** (Windows): https://rufus.ie
+3) In Rufus:
+   - **Device:** select your USB drive
+   - **Boot selection:** select the ISO you downloaded
+   - **Partition scheme:**
+     - UEFI ISO: **GPT**
+     - BIOS ISO: **MBR**
+4) Click **Start** (this will erase the USB drive)
+5) Boot the target machine from the USB drive and follow the installer prompts
+
+If Rufus asks whether to write in **ISO Image mode** or **DD Image mode**, choose **DD Image mode**.
 
 ### Windows (Win32 Disk Imager / "WinImager")
 
