@@ -17,8 +17,14 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 ### OS update bundle (existing installs)
 
 - Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Latest MAIN update bundle: **v0.4.0** (assets: `5tratumos-update.tgz` + `.sha256`)
-  - https://github.com/WillItMod/5tratum/releases/tag/v0.4.0
+- Current published release assets: https://github.com/WillItMod/5tratum/releases/latest
+- Full release history: https://github.com/WillItMod/5tratum/releases
+- Repo tags (often newer than the latest published release page entry): https://github.com/WillItMod/5tratum/tags
+
+Notes:
+- Use the **Releases** page for published update bundles and installer assets.
+- Use the **Tags** page when you need to inspect the current tag train.
+- The latest published release and the latest tag are not always the same thing.
 
 ### Installer media
 
@@ -26,16 +32,27 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 Installer ISOs and Raspberry Pi images are **not attached to every release tag**. If the newest tag does not include these assets, use the **newest tag that does**.
 
-- **AMD/INTEL installer ISO (latest published: v0.4.0)**
-  - UEFI-only (recommended):
-    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-installer-v0.4.0-uefi.iso)
-    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-installer-v0.4.0-uefi.iso.sha256)
-  - Legacy BIOS-only (older hardware / CSM):
-    - [Installer ISO](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-installer-v0.4.0-bios.iso)
-    - [Installer ISO checksum](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-installer-v0.4.0-bios.iso.sha256)
-- **Raspberry Pi (arm64) image (latest published: v0.4.0)**
-  - [RPi image (.img.xz)](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-raspios-lite-v0.4.0.img.xz)
-  - [RPi image checksum](https://github.com/WillItMod/5tratum/releases/download/v0.4.0/5tratumos-raspios-lite-v0.4.0.img.xz.sha256)
+- **Published assets live on the Releases page**
+  - Latest published release: https://github.com/WillItMod/5tratum/releases/latest
+  - All releases: https://github.com/WillItMod/5tratum/releases
+- **AMD/INTEL installer ISO**
+  - Download the newest release that includes:
+    - `5tratumos-installer-<version>-uefi.iso`
+    - `5tratumos-installer-<version>-bios.iso`
+- **Raspberry Pi (arm64) image**
+  - Download the newest release that includes:
+    - `5tratumos-raspios-lite-<version>.img.xz`
+    - the matching `.sha256`
+
+## Related Projects
+
+`5tratumOS` is the host platform and update surface. The app family and store matrix live alongside it:
+
+- Axe app hub: https://github.com/WillItMod/AxeSuite
+- Umbrel main store: https://github.com/WillItMod/umbrel-community-store
+- Umbrel dev store: https://github.com/WillItMod/umbrel-dev-community-store
+
+For the current app matrix, store coverage, and release/changelog pointers, see the AxeSuite docs.
 
 ## Requirements
 
