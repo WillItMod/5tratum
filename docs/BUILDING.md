@@ -1,16 +1,13 @@
 # Building 5tratumOS Artifacts
 
-This repo publishes **release artifacts** (update bundles + hashes) for 5tratumOS.
-The **installer ISO** is built from `WillItMod/5tratum_Build` and embeds the update bundle into a Debian netinst ISO.
+This repo publishes **release artifacts** (update bundles, installer ISOs, Raspberry Pi images, and hashes) for 5tratumOS.
+The installer media is built from `WillItMod/5tratum_Build` and embeds the update bundle into Debian/Raspberry Pi OS install media.
 
-## Proxmox build host
+## Build host
 
-We typically build the installer ISO on the Proxmox host:
+Build media on a Debian/Ubuntu host or VM with enough free disk space for extracted images and ISO work directories. The Raspberry Pi image builder requires Linux loop devices and mount support.
 
-- Host: `192.168.1.254` (`root`)
-- Proxmox ISO storage path: `/var/lib/vz/template/iso/`
-
-## What gets embedded into the installer ISO
+## What gets embedded into the installer media
 
 The Debian preseed installer ISO embeds these files under `/5tratumos/` on the ISO:
 
@@ -18,6 +15,8 @@ The Debian preseed installer ISO embeds these files under `/5tratumos/` on the I
 - `build.json` (writes `/etc/5tratumos/build.json` so the UI shows the correct version)
 - `update.token` (optional; writes `/etc/5tratumos/update.token` for private update repos)
 - `preseed.cfg` + `late_command.sh` automation (installs the payload and enables services)
+
+The Raspberry Pi image embeds the update bundle on the boot partition and enables a one-shot firstboot systemd service that installs 5tratumOS, writes build metadata, enables the kiosk console, and reboots.
 
 ## Build the update bundle (release asset)
 
@@ -33,8 +32,8 @@ cd C:\VSC\5tratumOS
 # MAIN bundle
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-update-bundle.ps1 -BuildTag vX.Y.Z -Channel main -UpdateRepo WillItMod/5tratum
 
-# DEV bundle
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-update-bundle.ps1 -BuildTag vX.Y.Z-dev -Channel dev -UpdateRepo WillItMod/5tratum
+# DEV / prerelease bundle
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-update-bundle.ps1 -BuildTag vX.Y.Z -Channel dev -UpdateRepo WillItMod/5tratum
 ```
 
 Or on Linux:
@@ -51,7 +50,7 @@ On the Proxmox host (or a Debian VM), use the build repo (`WillItMod/5tratum_Bui
 - `installer/debian-installer/preseed.cfg`
 - `installer/debian-installer/late_command.sh`
 
-Example (build tag `vX.Y.Z`, output ISO named with the same tag):
+Example (build tag `vX.Y.Z`, output ISOs named with the same tag):
 
 ```bash
 cd /opt/5tratum_Build/5tratumOS
@@ -62,21 +61,25 @@ ls -la dist/5tratumos-update.tgz
 # Optional: embed token for private update repo
 ls -la /root/update.token
 
-OS_TAG=vX.Y.Z \
-OS_CHANNEL=main \
-UPDATE_TOKEN_FILE=/root/update.token \
-OUT_ISO=dist/5tratumos-installer-vX.Y.Z.iso \
-BUNDLE_TGZ=dist/5tratumos-update.tgz \
-  installer/build-debian-preseed-iso.sh
+OS_TAG=vX.Y.Z OS_CHANNEL=main BOOT_MODE=uefi \
+  OUT_ISO=dist/5tratumos-installer-vX.Y.Z-uefi.iso \
+  BUNDLE_TGZ=dist/5tratumos-update.tgz \
+  bash installer/build-debian-preseed-iso.sh
 
-(cd dist && sha256sum 5tratumos-installer-vX.Y.Z.iso > 5tratumos-installer-vX.Y.Z.iso.sha256)
+OS_TAG=vX.Y.Z OS_CHANNEL=main BOOT_MODE=bios \
+  OUT_ISO=dist/5tratumos-installer-vX.Y.Z-bios.iso \
+  BUNDLE_TGZ=dist/5tratumos-update.tgz \
+  bash installer/build-debian-preseed-iso.sh
 ```
 
-Copy into Proxmox ISO storage for VM testing:
+## Build the Raspberry Pi image
 
 ```bash
-cp -f dist/5tratumos-installer-vX.Y.Z.iso /var/lib/vz/template/iso/
-cp -f dist/5tratumos-installer-vX.Y.Z.iso.sha256 /var/lib/vz/template/iso/
+TRATUMOS_TAG=vX.Y.Z TRATUMOS_CHANNEL=main \
+  BASE_IMG_XZ=/path/to/raspios-lite-arm64.img.xz \
+  BUNDLE_TGZ=dist/5tratumos-update.tgz \
+  OUT_IMG_XZ=dist/5tratumos-raspios-lite-vX.Y.Z.img.xz \
+  bash installer/build-raspios-image.sh
 ```
 
 ## Notes

@@ -9,14 +9,14 @@ Most problems fall into one of these categories:
 This is a Debian-based install path, so the root causes are usually firmware (BIOS/UEFI) boot settings, storage mode (AHCI/VMD), or graphics initialization.
 
 Start here:
-- `docs/install/FIRMWARE.md`
+- [FIRMWARE.md](FIRMWARE.md)
 
 ## Before you change anything
 
 - If possible, **update BIOS/UEFI** to the newest stable version for your model.
 - Take photos/screenshots of your current BIOS/UEFI pages so you can undo changes.
 - Start from "Optimized Defaults" / "Setup Defaults", then apply:
-  - `docs/install/FIRMWARE.md`
+  - [FIRMWARE.md](FIRMWARE.md)
 
 ## 1) Installer won’t boot (blank screen / reboots / “not bootable”)
 
@@ -33,7 +33,7 @@ Try this, in order:
    - Example: `UEFI: <USB name>` (preferred) vs `<USB name>` (Legacy)
 3) **Disable Fast Boot**.
 4) Re-flash the USB (Etcher recommended) and verify the download checksum:
-   - `docs/install/VERIFY.md`
+   - [VERIFY.md](VERIFY.md)
 5) Try a different USB port (rear ports often work best; some systems prefer USB2 for installers).
 
 If your release tag includes a diagnostics ISO, try it to confirm your hardware can boot the media.
@@ -91,4 +91,4 @@ If the local display remains unstable:
 ## Hardware-specific guides
 
 If you want menu paths for common mini PCs (including Beelink), see:
-- `docs/hardware/firmware/README.md`
+- [hardware firmware guides](../hardware/firmware/README.md)

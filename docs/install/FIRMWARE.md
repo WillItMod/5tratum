@@ -5,7 +5,7 @@ If these settings are not configured correctly, **5tratumOS may not boot**, the 
 BIOS/UEFI menus vary by vendor and firmware version, so look for **similar wording** if the exact option name differs.
 
 If you’re stuck in one of the common situations (installer won’t boot, fails after reboot, issues when disabling kiosk mode), also see:
-- `docs/install/TROUBLESHOOTING.md`
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ## Quick checklist (recommended)
 
@@ -93,4 +93,3 @@ Not required, but often helps on quirky hardware:
 - Update BIOS/UEFI to the latest stable version.
 - Load "Optimized Defaults" / "Setup Defaults", then apply the checklist above.
 - Disable CPU/memory overclocks (XMP/EXPO/PBO) until the system is stable.
-

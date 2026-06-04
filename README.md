@@ -1,6 +1,8 @@
-# 5tratumOS (Installer & Releases)
+# 5tratumOS
 
 [![License: BUSL 1.1](https://img.shields.io/badge/license-BUSL%201.1-orange)](LICENSE)
+
+5tratumOS is the host platform, WebUI, update surface, and install media for running the 5tratum/AxeSuite app family on dedicated hardware.
 
 ## License (READ THIS FIRST)
 
@@ -14,28 +16,42 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ## Downloads
 
+### Current BETA pre-release
+
+`v0.5.00` is published as a **BETA pre-release** for dev-channel validation before main-channel promotion:
+
+- Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+- Raspberry Pi image: `5tratumos-raspios-lite-v0.5.00.img.xz`
+- UEFI installer ISO: `5tratumos-installer-v0.5.00-uefi.iso`
+- BIOS installer ISO: `5tratumos-installer-v0.5.00-bios.iso`
+- Update bundle: `5tratumos-update-v0.5.00.tgz`
+
+Use `Settings -> Updates` and select the **dev** channel to pick up this pre-release on an existing install.
+
 ### OS update bundle (existing installs)
 
 - Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Current published release assets: https://github.com/WillItMod/5tratum/releases/latest
+- Latest stable/main release: https://github.com/WillItMod/5tratum/releases/latest
 - Full release history: https://github.com/WillItMod/5tratum/releases
-- Repo tags (often newer than the latest published release page entry): https://github.com/WillItMod/5tratum/tags
+- Repo tags: https://github.com/WillItMod/5tratum/tags
 
 Notes:
 - Use the **Releases** page for published update bundles and installer assets.
-- Use the **Tags** page when you need to inspect the current tag train.
-- The latest published release and the latest tag are not always the same thing.
+- Main-channel systems follow the latest non-prerelease release.
+- Dev-channel systems follow pre-releases/dev builds.
+- The latest tag, latest pre-release, and latest stable release are not always the same thing.
 
 ### Installer media
 
-**AMD/INTEL only (x86_64 / amd64) for the installer ISO.**
+**Installer ISOs are for AMD/Intel x86_64 hardware. Raspberry Pi uses the arm64 image.**
 
-Installer ISOs and Raspberry Pi images are **not attached to every release tag**. If the newest tag does not include these assets, use the **newest tag that does**.
+Installer ISOs and Raspberry Pi images are not attached to every release tag. If the newest stable tag does not include these assets, use the newest release that does.
 
 - **Published assets live on the Releases page**
-  - Latest published release: https://github.com/WillItMod/5tratum/releases/latest
+  - Current BETA media release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+  - Latest stable/main release: https://github.com/WillItMod/5tratum/releases/latest
   - All releases: https://github.com/WillItMod/5tratum/releases
-- **AMD/INTEL installer ISO**
+- **AMD/Intel installer ISO**
   - Download the newest release that includes:
     - `5tratumos-installer-<version>-uefi.iso`
     - `5tratumos-installer-<version>-bios.iso`
@@ -56,12 +72,15 @@ For the current app matrix, store coverage, and release/changelog pointers, see 
 
 ## Requirements
 
-- **CPU:** Modern x86_64 processor (recommended)
-- **RAM:** 16GB minimum
-- **Storage:** 1TB minimum (2TB recommended)
-- **Installer USB (for ISO installs):** 1GB minimum (2GB+ recommended)
+- **x86 CPU:** 64-bit AMD/Intel processor. UEFI is recommended; legacy BIOS/CSM media is available for older systems.
+- **x86 RAM:** 16GB minimum. 32GB+ is recommended if you run multiple full-node apps.
+- **x86 storage:** SSD/NVMe strongly recommended. 1TB minimum for serious use; 2TB+ recommended for multiple chains/apps.
+- **Raspberry Pi:** Raspberry Pi 4/5, 64-bit arm64. 8GB RAM is recommended.
+- **Raspberry Pi storage:** 64GB microSD/SSD minimum for the OS; external SSD/NVMe is recommended for app data and chain storage.
+- **Network:** Wired Ethernet is strongly recommended for mining/node workloads.
+- **Installer USB:** 2GB+ USB drive for ISO installs.
 
-This will not run on a potato. But it will run on a donut. Actually, it runs on donuts.
+Actual app requirements vary by chain and workload. Full nodes and multi-app fleets need more RAM, disk, and sustained cooling than a basic dashboard-only test install.
 
 ## Flashing / Install
 
@@ -79,10 +98,12 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
   - The IP is shown in the top bar of the WebUI once it loads.
   - Router/DHCP list: look for hostname `5tratumos`.
   - mDNS: try `http://5tratumos.local/`
-  - Local console: press `Ctrl+Alt+F1` and run `ip a`
-- SSH (enabled by default):
+  - Local console on x86 installs: press `Ctrl+Alt+F1` and run `ip a`
+- SSH on x86 ISO installs:
   - Username: `forge`
   - Password: `5tratum`
+- SSH on Raspberry Pi images:
+  - Create/enable the SSH user in Raspberry Pi Imager OS Customisation before flashing, or use a local keyboard/monitor.
 
 ## Local Console (Kiosk) on physical hardware
 
@@ -120,6 +141,6 @@ If Rufus asks whether to write in **ISO Image mode** or **DD Image mode**, choos
 ### Windows (Win32 Disk Imager / "WinImager")
 
 1) Open **Win32 Disk Imager**
-2) Select `5tratumos-installer-<version>.iso` (you may need to choose "*.* / All files")
+2) Select `5tratumos-installer-<version>-uefi.iso` or `5tratumos-installer-<version>-bios.iso` (you may need to choose "*.* / All files")
 3) Select the correct USB drive letter -> Write
 4) Boot the target machine from the USB drive and follow the installer prompts

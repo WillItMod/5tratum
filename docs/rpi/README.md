@@ -1,23 +1,30 @@
-﻿# Raspberry Pi (arm64) Install
+# Raspberry Pi (arm64) Install
 
 This guide is for the **Raspberry Pi image** distributed in GitHub Releases.
 
 ## Supported
 
 - Raspberry Pi **4 / 5** (64-bit / arm64)
-- microSD card (16GB+ recommended)
+- 8GB RAM recommended
+- 64GB+ microSD/SSD for the OS
+- External SSD/NVMe strongly recommended for app data and chain storage
+- Wired Ethernet recommended
 
 ## Download
 
 From the release assets:
 
-- `5tratumos-raspios-*.img.xz`
-- `5tratumos-raspios-*.img.xz.sha256`
+- `5tratumos-raspios-lite-v<version>.img.xz`
+- `5tratumos-raspios-lite-v<version>.img.xz.sha256`
 
-Release page:
+Current BETA pre-release:
+- https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+
+All releases:
 - https://github.com/WillItMod/5tratum/releases
 
-At the time of writing, the newest Raspberry Pi image is under tag **v0.3.184** (asset `5tratumos-raspios-lite-v0.3.184.img.xz`).
+At the time of writing, the newest BETA Raspberry Pi image is under tag **v0.5.00**:
+- `5tratumos-raspios-lite-v0.5.00.img.xz`
 
 ## Flash with Raspberry Pi Imager (recommended)
 
@@ -25,6 +32,8 @@ At the time of writing, the newest Raspberry Pi image is under tag **v0.3.184** 
 2) Click **Choose OS** -> **Use custom**
 3) Select the downloaded `.img.xz`
 4) Click the **gear / settings** (OS Customisation) and set:
+   - Hostname (optional)
+   - Username + password (recommended if you want SSH access)
    - Wi-Fi SSID + password (optional)
    - Locale/keyboard (recommended)
    - Enable SSH (recommended)
@@ -35,12 +44,20 @@ At the time of writing, the newest Raspberry Pi image is under tag **v0.3.184** 
 - Boot the Pi from the microSD card.
 - Find the device on your network (router/DHCP list).
 - Open the UI in a browser: `http://<pi-ip>/`
+- The first boot installs 5tratumOS from the embedded bundle and may reboot once.
+- First boot can take several minutes. If the dashboard does not load immediately, wait and check again.
+
+Useful debug log if the dashboard does not appear:
+
+```sh
+sudo cat /var/log/5tratumos-rpi-firstboot-install.log
+```
 
 ## Verify download (optional)
 
 Use the checksum guide:
 
-- `docs/install/VERIFY.md`
+- [VERIFY.md](../install/VERIFY.md)
 
 ## Raspberry Pi 5: external NVMe not detected
 

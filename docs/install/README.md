@@ -1,14 +1,21 @@
 # Install 5tratumOS
 
-5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer ISO.
+5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer media.
+
+- Current BETA pre-release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+- Latest stable/main release: https://github.com/WillItMod/5tratum/releases/latest
+- Full release history: https://github.com/WillItMod/5tratum/releases
 
 ## Requirements
 
-- **CPU:** AMD/INTEL only (x86_64 / amd64)
-- **RAM:** 16GB absolute minimum
-- **USB drive:** 1GB minimum (2GB+ recommended)
+- **CPU:** 64-bit AMD/Intel processor for installer ISO installs.
+- **Firmware:** UEFI recommended. Use the BIOS ISO only for legacy BIOS/CSM systems.
+- **RAM:** 16GB minimum; 32GB+ recommended for multiple full-node apps.
+- **Storage:** SSD/NVMe strongly recommended. 1TB minimum for serious use; 2TB+ recommended for multiple chains/apps.
+- **Network:** Wired Ethernet recommended.
+- **USB drive:** 2GB+ for installer USB media.
 
-This will not run on a potato. But it will run on a donut. Actually, it runs on donuts.
+Raspberry Pi uses a separate arm64 image. See [Raspberry Pi install](../rpi/README.md).
 
 ## Get the installer ISO (x86_64 / amd64)
 
@@ -20,15 +27,15 @@ This will not run on a potato. But it will run on a donut. Actually, it runs on 
 - `5tratumos-installer-v<version>-bios.iso` (legacy BIOS/CSM only)
 - matching `.sha256`
 
-At the time of writing, the newest installer ISOs are under tag **v0.3.193**.
+At the time of writing, the newest BETA installer ISOs are under tag **v0.5.00**.
 
-Note: release asset filenames are versioned (e.g. `...-v0.3.193-uefi.iso`).
+Note: release asset filenames are versioned (for example, `5tratumos-installer-v0.5.00-uefi.iso`).
 
 ## Downloads (per release)
 
 Releases include:
 
-1) **Installer ISO (AMD/INTEL)** (recommended for fresh installs)
+1) **Installer ISO (AMD/Intel)** (recommended for fresh x86 installs)
    - Filename:
      - `5tratumos-installer-v<version>-uefi.iso` (recommended)
      - `5tratumos-installer-v<version>-bios.iso` (legacy BIOS/CSM)
@@ -36,48 +43,64 @@ Releases include:
    - Works for: Proxmox/VM CD-ROM boot, USB stick boot (Etcher/Rufus), and writing the installer ISO directly to a drive.
 
 2) **Raspberry Pi image (arm64)** (when published)
-   - Filename: `5tratumos-raspios-*.img.xz`
-   - Purpose: flash directly to microSD, then boot and configure via Raspberry Pi Imager options.
+   - Filename: `5tratumos-raspios-lite-v<version>.img.xz`
+   - Purpose: flash directly to microSD/SSD, then boot on a Raspberry Pi 4/5.
 
-If you're unsure: use the **Installer ISO** (AMD/INTEL).
+If you're installing on AMD/Intel hardware and are unsure, use the **UEFI installer ISO**.
 
 ## Before you start
 
 - Back up anything important. The installer will wipe the selected disk.
-- Use a **USB stick (1GB+)** for the installer, or attach the ISO to a VM.
+- Use a **USB stick (2GB+)** for the installer, or attach the ISO to a VM.
 - Configure firmware (BIOS/UEFI) correctly or the installer may not boot/see your disk:
-  - `docs/install/FIRMWARE.md`
+  - [FIRMWARE.md](FIRMWARE.md)
 - If you hit a common failure mode, see:
-  - `docs/install/TROUBLESHOOTING.md`
+  - [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 - After install completes, remove the USB/ISO and reboot into the installed OS.
 
 ## Proxmox / VM
 
 1. Create a VM (UEFI recommended).
-2. Attach `5tratumos-installer-v<version>.iso` as a CD-ROM.
+2. Attach `5tratumos-installer-v<version>-uefi.iso` as a CD-ROM.
 3. Boot the VM and follow the on-screen installer prompts.
 4. When the installer finishes, detach the ISO and reboot.
 
+## Physical hardware (USB via Rufus on Windows)
+
+1. Download `5tratumos-installer-v<version>-uefi.iso` or `5tratumos-installer-v<version>-bios.iso` from the Release assets.
+2. (Optional) Verify the download: [VERIFY.md](VERIFY.md)
+3. Open **Rufus**: https://rufus.ie
+4. Select your USB drive and the downloaded ISO.
+5. Choose:
+   - UEFI ISO: GPT
+   - BIOS ISO: MBR
+6. If Rufus asks for write mode, choose **DD Image mode**.
+7. Boot the target machine from the USB stick.
+8. Follow the installer prompts to select the target disk and confirm the wipe.
+9. When finished:
+   - Remove the USB stick
+   - Reboot
+
 ## Physical hardware (USB via Balena Etcher)
 
-1. Download `5tratumos-installer-v<version>.iso` from the Release assets.
-2. (Optional) Verify the download: `docs/install/VERIFY.md`
-3. Open **Balena Etcher**:
-   - Flash from file: `5tratumos-installer-v<version>.iso`
-   - Select target: your USB stick
-   - Flash
-4. Boot the target machine from the USB stick.
-5. Follow the installer prompts to select the target disk and confirm the wipe.
-6. When finished:
+1. Download `5tratumos-installer-v<version>-uefi.iso` or `5tratumos-installer-v<version>-bios.iso` from the Release assets.
+2. (Optional) Verify the download: [VERIFY.md](VERIFY.md)
+3. Open **Balena Etcher**.
+4. Flash from file: `5tratumos-installer-v<version>-uefi.iso` or `5tratumos-installer-v<version>-bios.iso`.
+5. Select target: your USB stick.
+6. Flash.
+7. Boot the target machine from the USB stick.
+8. Follow the installer prompts to select the target disk and confirm the wipe.
+9. When finished:
    - Remove the USB stick
    - Reboot
 
 ## Physical hardware (USB via Win32 Disk Imager / "WinImager")
 
-1. Download `5tratumos-installer-v<version>.iso` from the Release assets.
-2. (Optional) Verify the download: `docs/install/VERIFY.md`
+1. Download `5tratumos-installer-v<version>-uefi.iso` or `5tratumos-installer-v<version>-bios.iso` from the Release assets.
+2. (Optional) Verify the download: [VERIFY.md](VERIFY.md)
 3. Open **Win32 Disk Imager**:
-   - Image file: select `5tratumos-installer-v<version>.iso` (you may need to choose "*.* / All files")
+   - Image file: select `5tratumos-installer-v<version>-uefi.iso` or `5tratumos-installer-v<version>-bios.iso` (you may need to choose "*.* / All files")
    - Device: select your USB drive letter
    - Write
 4. Boot the target machine from the USB stick.
@@ -89,4 +112,4 @@ If you're unsure: use the **Installer ISO** (AMD/INTEL).
 ## Physical hardware (direct-to-drive)
 
 If you want to write the installer ISO to a drive without Etcher (advanced), see:
-- `docs/install/WRITE_DIRECT.md`
+- [WRITE_DIRECT.md](WRITE_DIRECT.md)
