@@ -17,7 +17,7 @@ From the release assets:
 - `5tratumos-raspios-lite-v<version>.img.xz`
 - `5tratumos-raspios-lite-v<version>.img.xz.sha256`
 
-Current BETA pre-release:
+Current BETA release:
 - https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
 
 All releases:

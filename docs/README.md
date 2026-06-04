@@ -4,8 +4,8 @@ This repo publishes 5tratumOS **release artifacts** via GitHub Releases.
 
 Release/navigation shortcuts:
 
-- Current BETA pre-release: `https://github.com/WillItMod/5tratum/releases/tag/v0.5.00`
-- Latest stable/main release: `https://github.com/WillItMod/5tratum/releases/latest`
+- Current BETA release: `https://github.com/WillItMod/5tratum/releases/tag/v0.5.00`
+- Latest main-channel release: `https://github.com/WillItMod/5tratum/releases/latest`
 - Full release history: `https://github.com/WillItMod/5tratum/releases`
 - Repo tags: `https://github.com/WillItMod/5tratum/tags`
 

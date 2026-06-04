@@ -16,9 +16,9 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ## Downloads
 
-### Current BETA pre-release
+### Current BETA release
 
-`v0.5.00` is published as a **BETA pre-release** for dev-channel validation before main-channel promotion:
+`v0.5.00` is published as the current **BETA main-channel release**:
 
 - Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
 - Raspberry Pi image: `5tratumos-raspios-lite-v0.5.00.img.xz`
@@ -26,12 +26,12 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 - BIOS installer ISO: `5tratumos-installer-v0.5.00-bios.iso`
 - Update bundle: `5tratumos-update-v0.5.00.tgz`
 
-Use `Settings -> Updates` and select the **dev** channel to pick up this pre-release on an existing install.
+Use `Settings -> Updates` and select the **main** channel to pick up this release on an existing install.
 
 ### OS update bundle (existing installs)
 
 - Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Latest stable/main release: https://github.com/WillItMod/5tratum/releases/latest
+- Latest main-channel release: https://github.com/WillItMod/5tratum/releases/latest
 - Full release history: https://github.com/WillItMod/5tratum/releases
 - Repo tags: https://github.com/WillItMod/5tratum/tags
 
@@ -39,7 +39,7 @@ Notes:
 - Use the **Releases** page for published update bundles and installer assets.
 - Main-channel systems follow the latest non-prerelease release.
 - Dev-channel systems follow pre-releases/dev builds.
-- The latest tag, latest pre-release, and latest stable release are not always the same thing.
+- The latest tag, latest dev pre-release, and latest main-channel release are not always the same thing.
 
 ### Installer media
 
@@ -49,7 +49,7 @@ Installer ISOs and Raspberry Pi images are not attached to every release tag. If
 
 - **Published assets live on the Releases page**
   - Current BETA media release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
-  - Latest stable/main release: https://github.com/WillItMod/5tratum/releases/latest
+  - Latest main-channel release: https://github.com/WillItMod/5tratum/releases/latest
   - All releases: https://github.com/WillItMod/5tratum/releases
 - **AMD/Intel installer ISO**
   - Download the newest release that includes:
