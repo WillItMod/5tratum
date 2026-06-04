@@ -39,6 +39,24 @@ At the time of writing, the newest BETA Raspberry Pi image is under tag **v0.5.0
    - Enable SSH (recommended)
 5) Choose your SD card -> **Write**
 
+## Install over SSH on Raspberry Pi OS Lite
+
+If you already have a Raspberry Pi running Raspberry Pi OS Lite 64-bit, you can
+install 5tratumOS over SSH:
+
+```sh
+ssh -t <user>@<pi-ip> "curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh -o /tmp/install-rpi.sh && sudo env CHANNEL=main bash /tmp/install-rpi.sh"
+```
+
+Example:
+
+```sh
+ssh -t pi@192.168.1.50 "curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh -o /tmp/install-rpi.sh && sudo env CHANNEL=main bash /tmp/install-rpi.sh"
+```
+
+The bootstrap installer defaults to the current BETA main-channel bundle:
+`v0.5.00`.
+
 ## First boot
 
 - Boot the Pi from the microSD card.
