@@ -95,7 +95,13 @@ if [ -n "$BOOT_LOCAL" ]; then
   BOOT_UTC_MINUTE="$(date -u -d "$BOOT_LOCAL" +%Y-%m-%dT%H:%M 2>/dev/null)"
 fi
 
-CRASH_BOOT_COUNT="$(last -x reboot shutdown 2>/dev/null | head -80 | grep -c 'crash' || true)"
+CRASH_BOOT_COUNT_LAST_HISTORY="$(last -x reboot shutdown 2>/dev/null | head -80 | grep -c 'crash' || true)"
+LAST_SINCE_48="$(date -d '48 hours ago' +%Y%m%d%H%M%S 2>/dev/null)"
+if [ -n "$LAST_SINCE_48" ]; then
+  CRASH_BOOT_COUNT_48="$(last -x -s "$LAST_SINCE_48" reboot shutdown 2>/dev/null | grep -c 'crash' || true)"
+else
+  CRASH_BOOT_COUNT_48="unknown"
+fi
 DOCKER_START_COUNT="$(capture "journalctl -u docker --since '48 hours ago' --no-pager | grep -c 'Starting docker.service\\|Starting Docker' || true")"
 OOM_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'out of memory|oom-kill|killed process' || true")"
 DIRTY_STORAGE_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'orphan cleanup|not properly unmounted|journal.*corrupt|filesystem.*corrupt|EXT4-fs error|FAT-fs.*corrupt|fsck' || true")"
@@ -118,7 +124,8 @@ echo "Output file: $OUT"
 section "QUICK VERDICT"
 echo "Uptime now: ${UPTIME_HUMAN:-unknown}"
 echo "Current boot time: ${BOOT_LOCAL:-unknown}"
-echo "Crash-labelled boots in recent last(1) history: ${CRASH_BOOT_COUNT:-unknown}"
+echo "Crash-labelled boots in last 48h: ${CRASH_BOOT_COUNT_48:-unknown}"
+echo "Crash-labelled boots in visible last(1) history: ${CRASH_BOOT_COUNT_LAST_HISTORY:-unknown}"
 echo "Docker service starts in last 48h: ${DOCKER_START_COUNT:-unknown}"
 echo "Kernel OOM kills in last 48h: ${OOM_COUNT:-unknown}"
 echo "Dirty filesystem / unclean shutdown signs in last 48h: ${DIRTY_STORAGE_COUNT:-unknown}"
@@ -141,7 +148,7 @@ fi
 
 if [ "${OOM_COUNT:-0}" -gt 0 ]; then
   echo "Interpretation: at least one OOM event is present. Check OOM details below."
-elif [ "${CRASH_BOOT_COUNT:-0}" -gt 0 ] || [ "${DIRTY_STORAGE_COUNT:-0}" -gt 0 ]; then
+elif [ "${CRASH_BOOT_COUNT_48:-0}" != "unknown" ] && [ "${CRASH_BOOT_COUNT_48:-0}" -gt 0 ] || [ "${DIRTY_STORAGE_COUNT:-0}" -gt 0 ]; then
   echo "Interpretation: strongest evidence points to unclean host/Docker stops, not an app-only crash."
 else
   echo "Interpretation: no obvious OOM or dirty-shutdown proof in the quick counters. Review raw previous boot tails below."
