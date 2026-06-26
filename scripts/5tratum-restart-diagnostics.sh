@@ -45,6 +45,31 @@ sudo_run() {
   "${SUDO[@]}" "$@"
 }
 
+install_tool_packages() {
+  missing_packages=()
+
+  command -v smartctl >/dev/null 2>&1 || missing_packages+=("smartmontools")
+  command -v nvme >/dev/null 2>&1 || missing_packages+=("nvme-cli")
+  command -v dmidecode >/dev/null 2>&1 || missing_packages+=("dmidecode")
+  command -v lspci >/dev/null 2>&1 || missing_packages+=("pciutils")
+  command -v sensors >/dev/null 2>&1 || missing_packages+=("lm-sensors")
+  command -v fsck.vfat >/dev/null 2>&1 || missing_packages+=("dosfstools")
+
+  if [ "${#missing_packages[@]}" -eq 0 ]; then
+    echo "All preferred diagnostic tools are already installed."
+    return
+  fi
+
+  echo "Missing diagnostic packages: ${missing_packages[*]}"
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "apt-get not found, cannot install missing diagnostic tools."
+    return
+  fi
+
+  sudo_run apt-get update
+  sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_packages[@]}"
+}
+
 capture() {
   "${SUDO[@]}" sh -c "$1" 2>/dev/null
 }
@@ -122,6 +147,11 @@ hostname
 whoami
 echo "Output file: $OUT"
 
+section "DIAGNOSTIC TOOL SETUP"
+echo "Installing missing diagnostic tools if needed: smartmontools, nvme-cli, dmidecode, pciutils, lm-sensors, dosfstools."
+echo "These tools are used for hardware/firmware/drive inspection only."
+install_tool_packages
+
 section "QUICK VERDICT"
 echo "Uptime now: ${UPTIME_HUMAN:-unknown}"
 echo "Current boot time: ${BOOT_LOCAL:-unknown}"
@@ -179,6 +209,16 @@ if command -v dmidecode >/dev/null 2>&1; then
   sudo_run dmidecode -t bios -t system -t baseboard -t chassis
 else
   echo "dmidecode not installed. Firmware/board details unavailable."
+fi
+if command -v lspci >/dev/null 2>&1; then
+  sudo_run lspci -nnk
+else
+  echo "lspci not installed. PCI device details unavailable."
+fi
+if command -v sensors >/dev/null 2>&1; then
+  run sensors
+else
+  echo "lm-sensors not installed. Temperature sensor snapshot unavailable."
 fi
 
 section "PSTORE / KERNEL CRASH DUMPS"
