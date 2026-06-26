@@ -5,6 +5,8 @@ set +e
 # Read-only: does not restart services, stop containers, repair filesystems,
 # edit configuration, wipe data, or install packages.
 
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
 if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ -d "/home/${SUDO_USER}" ]; then
   OUT_DIR="/home/${SUDO_USER}"
 else
@@ -68,6 +70,7 @@ install_tool_packages() {
 
   sudo_run apt-get update
   sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_packages[@]}"
+  hash -r 2>/dev/null || true
 }
 
 capture() {
