@@ -245,3 +245,17 @@ date -Is
 echo
 echo "Saved diagnostic file to:"
 echo "$OUT"
+echo
+echo "WHAT TO SEND BACK"
+echo "Send the .txt file above if you can."
+echo "If copying from SSH is easier, copy everything shown in this window."
+echo
+echo "To print the saved file again later, run:"
+echo "cat \"$OUT\""
+echo
+echo "To show the newest diagnostics file path, run:"
+echo "ls -1t \"${OUT_DIR}\"/5tratum-diagnostics-*.txt | head -1"
+
+if [ "${EUID:-$(id -u)}" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then
+  chown "${SUDO_USER}:${SUDO_USER}" "$OUT" 2>/dev/null || true
+fi
