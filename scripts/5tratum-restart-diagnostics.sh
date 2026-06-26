@@ -106,7 +106,8 @@ DOCKER_START_COUNT="$(capture "journalctl -u docker --since '48 hours ago' --no-
 OOM_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'out of memory|oom-kill|killed process' || true")"
 DIRTY_STORAGE_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'orphan cleanup|not properly unmounted|journal.*corrupt|filesystem.*corrupt|EXT4-fs error|FAT-fs.*corrupt|fsck' || true")"
 NVME_ERROR_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'nvme.*reset|nvme.*timeout|nvme.*abort|I/O error|blk_update_request|Buffer I/O error' || true")"
-THERMAL_WATCHDOG_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'thermal|watchdog|panic|hung task|blocked for more than|mce|machine check|hardware error' || true")"
+CRITICAL_HARDWARE_COUNT="$(capture "journalctl -k --since '48 hours ago' --no-pager | grep -Eic 'thermal shutdown|critical temperature|temperature above threshold|watchdog.*(hard|soft|lockup|timeout|reset|bite|panic)|soft lockup|hard lockup|kernel panic|panic:|hung task|blocked for more than|mce|machine check|hardware error|NMI.*hard lockup' || true")"
+PSTORE_COUNT="$(capture "test -d /sys/fs/pstore && find /sys/fs/pstore -type f 2>/dev/null | wc -l || echo 0")"
 
 DGB_STARTED="$(first_started_for_pattern 'axedgb|digibyte|dgbd')"
 BCH_STARTED="$(first_started_for_pattern 'axebch|bitcoin-cash|bitcoincash|bchn|bchd')"
@@ -130,7 +131,8 @@ echo "Docker service starts in last 48h: ${DOCKER_START_COUNT:-unknown}"
 echo "Kernel OOM kills in last 48h: ${OOM_COUNT:-unknown}"
 echo "Dirty filesystem / unclean shutdown signs in last 48h: ${DIRTY_STORAGE_COUNT:-unknown}"
 echo "NVMe / block I/O error signs in last 48h: ${NVME_ERROR_COUNT:-unknown}"
-echo "Thermal / watchdog / panic / hardware error signs in last 48h: ${THERMAL_WATCHDOG_COUNT:-unknown}"
+echo "Critical thermal / watchdog / panic / hardware error signs in last 48h: ${CRITICAL_HARDWARE_COUNT:-unknown}"
+echo "Kernel crash dump files in /sys/fs/pstore: ${PSTORE_COUNT:-unknown}"
 echo "Earliest AxeDGB-related container start: ${DGB_STARTED:-not found}"
 echo "Earliest AxeBCH-related container start: ${BCH_STARTED:-not found}"
 
@@ -170,6 +172,22 @@ run sh -c 'top -b -n1 | head -35'
 [ -r /proc/pressure/cpu ] && run cat /proc/pressure/cpu
 [ -r /proc/pressure/memory ] && run cat /proc/pressure/memory
 [ -r /proc/pressure/io ] && run cat /proc/pressure/io
+
+section "FIRMWARE / BOARD"
+run hostnamectl
+if command -v dmidecode >/dev/null 2>&1; then
+  sudo_run dmidecode -t bios -t system -t baseboard -t chassis
+else
+  echo "dmidecode not installed. Firmware/board details unavailable."
+fi
+
+section "PSTORE / KERNEL CRASH DUMPS"
+if "${SUDO[@]}" test -d /sys/fs/pstore; then
+  sudo_run sh -c 'ls -la /sys/fs/pstore || true'
+  sudo_run sh -c 'for f in /sys/fs/pstore/*; do [ -f "$f" ] || continue; echo; echo "---- $f ----"; sed -n "1,220p" "$f" 2>/dev/null || strings "$f" 2>/dev/null | head -220 || true; done'
+else
+  echo "/sys/fs/pstore is not available. Kernel panic/watchdog crash dumps were not captured."
+fi
 
 section "DISK / MOUNTS"
 run sh -c 'df -hT -x overlay -x tmpfs -x devtmpfs -x squashfs 2>/dev/null || df -h'
@@ -239,7 +257,7 @@ if [ "${#DOCKER[@]}" -gt 0 ]; then
 fi
 
 section "CURRENT BOOT KERNEL FLAGS"
-sudo_run sh -c 'journalctl -k -b 0 --no-pager -o short-iso | grep -Ei "oom|killed process|nvme|i/o error|blk_update|ext4|fat-fs|fsck|orphan|corrupt|reset|watchdog|thermal|panic|mce|machine check|hardware error|segfault|hung task|blocked for more than" | tail -300 || true'
+sudo_run sh -c 'journalctl -k -b 0 --no-pager -o short-iso | grep -Ei "oom|killed process|nvme|i/o error|blk_update|ext4|fat-fs|fsck|orphan|corrupt|reset|thermal shutdown|critical temperature|temperature above threshold|watchdog.*(hard|soft|lockup|timeout|reset|bite|panic)|soft lockup|hard lockup|kernel panic|panic:|mce|machine check|hardware error|segfault|hung task|blocked for more than" | tail -300 || true'
 
 section "PREVIOUS BOOT RAW TAIL"
 sudo_run sh -c 'journalctl -b -1 --no-pager -o short-iso 2>/dev/null | tail -500 || true'
@@ -251,8 +269,16 @@ section "PREVIOUS 5 BOOT ERROR SUMMARIES"
 for BOOT in -1 -2 -3 -4 -5; do
   echo
   echo "---- BOOT $BOOT ----"
-  sudo_run sh -c "journalctl -b '$BOOT' --no-pager -o short-iso 2>/dev/null | grep -Ei 'shutdown|reboot|power|thermal|panic|watchdog|mce|machine check|hardware error|error|fail|nvme|i/o error|ext4|fat-fs|fsck|docker|container|killed|oom|invalid character|stale sandbox|segfault|hung task|blocked for more than' | tail -180 || true"
+  sudo_run sh -c "journalctl -b '$BOOT' --no-pager -o short-iso 2>/dev/null | grep -Ei 'shutdown|reboot|power key|power button|ACPI.*button|thermal shutdown|critical temperature|temperature above threshold|panic|watchdog.*(hard|soft|lockup|timeout|reset|bite|panic)|soft lockup|hard lockup|kernel panic|mce|machine check|hardware error|error|fail|nvme|i/o error|ext4|fat-fs|fsck|docker|container|killed|oom|invalid character|stale sandbox|segfault|hung task|blocked for more than' | tail -180 || true"
 done
+
+section "POWER / WATCHDOG / REBOOT SOURCE HINTS"
+sudo_run sh -c 'journalctl --since "48 hours ago" --no-pager -o short-iso | grep -Ei "power key|power button|ACPI.*button|systemd-logind.*Power|reboot:|Restarting system|systemd-shutdown|shutdown.target|reboot.target|poweroff.target|watchdog.*(hard|soft|lockup|timeout|reset|bite|panic)|soft lockup|hard lockup|kernel panic|panic:|thermal shutdown|critical temperature|temperature above threshold|mce|machine check|hardware error" | tail -300 || true'
+
+section "WATCHDOG / REBOOT UNITS"
+run sh -c 'systemctl list-units --all --no-pager | grep -Ei "watchdog|reboot|shutdown|power" || true'
+run sh -c 'systemctl list-timers --all --no-pager | grep -Ei "watchdog|reboot|shutdown|power" || true'
+sudo_run sh -c 'grep -RIE "WatchdogSec|RuntimeWatchdogSec|ShutdownWatchdogSec|reboot|shutdown|poweroff" /etc/systemd /lib/systemd/system /usr/lib/systemd/system 2>/dev/null | head -220 || true'
 
 section "DOCKER JOURNAL LAST 48 HOURS"
 sudo_run sh -c 'journalctl -u docker --since "48 hours ago" --no-pager -o short-iso | grep -Ei "Starting Docker|Started Docker|Starting docker.service|Started docker.service|Docker daemon|Daemon shutdown|stale sandbox|invalid character|Error streaming logs|ShouldRestart|failed|error|oom|killed|restart|container|manuallyStopped" | tail -500 || true'
