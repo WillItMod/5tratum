@@ -18,13 +18,13 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ### Current BETA release
 
-`v0.5.00` is published as the current **BETA main-channel release**:
+`v0.5.4` is published as the current **BETA main-channel update release**:
 
-- Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
-- Raspberry Pi image: `5tratumos-raspios-lite-v0.5.00.img.xz`
-- UEFI installer ISO: `5tratumos-installer-v0.5.00-uefi.iso`
-- BIOS installer ISO: `5tratumos-installer-v0.5.00-bios.iso`
-- Update bundle: `5tratumos-update-v0.5.00.tgz`
+- Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.4
+- Update bundle: `5tratumos-update-v0.5.4.tgz`
+
+Fresh-install media remains under `v0.5.00`. After installation, use the main
+update channel to move to `v0.5.4`.
 
 Use `Settings -> Updates` and select the **main** channel to pick up this release on an existing install.
 

@@ -54,8 +54,8 @@ Example:
 ssh -t pi@192.168.1.50 "curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh -o /tmp/install-rpi.sh && sudo env CHANNEL=main bash /tmp/install-rpi.sh"
 ```
 
-The bootstrap installer defaults to the current BETA main-channel bundle:
-`v0.5.00`.
+The bootstrap installer follows the current BETA main-channel bundle, presently
+`v0.5.4`.
 
 ## First boot
 
