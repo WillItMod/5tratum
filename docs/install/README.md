@@ -2,7 +2,8 @@
 
 5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer media.
 
-- Current BETA release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+- Current BETA main-channel update: https://github.com/WillItMod/5tratum/releases/tag/v0.5.4
+- Current BETA installer media: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
 - Latest main-channel release: https://github.com/WillItMod/5tratum/releases/latest
 - Full release history: https://github.com/WillItMod/5tratum/releases
 
