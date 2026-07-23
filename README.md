@@ -18,26 +18,26 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ### Current BETA release
 
-`v0.5.4` is published as the current **BETA main-channel update release**:
+`v0.5.8` is published as the current **BETA main-channel update release**:
 
-- Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.4
-- Update bundle: `5tratumos-update-v0.5.4.tgz`
+- Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.8
+- Update bundle for existing installations: `5tratumos-update-v0.5.8.tgz`
 
 Fresh-install media remains under `v0.5.00`. After installation, use the main
-update channel to move to `v0.5.4`.
+update channel to move to `v0.5.8`.
 
 Use `Settings -> Updates` and select the **main** channel to pick up this release on an existing install.
 
 ### OS update bundle (existing installs)
 
 - Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Latest main-channel release: https://github.com/WillItMod/5tratum/releases/latest
+- Latest existing-install update: https://github.com/WillItMod/5tratum/releases/latest
 - Full release history: https://github.com/WillItMod/5tratum/releases
 - Repo tags: https://github.com/WillItMod/5tratum/tags
 
 Notes:
 - Use the **Releases** page for published update bundles and installer assets.
-- Main-channel systems follow the latest non-prerelease release.
+- Main-channel systems follow the latest non-prerelease update bundle.
 - Dev-channel systems follow pre-releases/dev builds.
 - The latest tag, latest dev pre-release, and latest main-channel release are not always the same thing.
 
@@ -49,16 +49,19 @@ Installer ISOs and Raspberry Pi images are not attached to every release tag. If
 
 - **Published assets live on the Releases page**
   - Current BETA media release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
-  - Latest main-channel release: https://github.com/WillItMod/5tratum/releases/latest
   - All releases: https://github.com/WillItMod/5tratum/releases
 - **AMD/Intel installer ISO**
-  - Download the newest release that includes:
-    - `5tratumos-installer-<version>-uefi.iso`
-    - `5tratumos-installer-<version>-bios.iso`
+  - UEFI ISO: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso
+  - UEFI checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso.sha256
+  - Legacy BIOS ISO: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso
+  - Legacy BIOS checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso.sha256
 - **Raspberry Pi (arm64) image**
-  - Download the newest release that includes:
-    - `5tratumos-raspios-lite-<version>.img.xz`
-    - the matching `.sha256`
+  - Image: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
+  - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
+
+The installer links above are complete bootable images. The `.tgz` assets in
+newer releases are updater payloads for an existing 5tratumOS system and are not
+fresh-install media.
 
 ## Related Projects
 

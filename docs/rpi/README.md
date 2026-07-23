@@ -12,13 +12,11 @@ This guide is for the **Raspberry Pi image** distributed in GitHub Releases.
 
 ## Download
 
-From the release assets:
+Current full BETA image:
 
-- `5tratumos-raspios-lite-v<version>.img.xz`
-- `5tratumos-raspios-lite-v<version>.img.xz.sha256`
-
-Current BETA release:
-- https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+- Image: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
+- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
+- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
 
 All releases:
 - https://github.com/WillItMod/5tratum/releases
@@ -55,7 +53,7 @@ ssh -t pi@192.168.1.50 "curl -fsSL https://raw.githubusercontent.com/WillItMod/5
 ```
 
 The bootstrap installer follows the current BETA main-channel bundle, presently
-`v0.5.4`.
+`v0.5.8`.
 
 ## First boot
 
