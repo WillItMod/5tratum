@@ -16,52 +16,32 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ## Downloads
 
-### Current BETA release
+### Fresh install: full bootable images
 
-`v0.5.8` is published as the current **BETA main-channel update release**:
+The current complete BETA media release is **v0.5.00**. These are the files to
+use for a new machine:
 
-- Release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.8
-- Update bundle for existing installations: `5tratumos-update-v0.5.8.tgz`
+- **AMD/Intel UEFI ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso
+- **UEFI checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso.sha256
+- **AMD/Intel legacy BIOS ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso
+- **Legacy BIOS checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso.sha256
+- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
+- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
 
-Fresh-install media remains under `v0.5.00`. After installation, use the main
-update channel to move to `v0.5.8`.
+Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
 
-Use `Settings -> Updates` and select the **main** channel to pick up this release on an existing install.
+### Existing installation: update in the WebUI
 
-### OS update bundle (existing installs)
+After first boot, use `Settings -> Updates`, select the **main** channel and
+update to **v0.5.8**.
 
-- Updates are delivered via the WebUI: `Settings -> Updates -> Check updates`.
-- Latest existing-install update: https://github.com/WillItMod/5tratum/releases/latest
-- Full release history: https://github.com/WillItMod/5tratum/releases
-- Repo tags: https://github.com/WillItMod/5tratum/tags
+- Current update release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.8
+- Existing-install updater: `5tratumos-update-v0.5.8.tgz`
 
-Notes:
-- Use the **Releases** page for published update bundles and installer assets.
-- Main-channel systems follow the latest non-prerelease update bundle.
-- Dev-channel systems follow pre-releases/dev builds.
-- The latest tag, latest dev pre-release, and latest main-channel release are not always the same thing.
+The `.tgz` file is deliberately not presented as a fresh-install download. It
+is an updater payload for an already running 5tratumOS system.
 
-### Installer media
-
-**Installer ISOs are for AMD/Intel x86_64 hardware. Raspberry Pi uses the arm64 image.**
-
-Installer ISOs and Raspberry Pi images are not attached to every release tag. If the newest stable tag does not include these assets, use the newest release that does.
-
-- **Published assets live on the Releases page**
-  - Current BETA media release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
-  - All releases: https://github.com/WillItMod/5tratum/releases
-- **AMD/Intel installer ISO**
-  - UEFI ISO: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso
-  - UEFI checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso.sha256
-  - Legacy BIOS ISO: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso
-  - Legacy BIOS checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso.sha256
-- **Raspberry Pi (arm64) image**
-  - Image: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
-  - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
-
-The installer links above are complete bootable images. The `.tgz` assets in
-newer releases are updater payloads for an existing 5tratumOS system and are not
-fresh-install media.
+Full release history: https://github.com/WillItMod/5tratum/releases
 
 ## Related Projects
 
