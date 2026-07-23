@@ -2,23 +2,19 @@
 
 This repo publishes 5tratumOS **release artifacts** via GitHub Releases.
 
-Release/navigation shortcuts:
+Fresh-install downloads:
 
-- Current BETA main-channel update: `https://github.com/WillItMod/5tratum/releases/tag/v0.5.8`
-- Current BETA install media: `https://github.com/WillItMod/5tratum/releases/tag/v0.5.00`
-- Latest existing-install update: `https://github.com/WillItMod/5tratum/releases/latest`
-- Full release history: `https://github.com/WillItMod/5tratum/releases`
-- Repo tags: `https://github.com/WillItMod/5tratum/tags`
+- UEFI ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso`
+- Legacy BIOS ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso`
+- Raspberry Pi arm64 image: `https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz`
+- Checksums and release notes: `https://github.com/WillItMod/5tratum/releases/tag/v0.5.00`
 
-Notes:
+Existing installations update through `Settings -> Updates`. The current
+main-channel updater is v0.5.8:
 
-- Use the **Releases** page for published update bundles and installer assets.
-- Main-channel systems follow the latest non-prerelease update bundle.
-- Dev-channel systems follow pre-releases/dev builds.
-- Use the **Tags** page when you need to inspect newer tag flow that may not yet be represented as a published release entry.
-- The README release banner is documentation, not the authoritative live source of truth.
-- Fresh installs use the full v0.5.00 UEFI ISO, BIOS ISO or Raspberry Pi image.
-  The current main-channel updater then moves the installation to v0.5.8.
+- `https://github.com/WillItMod/5tratum/releases/tag/v0.5.8`
+
+The v0.5.8 `.tgz` is an updater payload, not a bootable installer.
 
 - Install: [install/README.md](install/README.md)
 - Firmware (BIOS/UEFI/Secure Boot): [install/FIRMWARE.md](install/FIRMWARE.md)
