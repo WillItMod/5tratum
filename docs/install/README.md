@@ -2,9 +2,8 @@
 
 5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer media.
 
-- Current BETA main-channel update: https://github.com/WillItMod/5tratum/releases/tag/v0.5.4
+- Current BETA main-channel update: https://github.com/WillItMod/5tratum/releases/tag/v0.5.8
 - Current BETA installer media: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
-- Latest main-channel release: https://github.com/WillItMod/5tratum/releases/latest
 - Full release history: https://github.com/WillItMod/5tratum/releases
 
 ## Requirements
@@ -20,17 +19,16 @@ Raspberry Pi uses a separate arm64 image. See [Raspberry Pi install](../rpi/READ
 
 ## Get the installer ISO (x86_64 / amd64)
 
-1) Open the releases page:
-- https://github.com/WillItMod/5tratum/releases
+Download the current complete image directly:
 
-2) Download the newest asset that matches:
-- `5tratumos-installer-v<version>-uefi.iso` (recommended)
-- `5tratumos-installer-v<version>-bios.iso` (legacy BIOS/CSM only)
-- matching `.sha256`
+- UEFI ISO: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso
+- UEFI checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso.sha256
+- Legacy BIOS ISO: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso
+- Legacy BIOS checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso.sha256
 
-At the time of writing, the newest BETA installer ISOs are under tag **v0.5.00**.
-
-Note: release asset filenames are versioned (for example, `5tratumos-installer-v0.5.00-uefi.iso`).
+The newest complete BETA installer media is v0.5.00. After first boot, use
+`Settings -> Updates` to move to the current v0.5.8 main-channel release.
+Newer `.tgz` assets are updater payloads, not bootable installers.
 
 ## Downloads (per release)
 
@@ -46,6 +44,8 @@ Releases include:
 2) **Raspberry Pi image (arm64)** (when published)
    - Filename: `5tratumos-raspios-lite-v<version>.img.xz`
    - Purpose: flash directly to microSD/SSD, then boot on a Raspberry Pi 4/5.
+   - Current image: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
+   - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
 
 If you're installing on AMD/Intel hardware and are unsure, use the **UEFI installer ISO**.
 
