@@ -33,10 +33,10 @@ Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.
 ### Existing installation: update in the WebUI
 
 After first boot, use `Settings -> Updates`, select the **main** channel and
-update to **v0.5.8**.
+update to **v0.5.9**.
 
-- Current update release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.8
-- Existing-install updater: `5tratumos-update-v0.5.8.tgz`
+- Current update release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.9
+- Existing-install updater: `5tratumos-update-v0.5.9.tgz`
 
 The `.tgz` file is deliberately not presented as a fresh-install download. It
 is an updater payload for an already running 5tratumOS system.

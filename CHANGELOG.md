@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.5.9 and v0.5.9-dev (2026-07-24)
+
+- Fix app windows being routed to a node JSON-RPC port while the real web UI is
+  still starting after an install or update.
+- Treat the UI port declared by an app store manifest as authoritative.
+- Reject the Bitcoin-derived `JSONRPC server handles only POST requests`
+  response during web UI detection.
+- Repair affected 5tratSmack routes back to port `21226`; its node RPC remains
+  isolated on `57576`.
+- Release the same routing correction to both MAIN and DEV.
+
 Legend:
 - `*-dev` = DEV-only pre-release
 - MAIN = non-pre-release and/or `releases/latest`
