@@ -102,17 +102,17 @@ if [ ! -f /etc/os-release ]; then
 fi
 . /etc/os-release
 case "${ID:-}" in
-  debian|raspbian) ;;
+  debian|raspbian|ubuntu) ;;
   *)
-    echo "warn: ID=${ID:-unknown}; this script is intended for Debian/Raspbian-based Raspberry Pi images" >&2
+    echo "warn: ID=${ID:-unknown}; this script supports Debian, Ubuntu and Raspberry Pi OS" >&2
     ;;
 esac
 
 arch="$(uname -m 2>/dev/null || true)"
 case "${arch}" in
-  aarch64|arm64) ;;
+  aarch64|arm64|x86_64|amd64) ;;
   *)
-    echo "warn: arch=${arch:-unknown}; Docker/app images may not be available for this architecture" >&2
+    echo "warn: arch=${arch:-unknown}; published application images may not be available for this architecture" >&2
     ;;
 esac
 
@@ -141,6 +141,9 @@ if ! have docker; then
 fi
 if ! docker compose version >/dev/null 2>&1 && apt_has_pkg docker-compose-plugin; then
   apt-get install -y --no-install-recommends docker-compose-plugin || true
+fi
+if ! docker compose version >/dev/null 2>&1 && apt_has_pkg docker-compose-v2; then
+  apt-get install -y --no-install-recommends docker-compose-v2 || true
 fi
 if ! docker compose version >/dev/null 2>&1 && ! have docker-compose && apt_has_pkg docker-compose; then
   apt-get install -y --no-install-recommends docker-compose || true
