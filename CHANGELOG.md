@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.6.1 (2026-07-27)
+
+- Repair the normal WebUI update path so the signed 5tratMux runtime is
+  installed and started on clean public systems.
+- Replace the blank connection-refused pane with a branded loading, repair,
+  and retry surface.
+- Correct the Mux bootstrap systemd condition and retry failed initial
+  installs without user intervention.
+- Add a persistent API-health watchdog in addition to Docker's container
+  restart policy.
+- Restart an unhealthy Mux service automatically and use a rate-limited signed
+  reinstall only when a restart cannot restore health.
+- Preserve Mux settings, licence state, trial state, and application data
+  throughout bootstrap and repair.
+
 ## v0.6.0 (2026-07-27)
 
 - Add 5tratMux as a native 5tratumOS control surface beneath Fleet Dashboard.
