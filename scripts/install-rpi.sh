@@ -239,16 +239,34 @@ fi
 if [ -f "${stage}/bin/5tratumos" ]; then
   install -m 0755 "${stage}/bin/5tratumos" /usr/local/bin/5tratumos
 fi
+if [ -f "${stage}/bin/5tratmux-update" ]; then
+  install -m 0755 "${stage}/bin/5tratmux-update" /usr/local/sbin/5tratmux-update
+fi
 
-for unit in 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service 5tratumos-firstboot-update.service; do
-  install -m 0644 "${stage}/systemd/${unit}" "/etc/systemd/system/${unit}"
+units=()
+for unit in \
+  5tratumosd.service \
+  5tratumos-overlay.service \
+  5tratumos-firstboot.service \
+  5tratumos-firstboot-update.service \
+  5tratmux-bootstrap.service
+do
+  if [ -f "${stage}/systemd/${unit}" ]; then
+    install -m 0644 "${stage}/systemd/${unit}" "/etc/systemd/system/${unit}"
+    units+=("${unit}")
+  fi
 done
 
 systemctl daemon-reload || true
-systemctl enable 5tratumosd.service 5tratumos-overlay.service 5tratumos-firstboot.service 5tratumos-firstboot-update.service || true
+if [ "${#units[@]}" -gt 0 ]; then
+  systemctl enable "${units[@]}" || true
+fi
 systemctl start 5tratumos-firstboot.service || true
 systemctl restart 5tratumosd.service || true
 systemctl restart 5tratumos-overlay.service || true
+if [ -f /etc/systemd/system/5tratmux-bootstrap.service ]; then
+  systemctl start 5tratmux-bootstrap.service || true
+fi
 
 echo "[6/6] Done."
 echo "UI: http://<device-ip>/"

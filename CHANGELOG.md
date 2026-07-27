@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.6.0 (2026-07-27)
+
+- Add 5tratMux as a native 5tratumOS control surface beneath Fleet Dashboard.
+- Bootstrap the independently signed 5tratMux updater without starting a trial.
+- Support production 5tratMux runtimes for both AMD64 and ARM64 systems.
+- Reconcile proxy-routed miners by physical identity so Fleet Dashboard reports
+  one current row per miner instead of stale per-pool duplicates.
+- Prefer current Mux telemetry for route, worker, hardware, and hashrate state
+  while preserving direct-pool operation for users who do not run 5tratMux.
+- Add Mux-aware app control, route health, and full hardware telemetry,
+  including normalized temperature, fan, power, frequency, efficiency, pool,
+  and freshness fields.
+- Keep 5tratMux updates independent from OS updates while rolling the matching
+  updater and bootstrap service into the OS release.
+- Repair app proxy routes immediately after an OS update.
+
 ## v0.5.9 and v0.5.9-dev (2026-07-24)
 
 - Fix app windows being routed to a node JSON-RPC port while the real web UI is

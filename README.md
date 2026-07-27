@@ -33,13 +33,18 @@ Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.
 ### Existing installation: update in the WebUI
 
 After first boot, use `Settings -> Updates`, select the **main** channel and
-update to **v0.5.9**.
+update to **v0.6.0**.
 
-- Current update release: https://github.com/WillItMod/5tratum/releases/tag/v0.5.9
-- Existing-install updater: `5tratumos-update-v0.5.9.tgz`
+- Current update release: https://github.com/WillItMod/5tratum/releases/tag/v0.6.0
+- Existing-install updater: `5tratumos-update-v0.6.0.tgz`
 
 The `.tgz` file is deliberately not presented as a fresh-install download. It
 is an updater payload for an already running 5tratumOS system.
+
+Version `v0.6.0` introduces the native 5tratMux control surface and its
+independently signed updater. 5tratMux ships architecture-specific AMD64 and
+ARM64 runtimes; installing or updating it does not start its 24-hour trial.
+The trial begins only when the user explicitly activates it inside 5tratMux.
 
 Full release history: https://github.com/WillItMod/5tratum/releases
 
