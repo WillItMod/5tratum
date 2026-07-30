@@ -59,7 +59,22 @@ If you're installing on AMD/Intel hardware and are unsure, use the **UEFI instal
   - [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 - After install completes, remove the USB/ISO and reboot into the installed OS.
 
-## Proxmox / VM
+## Proxmox
+
+### Dedicated LXC helper
+
+Run the helper as `root` in the Proxmox VE shell:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-proxmox.sh | bash
+```
+
+It creates a dedicated unprivileged Debian LXC and installs 5tratumOS inside
+the guest. Docker and 5tratumOS services are not installed on the Proxmox host.
+See the [complete Proxmox LXC guide](PROXMOX.md) for resource, storage,
+networking and static-address options.
+
+### Full virtual machine
 
 1. Create a VM (UEFI recommended).
 2. Attach `5tratumos-installer-v<version>-uefi.iso` as a CD-ROM.
