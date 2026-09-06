@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.1 and v0.8.1-dev (2026-09-06)
+
+- Introduce Orbit alongside Classic, with an upgrade welcome and persistent interface choice.
+- Add independent application windows, resize grips, halves/quarters/fullscreen snapping, and a bottom or left app bar.
+- Preserve application management menus and shared settings/update controls; add desktop and app touch-and-hold menus.
+- Add configurable fleet/system widgets, grid arrangement, transparency, all-drive storage, and Scrypt-aware MUX routing.
+- Represent physical miners once using authoritative MUX IDs, with separate fresh, standby and stale states.
+- Introduce the optional animated 5TRATUSPHERE world with varied spacecraft, throughput scaling, node labels and confirmed MUX collector events.
+- Keep Dark, bottom app bar and static wallpaper as defaults, with optional live background, custom colours and Donut logo.
+- Retain app/OS progress and update prompts in the chosen interface, including verified completion and app-window refresh.
+- Repair app proxies before explicit-version update/rollback restarts and fix Ed25519/OpenSSL 3.0 signing/verifier compatibility.
+- Keep MUX licensing and updates independent, with forced MUX recovery disabled in these OS bundles.
+
 ## v0.6.1 (2026-07-27)
 
 - Repair the normal WebUI update path so the signed 5tratMux runtime is
