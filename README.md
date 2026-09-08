@@ -31,6 +31,9 @@ machine and its matching checksum. Earlier media remains available at
 
 Media release notes and validation: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
 
+Full Proxmox clean-install and reboot checks are in progress at publication.
+Any correction found by those checks will be released as 0.8.7.
+
 The installation bundle is `5tratumos-update-v0.8.6.tgz` (also supplied as
 `5tratumos-update.tgz`), with a matching `.sha256`. It contains the OS payload,
 bootstrap installer and service definitions used by the Linux and Raspberry Pi
