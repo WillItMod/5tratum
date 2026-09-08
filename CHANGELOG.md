@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.8.5 MAIN and v0.8.5-dev (2026-09-08)
+
+- Roll up every 0.8.4 OS/Orbit change, automatic installed Mux Flight 0.1.1 updates and signed public Local AI installation metadata.
+- Require 5tratMux 0.9.49 or newer through the normal signed app updater before OS update completion.
+- Restore automatic MUX Attack monitoring and launches while Local 5TRATMUX is selected. Persisted built-in or verified evidence must clear the saved trust threshold, route health, mission scope, timing and cooldown checks. Ordinary model fleet comparisons cannot authorize an attack.
+- Keep paid access checks for Local AI automation and restore saved portfolios when an automated award loses that access.
+- Correct fleet merging so a cached pool's stale/standby flags cannot override the current physical miner's MUX status, preventing fresh mining telemetry from incorrectly parking the Orbit craft.
+
+OS source: `WillItMod/5tratum_Build` commit `076169d06670a77aec26a4b60848087b1dec4e5c`. Native source: `WillItMod/5tratMux_Build` commit `b96ff11c941a3903fe0a041f82583db335c9627b`.
+MAIN OS archive SHA-256: `3b331a685e7963e0e7c3564c3620c260e1125e52a57d2e9f251cfddd6a8460ba`.
+DEV OS archive SHA-256: `95b061465603b247699b9b4633a4a14be6348cf40d131f31a5491b523aefd2f6`.
+
 ## v0.8.4 MAIN and v0.8.4-dev (2026-09-08)
 
 - Include every OS/Orbit fix from 0.8.3 and retain the signed 5tratMux 0.9.48-or-newer handoff.
