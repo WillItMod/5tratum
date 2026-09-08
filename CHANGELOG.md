@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.3 MAIN and v0.8.3-dev (2026-09-08)
+
+- Include every OS/Orbit change from0.8.2 and require the signed5tratMux0.9.48-or-newer app update before OS completion.
+- Deliver compatible Mux Flight allocation/formation APIs and the Local5TRATMUX provider dropdown through the coordinated MUX app release.
+- Add Mux Flight0.1.1: Theatre weapons, impacts and engine audio follow the active camera and subject rather than the original captain.
+- Offer **Update download** for installed optional flight packages, retaining licence checks and closing flight before installation.
+- Keep fresh Local AI runtime/model downloads explicitly unavailable until their separate trusted distribution is ready; existing configured runtimes remain separately managed.
+
+Source: `WillItMod/5tratum_Build` commit `06d3372ad96176502b254ea672a788e983feed6b`.
+MAIN OS archive SHA-256: `449cfd1d0ab25cf776dfd350fa7c6852745a199ae08625d79ad56b2c5fc4656b`.
+DEV OS archive SHA-256: `f765ed2ae182af3f1fee998a25ac6b4a62d6809a0cee411ad6047a331c922126`.
+MUXFLIGHT archive SHA-256: `4b8fcd907ab46f3abff8ab651f679a90233d47113fa7ff5695e7d9fe7c9d161c`.
+
 ## v0.8.2 MAIN and v0.8.2-dev (2026-09-08)
 
 - Add optional MUXFLIGHT 0.1.0 for users with an active 5tratMux licence, as a separate 152,224,152-byte (145.17 MiB) download. Rendering runs in the viewing browser, with selectable graphics quality.

@@ -32,21 +32,21 @@ Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.2**. DEV is **v0.8.2-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.3**. DEV is **v0.8.3-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.2
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.2-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.2.tgz`.
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.3
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.3-dev
+- MAIN existing-install payload: `5tratumos-update-v0.8.3.tgz`.
 
 After upgrading, a full-screen welcome offers **Enter Orbit** or **Keep Classic**. Orbit provides independent app windows, snapping, fleet and system widgets, and the animated **5TRATUSPHERE** world. Both interfaces use your normal device address. Your selected interface is remembered in that browser and can be changed in Settings.
 
 Orbit is available without a MUX licence. MUX-specific features use 5tratMux’s own licence and trial. 5tratMux and other apps retain their own versions and update controls; an OS update does not activate a trial.
 
-**MUXFLIGHT 0.1.0** is an optional, separate download for users with a valid paid 5tratMux licence or an active signed trial (access ends when the trial expires): **152,224,152 bytes (145.17 MiB)**. Enable it from Orbit after updating. Graphics run in the viewing browser, with selectable quality levels; the node supplies files and mining telemetry. Orbit and 5TRATUSPHERE remain usable without downloading MUXFLIGHT.
+**MUXFLIGHT 0.1.1** is an optional, separate download for users with a valid paid 5tratMux licence or an active signed trial (access ends when the trial expires): **152,224,955 bytes (145.2 MiB)**. Enable it from Orbit after updating. Graphics run in the viewing browser, with selectable quality levels; the node supplies files and mining telemetry. Orbit and 5TRATUSPHERE remain usable without downloading MUXFLIGHT.
 
-Fly in Spectate, Manual, Assisted or guided Autopilot, enter different spacecraft, recruit a formation, and explore orbit, deep space and planetary surfaces, including ice canyon runs. Theatre offers cinematic fleet views while retaining the captain’s control state. The optional audio deck includes 27 classical tracks, local music and direct internet-radio streams. Sound effects provide an explicit resume control when a browser interrupts playback. Miner allocation and recruitment controls require a compatible 5tratMux installation. The compatible native runtime used in private review is not yet publicly released; those controls require its separate app update.
+Fly in Spectate, Manual, Assisted or guided Autopilot, enter different spacecraft, recruit a formation, and explore orbit, deep space and planetary surfaces, including ice canyon runs. Theatre offers cinematic fleet views while retaining the captain’s control state. The optional audio deck includes 27 classical tracks, local music and direct internet-radio streams. Sound effects provide an explicit resume control when a browser interrupts playback. Miner allocation and recruitment controls require a compatible 5tratMux installation. OS 0.8.3 installs and verifies 5tratMux 0.9.48 or newer through the signed app updater, providing that compatibility.
 
-Version 0.8.2 also refines Orbit window copying and opening apps in new tabs, resource reporting and fleet presentation. Local AI settings are integrated; fresh Local AI runtime and model downloads are not published in this OS release.
+Version 0.8.3 includes all 0.8.2 refinements to Orbit window copying and opening apps in new tabs, resource reporting and fleet presentation. The updated MUX app includes the Local 5TRATMUX provider dropdown. Local AI setup and use require a paid licence; fresh runtime/model downloads still need separately trusted distribution metadata and are not supplied by this release. Existing Mux Flight users can choose **Update download** in its setup panel to receive 0.1.1 and the Theatre camera audio fix.
 
 These `.tgz` files update an existing installation; they are not fresh-install images. OS updates continue to use the established SHA-256 checksum mechanism. The release notes describe verification and administrator-managed signature-enforcement compatibility.
 
