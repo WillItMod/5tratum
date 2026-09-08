@@ -2,20 +2,20 @@
 
 This repo publishes 5tratumOS **release artifacts** via GitHub Releases.
 
-Current v0.8.6 fresh-install downloads:
+Current v0.8.7 fresh-install downloads:
 
-- UEFI ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso`
-- Legacy BIOS ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso`
-- Raspberry Pi arm64 image: `https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz`
-- Checksums and release notes: `https://github.com/WillItMod/5tratum/releases/tag/v0.8.6`
+- UEFI ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-uefi.iso`
+- Legacy BIOS ISO: `https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso`
+- Raspberry Pi arm64 image: `https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz`
+- Checksums and release notes: `https://github.com/WillItMod/5tratum/releases/tag/v0.8.7`
 
 Raspberry Pi image contents and filesystems were checked; physical Pi boot testing
 remains outstanding. See the release notes for architecture-specific evidence.
 
 Existing installations update through `Settings -> Updates`. The current
-main-channel updater is v0.8.6:
+main-channel updater is v0.8.7:
 
-- `https://github.com/WillItMod/5tratum/releases/tag/v0.8.6`
+- `https://github.com/WillItMod/5tratum/releases/tag/v0.8.7`
 
 The `.tgz` payload is used by updates and by the Linux/Raspberry Pi installation
 helpers. It is not bootable media.

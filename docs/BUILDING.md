@@ -117,11 +117,11 @@ TRATUMOS_TAG=vX.Y.Z TRATUMOS_CHANNEL=main \
 
 ## Release preparation and evidence
 
-For the 0.8.6 preparation, keep candidate files labeled `v0.8.6-rc1` until the
-release decision. `INSTALL_TAG=v0.8.6-rc1` selects that candidate in the helpers;
+For the 0.8.7 preparation, keep candidate files labeled `v0.8.7-rc1` until the
+release decision. `INSTALL_TAG=v0.8.7-rc1` selects that candidate in the helpers;
 for unpublished QA, provide the exact candidate archive as `BUNDLE_URL` with a
 matching `.sha256` at the adjacent URL. A missing checksum or failed download
-must stop installation rather than select another payload. Public helper defaults are `v0.8.6`; publish helper changes together with the
+must stop installation rather than select another payload. Public helper defaults are `v0.8.7`; publish helper changes together with the
 tested assets.
 
 Record the source commit and any source patch, bundle SHA-256, signed catalogue

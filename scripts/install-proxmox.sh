@@ -24,7 +24,7 @@ Options:
   --memory-mb N               Memory in MiB (default: 8192)
   --swap-mb N                 Swap in MiB (default: 2048)
   --channel NAME              5tratumOS update channel (default: main)
-  --install-tag TAG           Bundle tag or latest (default: v0.8.6)
+  --install-tag TAG           Bundle tag or latest (default: v0.8.7)
   -h, --help                  Show this help
 
 The helper prefers the newest Debian 12 or Debian 13 template available for
@@ -50,7 +50,7 @@ cores="4"
 memory_mb="8192"
 swap_mb="2048"
 channel="${CHANNEL:-main}"
-install_tag="${INSTALL_TAG:-v0.8.6}"
+install_tag="${INSTALL_TAG:-v0.8.7}"
 install_ref="${INSTALL_REF:-$DEFAULT_INSTALL_REF}"
 
 while [[ $# -gt 0 ]]; do

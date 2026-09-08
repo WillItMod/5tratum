@@ -18,23 +18,23 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ### Fresh install: full bootable images
 
-The current installer media release is **v0.8.6**. Download the image for your
+The current installer media release is **v0.8.7**. Download the image for your
 machine and its matching checksum. Earlier media remains available at
 [v0.5.00](https://github.com/WillItMod/5tratum/releases/tag/v0.5.00).
 
-- **AMD/Intel UEFI ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso
-- **UEFI checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso.sha256
-- **AMD/Intel legacy BIOS ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso
-- **Legacy BIOS checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso.sha256
-- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz
-- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256
+- **AMD/Intel UEFI ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-uefi.iso
+- **UEFI checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-uefi.iso.sha256
+- **AMD/Intel legacy BIOS ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso
+- **Legacy BIOS checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso.sha256
+- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz
+- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
 
-Media release notes and validation: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
+Media release notes and validation: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
 
-Full Proxmox clean-install and reboot checks are in progress at publication.
-Any correction found by those checks will be released as 0.8.7.
+Version 0.8.7 corrects a first-boot network timing issue found in the 0.8.6
+Proxmox test. See the release notes for the latest validation status.
 
-The installation bundle is `5tratumos-update-v0.8.6.tgz` (also supplied as
+The installation bundle is `5tratumos-update-v0.8.7.tgz` (also supplied as
 `5tratumos-update.tgz`), with a matching `.sha256`. It contains the OS payload,
 bootstrap installer and service definitions used by the Linux and Raspberry Pi
 helpers; it is not a bootable disk image. See the [installation guide](docs/install/README.md).
@@ -44,13 +44,13 @@ It has **not been boot-tested on physical Raspberry Pi hardware**.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.6**. DEV is **v0.8.6-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.7**. DEV is **v0.8.7-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.6.tgz`.
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7-dev
+- MAIN existing-install payload: `5tratumos-update-v0.8.7.tgz`.
 
-Version 0.8.6 refreshes the UEFI, BIOS and Raspberry Pi installation media and
+Version 0.8.7 refreshes the UEFI, BIOS and Raspberry Pi installation media and
 the Linux/Pi helpers. Fresh installs retain the embedded version and update
 channel, the ISO uses Debian's normal graphics detection, and the Pi installer
 waits for kiosk setup before its final reboot. It also includes the Orbit

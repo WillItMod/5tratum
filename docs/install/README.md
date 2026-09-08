@@ -2,8 +2,8 @@
 
 5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer media.
 
-- Current BETA main-channel update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
-- Current installer media: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
+- Current BETA main-channel update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
+- Current installer media: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
 - Full release history: https://github.com/WillItMod/5tratum/releases
 
 ## Requirements
@@ -21,10 +21,10 @@ Raspberry Pi uses a separate arm64 image. See [Raspberry Pi install](../rpi/READ
 
 Download the installer image and matching checksum:
 
-- UEFI ISO: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso
-- UEFI checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso.sha256
-- Legacy BIOS ISO: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso
-- Legacy BIOS checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso.sha256
+- UEFI ISO: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-uefi.iso
+- UEFI checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-uefi.iso.sha256
+- Legacy BIOS ISO: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso
+- Legacy BIOS checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso.sha256
 
 Read the release notes for clean-install and reboot evidence. Earlier media
 remains available under v0.5.00. Raspberry Pi content and filesystem checks
@@ -45,14 +45,14 @@ Releases include:
 2) **Raspberry Pi image (arm64)** (when published)
    - Filename: `5tratumos-raspios-lite-v<version>-arm64.img.xz`
    - Purpose: flash directly to microSD/SSD, then boot on a Raspberry Pi 4/5.
-   - Current image: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz
-   - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256
+   - Current image: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz
+   - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
 
 If you're installing on AMD/Intel hardware and are unsure, use the **UEFI installer ISO**.
 
 ## Installation bundle and Linux helper
 
-The same OS payload is distributed as `5tratumos-update-v0.8.6.tgz` and the
+The same OS payload is distributed as `5tratumos-update-v0.8.7.tgz` and the
 identical `5tratumos-update.tgz` alias, each with its own `.sha256` sidecar.
 It includes `bootstrap/install.sh`, the current service definitions, daemon,
 portal and app templates. The helpers verify the checksum and install the
@@ -64,12 +64,12 @@ Run on the dedicated target Linux system:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-linux.sh -o /tmp/install-linux.sh
-sudo env CHANNEL=main INSTALL_TAG=v0.8.6 bash /tmp/install-linux.sh
+sudo env CHANNEL=main INSTALL_TAG=v0.8.7 bash /tmp/install-linux.sh
 ```
 
 `INSTALL_TAG` selects the initial bundle. `CHANNEL` must match that bundle's
 metadata and is saved for subsequent updates.
-Use `CHANNEL=dev INSTALL_TAG=v0.8.6-dev` only when that DEV release is available.
+Use `CHANNEL=dev INSTALL_TAG=v0.8.7-dev` only when that DEV release is available.
 The installed version is read from the verified bundle metadata.
 
 ## Before you start

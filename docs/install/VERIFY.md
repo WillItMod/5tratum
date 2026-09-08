@@ -8,14 +8,14 @@ Local AI catalogue use their separately pinned signing trust. Those signatures
 do not sign the entire OS bundle or installer image.
 
 Examples:
-- `5tratumos-installer-v0.8.6-uefi.iso` + `5tratumos-installer-v0.8.6-uefi.iso.sha256`
-- `5tratumos-installer-v0.8.6-bios.iso` + `5tratumos-installer-v0.8.6-bios.iso.sha256`
-- `5tratumos-raspios-lite-v0.8.6-arm64.img.xz` + `5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256`
+- `5tratumos-installer-v0.8.7-uefi.iso` + `5tratumos-installer-v0.8.7-uefi.iso.sha256`
+- `5tratumos-installer-v0.8.7-bios.iso` + `5tratumos-installer-v0.8.7-bios.iso.sha256`
+- `5tratumos-raspios-lite-v0.8.7-arm64.img.xz` + `5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256`
 
 ## Windows
 
 ```powershell
-certutil -hashfile .\5tratumos-installer-v0.8.6-uefi.iso SHA256
+certutil -hashfile .\5tratumos-installer-v0.8.7-uefi.iso SHA256
 ```
 
 Compare the output to the matching `.sha256` file.
@@ -23,14 +23,14 @@ Compare the output to the matching `.sha256` file.
 ## Linux / macOS
 
 ```sh
-sha256sum -c 5tratumos-installer-v0.8.6-uefi.iso.sha256
-sha256sum -c 5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256
+sha256sum -c 5tratumos-installer-v0.8.7-uefi.iso.sha256
+sha256sum -c 5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
 ```
 
 If your system does not have `sha256sum` on macOS, use:
 
 ```sh
-shasum -a 256 5tratumos-installer-v0.8.6-uefi.iso
+shasum -a 256 5tratumos-installer-v0.8.7-uefi.iso
 ```
 
 Compare the output to the matching `.sha256` file.

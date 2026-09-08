@@ -12,17 +12,17 @@ This guide is for the **Raspberry Pi image** distributed in GitHub Releases.
 
 ## Download
 
-Current v0.8.6 image:
+Current v0.8.7 image:
 
-- Image: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz
-- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256
-- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
+- Image: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz
+- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
+- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
 
 All releases:
 - https://github.com/WillItMod/5tratum/releases
 
 Image filename:
-- `5tratumos-raspios-lite-v0.8.6-arm64.img.xz`
+- `5tratumos-raspios-lite-v0.8.7-arm64.img.xz`
 
 The image passed ARM64 content checks, archive integrity checks and read-only
 filesystem checks. **Physical Raspberry Pi boot testing remains outstanding.**
@@ -57,7 +57,7 @@ Example:
 ssh -t pi@192.168.1.50 "curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh -o /tmp/install-rpi.sh && sudo env CHANNEL=main bash /tmp/install-rpi.sh"
 ```
 
-The bootstrap installer defaults to `INSTALL_TAG=v0.8.6` and
+The bootstrap installer defaults to `INSTALL_TAG=v0.8.7` and
 `CHANNEL=main`. Its checksum must verify before the bundle is installed.
 A different release can be selected explicitly with `sudo env CHANNEL=main INSTALL_TAG=TAG`
 when invoking the helper.
