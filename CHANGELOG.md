@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.8.4 MAIN and v0.8.4-dev (2026-09-08)
+
+- Include every OS/Orbit fix from 0.8.3 and retain the signed 5tratMux 0.9.48-or-newer handoff.
+- Automatically update existing Mux Flight downloads after active flights close; check again on launch and reload cached scripts when the installed version changes.
+- Preserve optional opt-in, removal, signed licence checks, failed-download fallback and retry.
+- Supply signed Local AI catalogue/runtime metadata through an add-on path accepted by the existing 0.8.3 installer; verify it before constructing the host service.
+- Allow model selection before runtime installation, with CPU and memory reasons instead of a setup dead end.
+- Offer an optional public AMD64 runtime pinned by registry digest, with Qwen model downloads pinned by upstream revision, byte size and SHA-256. Local AI remains experimental and paid-only.
+- Preserve existing Local AI runtime and configuration, retain the 8 GiB default for older configurations, and leave ARM OS updates and global OS signature policy unchanged.
+
+Source: `WillItMod/5tratum_Build` commit `bf862769db62dc542f43696901a84dd2c3d63fac`.
+MAIN OS archive SHA-256: `321103b4058b6be4bdcb09327a3c4700c98f7980b56818bf90d1bb2d9eec2bd0`.
+DEV OS archive SHA-256: `b4c151bf55f46ef6e3ac7b2e08167e43ca4f252e5e13a86fe7311fb3d89b5737`.
+MUXFLIGHT 0.1.1 uses the unchanged public archive from v0.8.3: `4b8fcd907ab46f3abff8ab651f679a90233d47113fa7ff5695e7d9fe7c9d161c`.
+
 ## v0.8.3 MAIN and v0.8.3-dev (2026-09-08)
 
 - Include every OS/Orbit change from0.8.2 and require the signed5tratMux0.9.48-or-newer app update before OS completion.

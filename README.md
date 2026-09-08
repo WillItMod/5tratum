@@ -32,11 +32,11 @@ Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.3**. DEV is **v0.8.3-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.4**. DEV is **v0.8.4-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.3
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.3-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.3.tgz`.
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.4
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.4-dev
+- MAIN existing-install payload: `5tratumos-update-v0.8.4.tgz`.
 
 After upgrading, a full-screen welcome offers **Enter Orbit** or **Keep Classic**. Orbit provides independent app windows, snapping, fleet and system widgets, and the animated **5TRATUSPHERE** world. Both interfaces use your normal device address. Your selected interface is remembered in that browser and can be changed in Settings.
 
@@ -44,9 +44,13 @@ Orbit is available without a MUX licence. MUX-specific features use 5tratMux’s
 
 **MUXFLIGHT 0.1.1** is an optional, separate download for users with a valid paid 5tratMux licence or an active signed trial (access ends when the trial expires): **152,224,955 bytes (145.2 MiB)**. Enable it from Orbit after updating. Graphics run in the viewing browser, with selectable quality levels; the node supplies files and mining telemetry. Orbit and 5TRATUSPHERE remain usable without downloading MUXFLIGHT.
 
-Fly in Spectate, Manual, Assisted or guided Autopilot, enter different spacecraft, recruit a formation, and explore orbit, deep space and planetary surfaces, including ice canyon runs. Theatre offers cinematic fleet views while retaining the captain’s control state. The optional audio deck includes 27 classical tracks, local music and direct internet-radio streams. Sound effects provide an explicit resume control when a browser interrupts playback. Miner allocation and recruitment controls require a compatible 5tratMux installation. OS 0.8.3 installs and verifies 5tratMux 0.9.48 or newer through the signed app updater, providing that compatibility.
+Fly in Spectate, Manual, Assisted or guided Autopilot, enter different spacecraft, recruit a formation, and explore orbit, deep space and planetary surfaces, including ice canyon runs. Theatre offers cinematic fleet views while retaining the captain’s control state. The optional audio deck includes 27 classical tracks, local music and direct internet-radio streams. Sound effects provide an explicit resume control when a browser interrupts playback. Miner allocation and recruitment controls require a compatible 5tratMux installation. OS 0.8.4 installs and verifies 5tratMux 0.9.48 or newer through the signed app updater, providing that compatibility.
 
-Version 0.8.3 includes all 0.8.2 refinements to Orbit window copying and opening apps in new tabs, resource reporting and fleet presentation. The updated MUX app includes the Local 5TRATMUX provider dropdown. Local AI setup and use require a paid licence; fresh runtime/model downloads still need separately trusted distribution metadata and are not supplied by this release. Existing Mux Flight users can choose **Update download** in its setup panel to receive 0.1.1 and the Theatre camera audio fix.
+Version 0.8.4 retains all previous OS and Orbit improvements. Existing Mux Flight downloads update automatically to the OS-catalogued version after active flights close, and the next launch loads the new code. This does not install Mux Flight for people who have not opted in or reinstall removed downloads.
+
+The Local 5TRATMUX provider now receives the signed catalogue and optional runtime installation metadata needed on a fresh system. Choose a model in 5tratMux to download and start it. The initial public runtime supports AVX2-capable Intel/AMD hosts with sufficient available RAM and storage; virtual machines must expose the required CPU features. Qwen 0.8B, 2B and 4B model weights download on demand from immutable upstream revisions with size and SHA-256 verification. They are not included in the OS archive or source repository. Local AI remains experimental and requires a paid licence; trials are excluded. Existing configured runtimes and preferences are preserved. ARM OS updates remain supported, while this optional public Local AI runtime is AMD64-only.
+
+Local AI catalogue signatures use the existing pinned 5TRATMUX release key specifically for the add-on. OS update signing keys and signature policies are unchanged.
 
 These `.tgz` files update an existing installation; they are not fresh-install images. OS updates continue to use the established SHA-256 checksum mechanism. The release notes describe verification and administrator-managed signature-enforcement compatibility.
 
