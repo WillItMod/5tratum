@@ -32,17 +32,17 @@ Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.2**. DEV remains **v0.8.1-dev**.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.2**. DEV is **v0.8.2-dev**, with the same runtime changes.
 
 - MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.2
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.1-dev
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.2-dev
 - MAIN existing-install payload: `5tratumos-update-v0.8.2.tgz`.
 
 After upgrading, a full-screen welcome offers **Enter Orbit** or **Keep Classic**. Orbit provides independent app windows, snapping, fleet and system widgets, and the animated **5TRATUSPHERE** world. Both interfaces use your normal device address. Your selected interface is remembered in that browser and can be changed in Settings.
 
 Orbit is available without a MUX licence. MUX-specific features use 5tratMux’s own licence and trial. 5tratMux and other apps retain their own versions and update controls; an OS update does not activate a trial.
 
-**MUXFLIGHT 0.1.0** is an optional, separate download for users with an active 5tratMux licence: **152,224,152 bytes (145.17 MiB)**. Enable it from Orbit after updating. Graphics run in the viewing browser, with selectable quality levels; the node supplies files and mining telemetry. Orbit and 5TRATUSPHERE remain usable without downloading MUXFLIGHT.
+**MUXFLIGHT 0.1.0** is an optional, separate download for users with a valid paid 5tratMux licence or an active signed trial (access ends when the trial expires): **152,224,152 bytes (145.17 MiB)**. Enable it from Orbit after updating. Graphics run in the viewing browser, with selectable quality levels; the node supplies files and mining telemetry. Orbit and 5TRATUSPHERE remain usable without downloading MUXFLIGHT.
 
 Fly in Spectate, Manual, Assisted or guided Autopilot, enter different spacecraft, recruit a formation, and explore orbit, deep space and planetary surfaces, including ice canyon runs. Theatre offers cinematic fleet views while retaining the captain’s control state. The optional audio deck includes 27 classical tracks, local music and direct internet-radio streams. Sound effects provide an explicit resume control when a browser interrupts playback. Miner allocation and recruitment controls require a compatible 5tratMux installation. The compatible native runtime used in private review is not yet publicly released; those controls require its separate app update.
 

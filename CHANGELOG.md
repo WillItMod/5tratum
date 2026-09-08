@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.8.2 MAIN (2026-09-08)
+## v0.8.2 MAIN and v0.8.2-dev (2026-09-08)
 
 - Add optional MUXFLIGHT 0.1.0 for users with an active 5tratMux licence, as a separate 152,224,152-byte (145.17 MiB) download. Rendering runs in the viewing browser, with selectable graphics quality.
 - Provide Spectate, Manual, Assisted and guided Autopilot, distinct craft and cockpit views, formations, and orbit, deep-space and surface travel with ice canyon runs.
@@ -10,7 +10,8 @@
 - Refine fragment clearance and draw distances, terrain and camera continuity, craft separation, target interaction and cockpit presentation.
 - Improve Orbit right-click copying, app windows opening in new tabs, resource reporting and fleet views.
 - Integrate Local AI settings; fresh Local AI runtime and model downloads are not published in this OS release.
-- Keep DEV on v0.8.1-dev. 5tratMux remains independently versioned; miner control requires a compatible installation.
+- Publish the same runtime payload to DEV as v0.8.2-dev. 5tratMux remains independently versioned; miner control requires a compatible installation.
+- Active signed 5tratMux trials also permit MUXFLIGHT access until trial expiry; Local AI remains paid-only.
 
 Source: `WillItMod/5tratum_Build` commit `a50c398ff8470723d6022ce17156fda57c83acdd`.
 MAIN OS archive SHA-256: `b0088de0ccc3fa846a9a37e077dbb180eeb0d8fea714d08dd1368f68c77a9fef`.
