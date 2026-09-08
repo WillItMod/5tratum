@@ -11,8 +11,8 @@ Build media on a Debian/Ubuntu host or VM with enough free disk space for extrac
 
 The Debian preseed installer ISO embeds these files under `/5tratumos/` on the ISO:
 
-- `5tratumos-update.tgz` (the 5tratumOS payload)
-- `build.json` (writes `/etc/5tratumos/build.json` so the UI shows the correct version)
+- `5tratumos-update.tgz` and its required `.sha256` (the 5tratumOS payload)
+- `build.json` (must agree with the embedded payload; writes `/etc/5tratumos/build.json` so the UI shows the correct version)
 - `update.token` (optional; writes `/etc/5tratumos/update.token` for private update repos)
 - `preseed.cfg` + `late_command.sh` automation (installs the payload and enables services)
 
@@ -24,6 +24,14 @@ The update bundle is produced from the 5tratumOS source tree and published as:
 
 - `5tratumos-update.tgz`
 - `5tratumos-update.tgz.sha256`
+- `5tratumos-update-vX.Y.Z.tgz` (an identical versioned copy)
+- `5tratumos-update-vX.Y.Z.tgz.sha256`
+
+This is also the installation bundle: it already contains `bootstrap/install.sh`,
+`systemd/`, `bin/`, `daemon/`, `overlay/`, `apps-available/` and `console/`.
+Do not substitute a GitHub source archive or assemble a smaller payload that
+omits the current installer, signed catalogue or optional-feature metadata.
+Model weights and optional MUXFLIGHT files stay outside the OS archive.
 
 In the build repo (`WillItMod/5tratum_Build`) on Windows:
 
@@ -39,8 +47,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-update-bundl
 Or on Linux:
 
 ```bash
-./scripts/build-update-bundle.sh
+TRATUMOS_TAG=vX.Y.Z TRATUMOS_CHANNEL=main \
+  TRATUMOS_UPDATE_REPO=WillItMod/5tratum \
+  ./scripts/build-update-bundle.sh
 ```
+
+Use the release record's exact MUX updater, target version, signed catalogue
+and optional-runtime metadata inputs when building the bundle. In particular,
+do not rely on an older default MUX recovery target or omit the signed optional
+catalogue inputs. The examples above show the general invocation; the release
+record supplies the complete environment for the frozen source.
 
 ## Build the Debian preseed installer ISO (Proxmox / Debian)
 
@@ -72,13 +88,21 @@ OS_TAG=vX.Y.Z OS_CHANNEL=main BOOT_MODE=bios \
   bash installer/build-debian-preseed-iso.sh
 ```
 
+The ISO builder checks the Debian base ISO against its pinned SHA-256. An
+alternate or cached base requires the matching `DEBIAN_ISO_SHA256` alongside
+`DEBIAN_ISO` or `DEBIAN_ISO_URL`. `OS_TAG` and `OS_CHANNEL` must match the
+embedded bundle; naming a file does not change its installed version.
+
 ## Build the Raspberry Pi image
 
 ```bash
 TRATUMOS_TAG=vX.Y.Z TRATUMOS_CHANNEL=main \
   BASE_IMG_XZ=/path/to/raspios-lite-arm64.img.xz \
+  BASE_IMG_URL=https://downloads.raspberrypi.com/PINNED-IMAGE-PATH.img.xz \
+  BASE_IMG_VERSION=EXACT-UPSTREAM-IMAGE-VERSION \
+  BASE_IMG_SHA256=EXACT-UPSTREAM-SHA256 \
   BUNDLE_TGZ=dist/5tratumos-update.tgz \
-  OUT_IMG_XZ=dist/5tratumos-raspios-lite-vX.Y.Z.img.xz \
+  OUT_IMG_XZ=dist/5tratumos-raspios-lite-vX.Y.Z-arm64.img.xz \
   bash installer/build-raspios-image.sh
 ```
 
@@ -90,3 +114,26 @@ TRATUMOS_TAG=vX.Y.Z TRATUMOS_CHANNEL=main \
   - writing `/etc/5tratumos/build.json`
   - seeding `/etc/5tratumos/update.token` (if provided)
   - enabling 5tratumOS systemd units
+
+## Release preparation and evidence
+
+For the 0.8.6 preparation, keep candidate files labeled `v0.8.6-rc1` until the
+release decision. `INSTALL_TAG=v0.8.6-rc1` selects that candidate in the helpers;
+for unpublished QA, provide the exact candidate archive as `BUNDLE_URL` with a
+matching `.sha256` at the adjacent URL. A missing checksum or failed download
+must stop installation rather than select another payload. Public helper defaults are `v0.8.6`; publish helper changes together with the
+tested assets.
+
+Record the source commit and any source patch, bundle SHA-256, signed catalogue
+identity, upstream base URL/version/SHA-256, build-host architecture, builder
+arguments and output hashes. Save the same bundle bytes in both ISO variants and
+the Raspberry Pi image. Versioned bundle aliases must be byte-identical, with
+checksum sidecars naming the corresponding alias. Retain the input archives so
+the build can be repeated; timestamps in generated metadata and archive files
+mean byte-for-byte reproducibility is not currently guaranteed.
+
+Before public upload, install the candidate ISO onto a new disposable VM, detach
+the ISO and reboot, then check installed version, app catalogue, update channels,
+required services, network and rendered UI. Record BIOS and UEFI coverage
+separately. Raspberry Pi evidence must distinguish ARM64 static checks,
+emulation and an actual physical Pi boot. Do not replace earlier release assets.

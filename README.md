@@ -18,25 +18,40 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ### Fresh install: full bootable images
 
-The current complete BETA media release is **v0.5.00**. These are the files to
-use for a new machine:
+The current installer media release is **v0.8.6**. Download the image for your
+machine and its matching checksum. Earlier media remains available at
+[v0.5.00](https://github.com/WillItMod/5tratum/releases/tag/v0.5.00).
 
-- **AMD/Intel UEFI ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso
-- **UEFI checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-uefi.iso.sha256
-- **AMD/Intel legacy BIOS ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso
-- **Legacy BIOS checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-installer-v0.5.00-bios.iso.sha256
-- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
-- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
+- **AMD/Intel UEFI ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso
+- **UEFI checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-uefi.iso.sha256
+- **AMD/Intel legacy BIOS ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso
+- **Legacy BIOS checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-installer-v0.8.6-bios.iso.sha256
+- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz
+- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256
 
-Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+Media release notes and validation: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
+
+The installation bundle is `5tratumos-update-v0.8.6.tgz` (also supplied as
+`5tratumos-update.tgz`), with a matching `.sha256`. It contains the OS payload,
+bootstrap installer and service definitions used by the Linux and Raspberry Pi
+helpers; it is not a bootable disk image. See the [installation guide](docs/install/README.md).
+
+The Raspberry Pi image has passed ARM64 content, checksum and filesystem checks.
+It has **not been boot-tested on physical Raspberry Pi hardware**.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.5**. DEV is **v0.8.5-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.6**. DEV is **v0.8.6-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.5
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.5-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.5.tgz`.
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6-dev
+- MAIN existing-install payload: `5tratumos-update-v0.8.6.tgz`.
+
+Version 0.8.6 refreshes the UEFI, BIOS and Raspberry Pi installation media and
+the Linux/Pi helpers. Fresh installs retain the embedded version and update
+channel, the ISO uses Debian's normal graphics detection, and the Pi installer
+waits for kiosk setup before its final reboot. It also includes the Orbit
+FracAttack correction while retaining the optional-download behaviour below.
 
 After upgrading, a full-screen welcome offers **Enter Orbit** or **Keep Classic**. Orbit provides independent app windows, snapping, fleet and system widgets, and the animated **5TRATUSPHERE** world. Both interfaces use your normal device address. Your selected interface is remembered in that browser and can be changed in Settings.
 
@@ -52,9 +67,9 @@ Version 0.8.5 retains all previous OS and Orbit improvements, including the comp
 
 The Local 5TRATMUX provider now receives the signed catalogue and optional runtime installation metadata needed on a fresh system. Choose a model in 5tratMux to download and start it. The initial public runtime supports AVX2-capable Intel/AMD hosts with sufficient available RAM and storage; virtual machines must expose the required CPU features. Qwen 0.8B, 2B and 4B model weights download on demand from immutable upstream revisions with size and SHA-256 verification. They are not included in the OS archive or source repository. Local AI remains experimental and requires a paid licence; trials are excluded. Existing configured runtimes and preferences are preserved. ARM OS updates remain supported, while this optional public Local AI runtime is AMD64-only.
 
-Local AI catalogue signatures use the existing pinned 5TRATMUX release key specifically for the add-on. OS update signing keys and signature policies are unchanged.
+Local AI catalogue signatures use the existing pinned 5TRATMUX release key specifically for the add-on. The OS bundles are unsigned and retain the established SHA-256 checksum mechanism; the signed native/Local AI catalogue does not sign the whole OS archive.
 
-These `.tgz` files update an existing installation; they are not fresh-install images. OS updates continue to use the established SHA-256 checksum mechanism. The release notes describe verification and administrator-managed signature-enforcement compatibility.
+These `.tgz` files are OS payloads, not bootable images. The installation helpers also use the payload to install onto a supported Debian, Ubuntu or Raspberry Pi OS system. OS updates continue to use the established SHA-256 checksum mechanism. The release notes describe verification and administrator-managed signature-enforcement compatibility.
 
 Full release history: https://github.com/WillItMod/5tratum/releases
 

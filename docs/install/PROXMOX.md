@@ -23,6 +23,7 @@ The default deployment uses:
 - `vmbr0` with DHCP and the Proxmox firewall enabled
 - 4 CPU cores, 8 GiB RAM, 2 GiB swap and a 128 GiB root disk
 - automatic guest startup with the Proxmox host
+- the pinned v0.8.6 installation bundle and MAIN updates
 
 The helper selects active LXC storage automatically, downloads the Debian
 template when necessary, creates the guest, and runs the supported Linux
@@ -48,6 +49,10 @@ bash /root/install-proxmox.sh \
 ```
 
 Run `bash /root/install-proxmox.sh --help` for every option.
+Use `--install-tag TAG` (or `INSTALL_TAG=TAG`) to select another published
+bundle. `--channel` must match that bundle's channel and is saved for future
+updates.
+`INSTALL_REF` selects the source revision of both installation wrappers.
 
 ## Requirements
 

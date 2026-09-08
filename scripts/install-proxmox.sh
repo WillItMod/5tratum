@@ -24,7 +24,7 @@ Options:
   --memory-mb N               Memory in MiB (default: 8192)
   --swap-mb N                 Swap in MiB (default: 2048)
   --channel NAME              5tratumOS update channel (default: main)
-  --install-tag TAG           Bundle tag or latest (default: latest)
+  --install-tag TAG           Bundle tag or latest (default: v0.8.6)
   -h, --help                  Show this help
 
 The helper prefers the newest Debian 12 or Debian 13 template available for
@@ -49,8 +49,8 @@ disk_gb="128"
 cores="4"
 memory_mb="8192"
 swap_mb="2048"
-channel="main"
-install_tag="latest"
+channel="${CHANNEL:-main}"
+install_tag="${INSTALL_TAG:-v0.8.6}"
 install_ref="${INSTALL_REF:-$DEFAULT_INSTALL_REF}"
 
 while [[ $# -gt 0 ]]; do
@@ -215,6 +215,9 @@ echo "[5/5] Installing 5tratumOS inside CT ${vmid}..."
 pct exec "$vmid" -- env \
   "CHANNEL=${channel}" \
   "INSTALL_TAG=${install_tag}" \
+  "INSTALL_REF=${install_ref}" \
+  "INSTALL_REPO=${INSTALL_REPOSITORY}" \
+  "BUNDLE_URL=${BUNDLE_URL:-}" \
   "INSTALLER_URL=${installer_url}" \
   bash -lc \
   'set -Eeuo pipefail

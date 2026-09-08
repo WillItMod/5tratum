@@ -12,17 +12,22 @@ This guide is for the **Raspberry Pi image** distributed in GitHub Releases.
 
 ## Download
 
-Current full BETA image:
+Current v0.8.6 image:
 
-- Image: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz
-- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.5.00/5tratumos-raspios-lite-v0.5.00.img.xz.sha256
-- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.5.00
+- Image: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz
+- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.6/5tratumos-raspios-lite-v0.8.6-arm64.img.xz.sha256
+- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.8.6
 
 All releases:
 - https://github.com/WillItMod/5tratum/releases
 
-At the time of writing, the newest BETA Raspberry Pi image is under tag **v0.5.00**:
-- `5tratumos-raspios-lite-v0.5.00.img.xz`
+Image filename:
+- `5tratumos-raspios-lite-v0.8.6-arm64.img.xz`
+
+The image passed ARM64 content checks, archive integrity checks and read-only
+filesystem checks. **Physical Raspberry Pi boot testing remains outstanding.**
+These checks do not establish that it booted on Raspberry Pi 4 or 5 hardware.
+Read the release notes for the complete validation evidence.
 
 ## Flash with Raspberry Pi Imager (recommended)
 
@@ -52,8 +57,10 @@ Example:
 ssh -t pi@192.168.1.50 "curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh -o /tmp/install-rpi.sh && sudo env CHANNEL=main bash /tmp/install-rpi.sh"
 ```
 
-The bootstrap installer follows the current BETA main-channel bundle, presently
-`v0.5.8`.
+The bootstrap installer defaults to `INSTALL_TAG=v0.8.6` and
+`CHANNEL=main`. Its checksum must verify before the bundle is installed.
+A different release can be selected explicitly with `sudo env CHANNEL=main INSTALL_TAG=TAG`
+when invoking the helper.
 
 ## First boot
 
@@ -69,7 +76,7 @@ Useful debug log if the dashboard does not appear:
 sudo cat /var/log/5tratumos-rpi-firstboot-install.log
 ```
 
-## Verify download (optional)
+## Verify download
 
 Use the checksum guide:
 
