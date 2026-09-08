@@ -32,15 +32,21 @@ Full media release page: https://github.com/WillItMod/5tratum/releases/tag/v0.5.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The Orbit release is **v0.8.1** on MAIN and **v0.8.1-dev** on DEV.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.2**. DEV remains **v0.8.1-dev**.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.1
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.2
 - DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.1-dev
-- Existing-install payload: `5tratumos-update-v0.8.1.tgz` (or the DEV counterpart).
+- MAIN existing-install payload: `5tratumos-update-v0.8.2.tgz`.
 
 After upgrading, a full-screen welcome offers **Enter Orbit** or **Keep Classic**. Orbit provides independent app windows, snapping, fleet and system widgets, and the animated **5TRATUSPHERE** world. Both interfaces use your normal device address. Your selected interface is remembered in that browser and can be changed in Settings.
 
 Orbit is available without a MUX licence. MUX-specific features use 5tratMux’s own licence and trial. 5tratMux and other apps retain their own versions and update controls; an OS update does not activate a trial.
+
+**MUXFLIGHT 0.1.0** is an optional, separate download for users with an active 5tratMux licence: **152,224,152 bytes (145.17 MiB)**. Enable it from Orbit after updating. Graphics run in the viewing browser, with selectable quality levels; the node supplies files and mining telemetry. Orbit and 5TRATUSPHERE remain usable without downloading MUXFLIGHT.
+
+Fly in Spectate, Manual, Assisted or guided Autopilot, enter different spacecraft, recruit a formation, and explore orbit, deep space and planetary surfaces, including ice canyon runs. Theatre offers cinematic fleet views while retaining the captain’s control state. The optional audio deck includes 27 classical tracks, local music and direct internet-radio streams. Sound effects provide an explicit resume control when a browser interrupts playback. Miner allocation control requires a compatible 5tratMux installation.
+
+Version 0.8.2 also refines Orbit window copying and opening apps in new tabs, resource reporting and fleet presentation. Local AI settings are integrated; fresh Local AI runtime and model downloads are not published in this OS release.
 
 These `.tgz` files update an existing installation; they are not fresh-install images. OS updates continue to use the established SHA-256 checksum mechanism. The release notes describe verification and administrator-managed signature-enforcement compatibility.
 

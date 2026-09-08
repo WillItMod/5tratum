@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.8.2 MAIN (2026-09-08)
+
+- Add optional MUXFLIGHT 0.1.0 for users with an active 5tratMux licence, as a separate 152,224,152-byte (145.17 MiB) download. Rendering runs in the viewing browser, with selectable graphics quality.
+- Provide Spectate, Manual, Assisted and guided Autopilot, distinct craft and cockpit views, formations, and orbit, deep-space and surface travel with ice canyon runs.
+- Show per-miner planned allocations separately from current hash flow; compatible 5tratMux installations accept the captain's mining split under an owned control session.
+- Preserve captain mode, formation and accepted allocation when entering and leaving Theatre. Cinematic camera and firing activity do not change mining intent.
+- Include 27 classical recordings, local music and direct internet-radio playback. Add explicit recovery for browser-interrupted effects, nearby spacecraft audio and refined weapon intensity.
+- Refine fragment clearance and draw distances, terrain and camera continuity, craft separation, target interaction and cockpit presentation.
+- Improve Orbit right-click copying, app windows opening in new tabs, resource reporting and fleet views.
+- Integrate Local AI settings; fresh Local AI runtime and model downloads are not published in this OS release.
+- Keep DEV on v0.8.1-dev. 5tratMux remains independently versioned; miner control requires a compatible installation.
+
+Source: `WillItMod/5tratum_Build` commit `a50c398ff8470723d6022ce17156fda57c83acdd`.
+MAIN OS archive SHA-256: `b0088de0ccc3fa846a9a37e077dbb180eeb0d8fea714d08dd1368f68c77a9fef`.
+MUXFLIGHT archive SHA-256: `f08c4fa9590243417bef211fae5732ce5e3b7b3705c03df4807b16e02c89c544`.
+
 ## v0.8.1 and v0.8.1-dev (2026-09-06)
 
 - Introduce Orbit alongside Classic, with an upgrade welcome and persistent interface choice.
