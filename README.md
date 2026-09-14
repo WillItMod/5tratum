@@ -44,11 +44,23 @@ It has **not been boot-tested on physical Raspberry Pi hardware**.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.7**. DEV is **v0.8.7-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.9**. DEV is **v0.8.9-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.7.tgz`.
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.9
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.9-dev
+- MAIN existing-install payload: `5tratumos-update-v0.8.9.tgz`.
+
+Version 0.8.9 adds **Settings → 5tratMux Licence → Back up or restore licence**
+in Classic and Orbit. Save your licence proof outside the PC, then upload it
+after a reinstall or on a replacement PC. A paid licence supports up to five
+self-service moves, preserving its original plan and expiry. The old PC loses
+paid access at its next online licence check or when its existing offline
+access expires; an offline PC cannot be disabled instantly. Treat the proof as
+a secret and keep it safe. See the [licence restore guide](docs/LICENCE_RESTORE.md).
+
+The OS update installs the separately signed 5tratMux 0.9.52 runtime
+(0.9.52-dev on DEV) through the existing updater and retains the 0.8.8 handoff
+fix. Fresh-install media remains at 0.8.7; update through Settings after setup.
 
 Version 0.8.7 refreshes the UEFI, BIOS and Raspberry Pi installation media and
 the Linux/Pi helpers. Fresh installs retain the embedded version and update

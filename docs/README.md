@@ -13,9 +13,11 @@ Raspberry Pi image contents and filesystems were checked; physical Pi boot testi
 remains outstanding. See the release notes for architecture-specific evidence.
 
 Existing installations update through `Settings -> Updates`. The current
-main-channel updater is v0.8.7:
+main-channel updater is v0.8.9 (DEV: v0.8.9-dev):
 
-- `https://github.com/WillItMod/5tratum/releases/tag/v0.8.7`
+- [MAIN release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.9)
+- [DEV release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.9-dev)
+- [5tratMux licence backup and restore](LICENCE_RESTORE.md)
 
 The `.tgz` payload is used by updates and by the Linux/Raspberry Pi installation
 helpers. It is not bootable media.

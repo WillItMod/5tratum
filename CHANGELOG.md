@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.8.9 MAIN and v0.8.9-dev (2026-09-14)
+
+- Add Settings → 5tratMux Licence → Back up or restore licence in Classic and Orbit, including while the signed runtime is still starting.
+- Use the updated licensing authority and signed 5tratMux 0.9.52 runtime (0.9.52-dev on DEV) for up to five self-service paid-licence moves using a saved proof.
+- Preserve the original plan and expiry. Repeating a completed restore on the currently bound installation does not consume another move.
+- Retire the previous installation's paid binding. It stops at its next online licence check or when previously issued offline access expires, not instantly while disconnected.
+- Preserve the 0.8.8 managed-update handoff fix and existing OS features. No new bootable media is included; installer media remains at 0.8.7.
+- Retain the established whole-OS SHA-256 mechanism; native MUX release manifests remain independently signed.
+
+OS source: `WillItMod/5tratum_Build` commit `c7984548f8c804c71173e9fe09f5671ec949602a`.
+MAIN OS archive SHA-256: `b18ae71346ab4a6f791e743b8d02f0898635871009c46a54765f9b1d46ea75ed`.
+DEV OS archive SHA-256: `202677fe5861446af4670f9d024f870e8dcf66443c85a09dd54b124278fe481f`.
+
 ## v0.8.5 MAIN and v0.8.5-dev (2026-09-08)
 
 - Roll up every 0.8.4 OS/Orbit change, automatic installed Mux Flight 0.1.1 updates and signed public Local AI installation metadata.
