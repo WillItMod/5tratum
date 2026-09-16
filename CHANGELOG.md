@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.8.10 MAIN and v0.8.10-dev (2026-09-16)
+
+- Add the signed managed Local AI 0.1.3 runtime and an in-place successor path for public 0.1.0, 0.1.1 and 0.1.2 installations.
+- Preserve downloaded models, model selection, resource preferences, container identity, storage volume and prior On/Off intent during a managed upgrade.
+- Verify the successor image before stopping the old runtime and restore the previous owned container and running state if replacement startup fails.
+- Leave private, disabled, cross-platform, differently owned and unknown Local AI configurations untouched.
+- Install signed 5tratMux 0.9.54 (0.9.54-dev on DEV), repairing multi-address research networking, safe failure diagnostics and explicit model switching.
+- Retain existing licences, routing settings and app data. No new bootable media is included; installer media remains at 0.8.7.
+
+OS source: `WillItMod/5tratum_Build` commit `a9e1f8b2170f7eb966ffd3cf7d0ce50a55a0ee35`.
+MUX source: `WillItMod/5tratMux_Build` commit `3b589bb6c2ea7c45da38cd7556cb9caec9b55121`.
+MAIN OS archive SHA-256: `6d11fab5635912d3d3e922a4a84f5443ee4d934240c3a4bb288835db30937813`.
+DEV OS archive SHA-256: `6542da75d285252489f072edff7e0b295a313be3a29755dd7124ab32ad3b176d`.
+
 ## v0.8.9 MAIN and v0.8.9-dev (2026-09-14)
 
 - Add Settings → 5tratMux Licence → Back up or restore licence in Classic and Orbit, including while the signed runtime is still starting.
@@ -167,7 +181,7 @@ This file captures the shipped release notes for `v0.3.134` through `v0.3.184`.
 - `v0.3.166` (2026-01-26): MAIN: promotes the above.
 - `v0.3.167-dev` (2026-01-27): DEV-only: system hostname save + mDNS toggle.
 - `v0.3.168-dev` (2026-01-27): DEV-only: Wi‑Fi toggle label fix + show DEV channel.
-- `v0.3.169-dev` (2026-01-27): DEV-only: remove Umbrel wording in custom store hint.
+- `v0.3.169-dev` (2026-01-27): DEV-only: remove retired-platform wording in custom store hint.
 - `v0.3.170-dev` (2026-01-27): DEV-only: Store sync made atomic + cache TTL tweaks.
 - `v0.3.171-dev` (2026-01-27): DEV-only: app uninstall more idempotent + longer uninstall timeout.
 - `v0.3.172-dev` (2026-01-27): DEV-only: Wi‑Fi enable/scan reliability (rfkill unblock, bring link up before scan).

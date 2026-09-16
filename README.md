@@ -44,11 +44,18 @@ It has **not been boot-tested on physical Raspberry Pi hardware**.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.9**. DEV is **v0.8.9-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.10**. DEV is **v0.8.10-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.9
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.9-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.9.tgz`.
+- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.10
+- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.10-dev
+- MAIN existing-install payload: `5tratumos-update-v0.8.10.tgz`.
+
+Version 0.8.10 supplies managed Local AI runtime 0.1.3 and safely upgrades
+existing public Local AI installations in place. Downloaded models, model
+selection, resource preferences and prior On/Off state are preserved. The
+paired signed 5tratMux 0.9.54 update repairs multi-address research networking
+and restores explicit model switching. Fresh-install media remains at 0.8.7;
+update through Settings after setup.
 
 Version 0.8.9 adds **Settings → 5tratMux Licence → Back up or restore licence**
 in Classic and Orbit. Save your licence proof outside the PC, then upload it
@@ -58,9 +65,9 @@ paid access at its next online licence check or when its existing offline
 access expires; an offline PC cannot be disabled instantly. Treat the proof as
 a secret and keep it safe. See the [licence restore guide](docs/LICENCE_RESTORE.md).
 
-The OS update installs the separately signed 5tratMux 0.9.52 runtime
-(0.9.52-dev on DEV) through the existing updater and retains the 0.8.8 handoff
-fix. Fresh-install media remains at 0.8.7; update through Settings after setup.
+The OS update installs the separately signed 5tratMux 0.9.54 runtime
+(0.9.54-dev on DEV) through the existing updater and retains the 0.8.8 handoff
+fix.
 
 Version 0.8.7 refreshes the UEFI, BIOS and Raspberry Pi installation media and
 the Linux/Pi helpers. Fresh installs retain the embedded version and update
@@ -93,8 +100,7 @@ Full release history: https://github.com/WillItMod/5tratum/releases
 `5tratumOS` is the host platform and update surface. The app family and store matrix live alongside it:
 
 - Axe app hub: https://github.com/WillItMod/AxeSuite
-- Umbrel main store: https://github.com/WillItMod/umbrel-community-store
-- Umbrel dev store: https://github.com/WillItMod/umbrel-dev-community-store
+- 5tratStore: https://github.com/WillItMod/5tratStore-global
 
 For the current app matrix, store coverage, and release/changelog pointers, see the AxeSuite docs.
 
