@@ -13,10 +13,10 @@ Raspberry Pi image contents and filesystems were checked; physical Pi boot testi
 remains outstanding. See the release notes for architecture-specific evidence.
 
 Existing installations update through `Settings -> Updates`. The current
-main-channel updater is v0.8.9 (DEV: v0.8.9-dev):
+main-channel updater is v0.8.10 (DEV: v0.8.10-dev):
 
-- [MAIN release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.9)
-- [DEV release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.9-dev)
+- [MAIN release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.10)
+- [DEV release](https://github.com/WillItMod/5tratum/releases/tag/v0.8.10-dev)
 - [5tratMux licence backup and restore](LICENCE_RESTORE.md)
 
 The `.tgz` payload is used by updates and by the Linux/Raspberry Pi installation
@@ -32,5 +32,4 @@ helpers. It is not bootable media.
 Related app docs:
 
 - AxeSuite: `https://github.com/WillItMod/AxeSuite`
-- Umbrel main store: `https://github.com/WillItMod/umbrel-community-store`
-- Umbrel dev store: `https://github.com/WillItMod/umbrel-dev-community-store`
+- 5tratStore: `https://github.com/WillItMod/5tratStore-global`

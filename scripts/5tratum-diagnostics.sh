@@ -215,7 +215,7 @@ else
 fi
 
 section "APP DATA LOCATIONS"
-for base in /home/*/umbrel/app-data /opt/umbrel/app-data /var/lib/umbrel/app-data; do
+for base in /var/lib/5tratumos/apps /var/lib/5tratumos/legacy-app-data; do
   [ -d "$base" ] || continue
   echo
   echo "$base"
@@ -224,17 +224,15 @@ done
 
 section "AXEDGB / AXEBCH APP FILES IF PRESENT"
 for d in \
-  /home/*/umbrel/app-data/*axedgb* \
-  /home/*/umbrel/app-data/*axebch* \
-  /opt/umbrel/app-data/*axedgb* \
-  /opt/umbrel/app-data/*axebch* \
-  /var/lib/umbrel/app-data/*axedgb* \
-  /var/lib/umbrel/app-data/*axebch*; do
+  /var/lib/5tratumos/apps/*axedgb* \
+  /var/lib/5tratumos/apps/*axebch* \
+  /var/lib/5tratumos/legacy-app-data/*axedgb* \
+  /var/lib/5tratumos/legacy-app-data/*axebch*; do
   [ -d "$d" ] || continue
   echo
   echo "APP DIR: $d"
   ls -la "$d"
-  find "$d" -maxdepth 3 -type f \( -name "docker-compose.yml" -o -name "umbrel-app.yml" -o -name "*.json" \) -print
+  find "$d" -maxdepth 3 -type f \( -name "docker-compose.yml" -o -name "5tratstore-app.yml" -o -name "*.json" \) -print
 done
 
 section "LISTENING PORTS"
