@@ -2,8 +2,8 @@
 
 5tratumOS is distributed via **GitHub Releases** (update bundles + install media). Not every tag includes every asset, so use the Releases page to find the newest installer media.
 
-- Current BETA main-channel update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
-- Current installer media: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
+- Current MAIN update and Raspberry Pi image (rpi1): https://github.com/WillItMod/5tratum/releases/tag/v0.8.10
+- Current AMD/Intel installer media: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
 - Full release history: https://github.com/WillItMod/5tratum/releases
 
 ## Requirements
@@ -27,8 +27,8 @@ Download the installer image and matching checksum:
 - Legacy BIOS checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso.sha256
 
 Read the release notes for clean-install and reboot evidence. Earlier media
-remains available under v0.5.00. Raspberry Pi content and filesystem checks
-passed, but physical Raspberry Pi boot testing remains outstanding.
+remains available under v0.5.00. The Raspberry Pi image is refreshed separately
+at v0.8.10 (rpi1); physical Raspberry Pi boot testing remains outstanding.
 The `.tgz` installation/update bundle is not a bootable disk image.
 
 ## Downloads (per release)
@@ -44,19 +44,22 @@ Releases include:
 
 2) **Raspberry Pi image (arm64)** (when published)
    - Filename: `5tratumos-raspios-lite-v<version>-arm64.img.xz`
-   - Purpose: flash directly to microSD/SSD, then boot on a Raspberry Pi 4/5.
-   - Current image: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz
-   - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
+   - Purpose: flash directly to microSD/SSD, then boot on a Raspberry Pi 4/5. Writing the image erases the selected device.
+   - The v0.8.10 image embeds the latest rollup with the ARM64 console package correction (revision rpi1).
+   - Current image: https://github.com/WillItMod/5tratum/releases/download/v0.8.10/5tratumos-raspios-lite-v0.8.10-arm64.img.xz
+   - Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.10/5tratumos-raspios-lite-v0.8.10-arm64.img.xz.sha256
 
 If you're installing on AMD/Intel hardware and are unsure, use the **UEFI installer ISO**.
 
 ## Installation bundle and Linux helper
 
-The same OS payload is distributed as `5tratumos-update-v0.8.7.tgz` and the
+The Linux helper uses `5tratumos-update-v0.8.7.tgz` and the
 identical `5tratumos-update.tgz` alias, each with its own `.sha256` sidecar.
 It includes `bootstrap/install.sh`, the current service definitions, daemon,
 portal and app templates. The helpers verify the checksum and install the
-payload on a supported 64-bit Debian, Ubuntu or Raspberry Pi OS system.
+payload on a supported 64-bit Debian or Ubuntu system. The Raspberry Pi helper
+uses the corrected `5tratumos-rpi-payload-v0.8.10-rpi1.tgz` with its matching
+checksum; see the [Raspberry Pi guide](../rpi/README.md).
 The signed optional Local AI catalogue remains included; model weights and the
 optional MUXFLIGHT download are not part of the installation bundle.
 

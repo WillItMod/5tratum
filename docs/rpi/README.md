@@ -12,22 +12,25 @@ This guide is for the **Raspberry Pi image** distributed in GitHub Releases.
 
 ## Download
 
-Current v0.8.7 image:
+Current **v0.8.10 image (revision rpi1)**:
 
-- Image: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz
-- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
-- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
+- Image: https://github.com/WillItMod/5tratum/releases/download/v0.8.10/5tratumos-raspios-lite-v0.8.10-arm64.img.xz
+- Checksum: https://github.com/WillItMod/5tratum/releases/download/v0.8.10/5tratumos-raspios-lite-v0.8.10-arm64.img.xz.sha256
+- Release notes: https://github.com/WillItMod/5tratum/releases/tag/v0.8.10
 
 All releases:
 - https://github.com/WillItMod/5tratum/releases
 
 Image filename:
-- `5tratumos-raspios-lite-v0.8.7-arm64.img.xz`
+- `5tratumos-raspios-lite-v0.8.10-arm64.img.xz`
 
-The image passed ARM64 content checks, archive integrity checks and read-only
-filesystem checks. **Physical Raspberry Pi boot testing remains outstanding.**
-These checks do not establish that it booted on Raspberry Pi 4 or 5 hardware.
-Read the release notes for the complete validation evidence.
+The image embeds the published v0.8.10 rollup with one console-installer
+correction: ARM64 no longer requests `xserver-xorg-video-vesa`, which is not
+available on this architecture. This fixes the reported first-boot installer
+failure. The existing v0.8.10 update archives remain unchanged.
+
+**Physical Raspberry Pi boot testing remains outstanding.** Read the release
+notes for image provenance and the complete validation evidence.
 
 ## Flash with Raspberry Pi Imager (recommended)
 
@@ -40,7 +43,12 @@ Read the release notes for the complete validation evidence.
    - Wi-Fi SSID + password (optional)
    - Locale/keyboard (recommended)
    - Enable SSH (recommended)
-5) Choose your SD card -> **Write**
+5) Choose your microSD card or SSD -> **Write**
+
+Writing the image erases the selected device. Before replacing an existing
+Umbrel or 5tratumOS installation, preserve its wallet files and application data
+on another device. Use a separate microSD/SSD for the new installation when
+recovering data from an old drive.
 
 ## Install over SSH on Raspberry Pi OS Lite
 
@@ -57,14 +65,16 @@ Example:
 ssh -t pi@192.168.1.50 "curl -fsSL https://raw.githubusercontent.com/WillItMod/5tratum/main/scripts/install-rpi.sh -o /tmp/install-rpi.sh && sudo env CHANNEL=main bash /tmp/install-rpi.sh"
 ```
 
-The bootstrap installer defaults to `INSTALL_TAG=v0.8.7` and
-`CHANNEL=main`. Its checksum must verify before the bundle is installed.
+The bootstrap installer defaults to `INSTALL_TAG=v0.8.10` and
+`CHANNEL=main`. It downloads `5tratumos-rpi-payload-v0.8.10-rpi1.tgz`, which
+contains the same corrected payload embedded in the Pi image. Its checksum
+must verify before the bundle is installed.
 A different release can be selected explicitly with `sudo env CHANNEL=main INSTALL_TAG=TAG`
 when invoking the helper.
 
 ## First boot
 
-- Boot the Pi from the microSD card.
+- Boot the Pi from the microSD card or SSD.
 - Find the device on your network (router/DHCP list).
 - Open the UI in a browser: `http://<pi-ip>/`
 - The first boot installs 5tratumOS from the embedded bundle and may reboot once.
