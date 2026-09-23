@@ -18,8 +18,17 @@ require_root
 
 INSTALL_REPO="${INSTALL_REPO:-WillItMod/5tratum}"
 INSTALL_REF="${INSTALL_REF:-main}"
-INSTALL_TAG="${INSTALL_TAG:-v0.8.7}"
+INSTALL_TAG="${INSTALL_TAG:-v0.8.10}"
 BUNDLE_URL="${BUNDLE_URL:-}"
+# The refreshed Pi media preserves the 0.8.10 rollup with only its console
+# package installer corrected for ARM64. Keep the general update feed intact.
+BUNDLE_ASSET="${BUNDLE_ASSET:-}"
+if [ -z "${BUNDLE_ASSET}" ]; then
+  BUNDLE_ASSET="5tratumos-update.tgz"
+  if [ "${INSTALL_REPO}" = "WillItMod/5tratum" ] && [ "${INSTALL_TAG}" = "v0.8.10" ]; then
+    BUNDLE_ASSET="5tratumos-rpi-payload-v0.8.10-rpi1.tgz"
+  fi
+fi
 CHANNEL="${CHANNEL:-}"
 UPDATE_PUBLIC_KEY_FILE="${UPDATE_PUBKEY_FILE:-${UPDATE_PUBLIC_KEY_FILE:-}}"
 
@@ -74,8 +83,8 @@ resolve_bundle_urls() {
     if json="$(curl -fsSL --retry 3 --retry-delay 2 "${curl_auth_args[@]}" -H "Accept: application/vnd.github+json" "${api}" 2>/dev/null)"; then
       local b
       local s
-      b="$(printf '%s' "${json}" | jq -r '.assets[]? | select(.name=="5tratumos-update.tgz") | .browser_download_url' | head -n 1)"
-      s="$(printf '%s' "${json}" | jq -r '.assets[]? | select(.name=="5tratumos-update.tgz.sha256") | .browser_download_url' | head -n 1)"
+      b="$(printf '%s' "${json}" | jq -r --arg name "${BUNDLE_ASSET}" '.assets[]? | select(.name==$name) | .browser_download_url' | head -n 1)"
+      s="$(printf '%s' "${json}" | jq -r --arg name "${BUNDLE_ASSET}.sha256" '.assets[]? | select(.name==$name) | .browser_download_url' | head -n 1)"
       if [ -n "${b}" ] && [ "${b}" != "null" ]; then
         echo "${b}"
         echo "${s:-}"
@@ -85,11 +94,11 @@ resolve_bundle_urls() {
   fi
 
   if [ "${INSTALL_TAG}" != "latest" ]; then
-    echo "https://github.com/${INSTALL_REPO}/releases/download/${INSTALL_TAG}/5tratumos-update.tgz"
-    echo "https://github.com/${INSTALL_REPO}/releases/download/${INSTALL_TAG}/5tratumos-update.tgz.sha256"
+    echo "https://github.com/${INSTALL_REPO}/releases/download/${INSTALL_TAG}/${BUNDLE_ASSET}"
+    echo "https://github.com/${INSTALL_REPO}/releases/download/${INSTALL_TAG}/${BUNDLE_ASSET}.sha256"
   else
-    echo "https://github.com/${INSTALL_REPO}/releases/latest/download/5tratumos-update.tgz"
-    echo "https://github.com/${INSTALL_REPO}/releases/latest/download/5tratumos-update.tgz.sha256"
+    echo "https://github.com/${INSTALL_REPO}/releases/latest/download/${BUNDLE_ASSET}"
+    echo "https://github.com/${INSTALL_REPO}/releases/latest/download/${BUNDLE_ASSET}.sha256"
   fi
   return 0
 }
@@ -173,8 +182,8 @@ if ! download "${bundle_url}" "${bundle}"; then
       -H "Accept: application/vnd.github+json" \
       -H "User-Agent: 5tratumos" \
       "$(release_api_url)" 2>/dev/null || true)"
-    asset_id="$(printf '%s' "${rel}" | jq -r '.assets[]? | select(.name=="5tratumos-update.tgz") | .id' | head -n 1)"
-    sha_id="$(printf '%s' "${rel}" | jq -r '.assets[]? | select(.name=="5tratumos-update.tgz.sha256") | .id' | head -n 1)"
+    asset_id="$(printf '%s' "${rel}" | jq -r --arg name "${BUNDLE_ASSET}" '.assets[]? | select(.name==$name) | .id' | head -n 1)"
+    sha_id="$(printf '%s' "${rel}" | jq -r --arg name "${BUNDLE_ASSET}.sha256" '.assets[]? | select(.name==$name) | .id' | head -n 1)"
     if [ -n "${asset_id}" ] && [ "${asset_id}" != "null" ] && download_github_asset_by_id "${asset_id}" "${bundle}"; then
       sha_url=""
       if [ -n "${sha_id}" ] && [ "${sha_id}" != "null" ]; then
