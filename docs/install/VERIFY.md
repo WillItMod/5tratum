@@ -10,7 +10,7 @@ do not sign the entire OS bundle or installer image.
 Examples:
 - `5tratumos-installer-v0.8.7-uefi.iso` + `5tratumos-installer-v0.8.7-uefi.iso.sha256`
 - `5tratumos-installer-v0.8.7-bios.iso` + `5tratumos-installer-v0.8.7-bios.iso.sha256`
-- `5tratumos-raspios-lite-v0.8.7-arm64.img.xz` + `5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256`
+- `5tratumos-raspios-lite-v0.8.10-arm64.img.xz` + `5tratumos-raspios-lite-v0.8.10-arm64.img.xz.sha256`
 
 ## Windows
 
@@ -24,7 +24,7 @@ Compare the output to the matching `.sha256` file.
 
 ```sh
 sha256sum -c 5tratumos-installer-v0.8.7-uefi.iso.sha256
-sha256sum -c 5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
+sha256sum -c 5tratumos-raspios-lite-v0.8.10-arm64.img.xz.sha256
 ```
 
 If your system does not have `sha256sum` on macOS, use:

@@ -121,8 +121,10 @@ For the 0.8.7 preparation, keep candidate files labeled `v0.8.7-rc1` until the
 release decision. `INSTALL_TAG=v0.8.7-rc1` selects that candidate in the helpers;
 for unpublished QA, provide the exact candidate archive as `BUNDLE_URL` with a
 matching `.sha256` at the adjacent URL. A missing checksum or failed download
-must stop installation rather than select another payload. Public helper defaults are `v0.8.7`; publish helper changes together with the
-tested assets.
+must stop installation rather than select another payload. The Linux/Proxmox
+helper defaults remain `v0.8.7`; the Raspberry Pi helper defaults to `v0.8.10`
+with the corrected `rpi1` payload described below. Publish helper changes
+together with the tested assets.
 
 Record the source commit and any source patch, bundle SHA-256, signed catalogue
 identity, upstream base URL/version/SHA-256, build-host architecture, builder
@@ -137,3 +139,18 @@ the ISO and reboot, then check installed version, app catalogue, update channels
 required services, network and rendered UI. Record BIOS and UEFI coverage
 separately. Raspberry Pi evidence must distinguish ARM64 static checks,
 emulation and an actual physical Pi boot. Do not replace earlier release assets.
+
+## Raspberry Pi v0.8.10 refresh (rpi1)
+
+The Pi-only refresh starts from the published MAIN v0.8.10 rollup and changes
+`console/install.sh` to omit the unavailable VESA driver on ARM64. The corrected
+payload is published separately as `5tratumos-rpi-payload-v0.8.10-rpi1.tgz`,
+with its own checksum, and embedded in
+`5tratumos-raspios-lite-v0.8.10-arm64.img.xz`. The Raspberry Pi SSH helper uses
+that same corrected payload. Existing v0.8.10 update archives and the v0.8.7
+AMD/Intel installer media remain unchanged.
+
+Record the original rollup hash, patched script hash, corrected payload hash,
+base image hash, image revision and final image hash in the release provenance.
+The public release notes must distinguish content/filesystem validation from
+physical Raspberry Pi boot testing.

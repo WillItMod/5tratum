@@ -18,7 +18,8 @@ This project is licensed under the **Business Source License 1.1 (BSL 1.1)**. It
 
 ### Fresh install: full bootable images
 
-The current installer media release is **v0.8.7**. Download the image for your
+The current Raspberry Pi image is **v0.8.10 (revision rpi1)**. AMD/Intel UEFI
+and BIOS installer media remains at **v0.8.7**. Download the image for your
 machine and its matching checksum. Earlier media remains available at
 [v0.5.00](https://github.com/WillItMod/5tratum/releases/tag/v0.5.00).
 
@@ -26,20 +27,29 @@ machine and its matching checksum. Earlier media remains available at
 - **UEFI checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-uefi.iso.sha256
 - **AMD/Intel legacy BIOS ISO:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso
 - **Legacy BIOS checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-installer-v0.8.7-bios.iso.sha256
-- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz
-- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.7/5tratumos-raspios-lite-v0.8.7-arm64.img.xz.sha256
+- **Raspberry Pi 4/5 arm64 image:** https://github.com/WillItMod/5tratum/releases/download/v0.8.10/5tratumos-raspios-lite-v0.8.10-arm64.img.xz
+- **Raspberry Pi checksum:** https://github.com/WillItMod/5tratum/releases/download/v0.8.10/5tratumos-raspios-lite-v0.8.10-arm64.img.xz.sha256
 
-Media release notes and validation: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
+Media release notes and validation:
+
+- Raspberry Pi: https://github.com/WillItMod/5tratum/releases/tag/v0.8.10
+- AMD/Intel: https://github.com/WillItMod/5tratum/releases/tag/v0.8.7
 
 Version 0.8.7 corrects a first-boot network timing issue found in the 0.8.6
 Proxmox test. See the release notes for the latest validation status.
 
-The installation bundle is `5tratumos-update-v0.8.7.tgz` (also supplied as
-`5tratumos-update.tgz`), with a matching `.sha256`. It contains the OS payload,
-bootstrap installer and service definitions used by the Linux and Raspberry Pi
-helpers; it is not a bootable disk image. See the [installation guide](docs/install/README.md).
+The Linux installation helper uses `5tratumos-update-v0.8.7.tgz` (also supplied
+as `5tratumos-update.tgz`). The Raspberry Pi helper uses
+`5tratumos-rpi-payload-v0.8.10-rpi1.tgz`, the same corrected payload embedded
+in the new Pi image. Both have matching `.sha256` files and contain the OS
+payload, bootstrap installer and service definitions; neither is a bootable
+disk image. See the [installation guide](docs/install/README.md).
 
-The Raspberry Pi image has passed ARM64 content, checksum and filesystem checks.
+The Raspberry Pi image embeds the published v0.8.10 rollup with a targeted
+console-installer correction: ARM64 no longer requests the unavailable
+`xserver-xorg-video-vesa` package. Revision `rpi1` changes only that installer
+script inside the embedded payload; the existing v0.8.10 OS update archives
+remain unchanged. See the release notes for image provenance and validation.
 It has **not been boot-tested on physical Raspberry Pi hardware**.
 
 ### Existing installation: update in the WebUI
@@ -54,8 +64,9 @@ Version 0.8.10 supplies managed Local AI runtime 0.1.3 and safely upgrades
 existing public Local AI installations in place. Downloaded models, model
 selection, resource preferences and prior On/Off state are preserved. The
 paired signed 5tratMux 0.9.54 update repairs multi-address research networking
-and restores explicit model switching. Fresh-install media remains at 0.8.7;
-update through Settings after setup.
+and restores explicit model switching. The refreshed Raspberry Pi image
+installs 0.8.10 directly; AMD/Intel media remains at 0.8.7 and can update through
+Settings after setup.
 
 Version 0.8.9 adds **Settings → 5tratMux Licence → Back up or restore licence**
 in Classic and Orbit. Save your licence proof outside the PC, then upload it
