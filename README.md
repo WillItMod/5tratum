@@ -136,6 +136,10 @@ Actual app requirements vary by chain and workload. Full nodes and multi-app fle
 - Verify downloads: [docs/install/VERIFY.md](docs/install/VERIFY.md)
 - Raspberry Pi: [docs/rpi/README.md](docs/rpi/README.md)
 
+## Support repairs
+
+- [GMKtec NucBox M6 firmware/kernel repair](support/gmktec-m6/README.md): support-directed Debian 13 repair with a verified curl download.
+
 ## First login / finding your IP
 
 - WebUI credentials are created on first login (there is no default admin password).
