@@ -54,11 +54,28 @@ It has **not been boot-tested on physical Raspberry Pi hardware**.
 
 ### Existing installation: update in the WebUI
 
-Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.10**. DEV is **v0.8.10-dev**, with the same runtime changes.
+Open **Settings → Updates**, choose your update channel, and check for updates. The current MAIN release is **v0.8.13**. DEV is **v0.8.13-dev**, with the same runtime changes.
 
-- MAIN update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.10
-- DEV update: https://github.com/WillItMod/5tratum/releases/tag/v0.8.10-dev
-- MAIN existing-install payload: `5tratumos-update-v0.8.10.tgz`.
+- [MAIN update and release notes](https://github.com/WillItMod/5tratum/releases/tag/v0.8.13)
+- [DEV update and release notes](https://github.com/WillItMod/5tratum/releases/tag/v0.8.13-dev)
+- MAIN existing-install payload: `5tratumos-update-v0.8.13.tgz`.
+
+Version 0.8.13 fixes AxeLive/AxeBench recipe selection and missing version
+metadata, synchronizes installed-version reporting, waits for the daemon to
+restart before reporting update completion, and bounds accumulated login
+sessions. It also reports unhealthy applications and corrects AxePPC pool
+control. Both exact channel packages passed installation through the existing
+updater on the reference node.
+
+The companion [5tratMux 0.9.57 update](https://github.com/WillItMod/5tratMux/releases/tag/v0.9.57)
+adds explicit Local AI percentages and named remainders, clear allocation
+conflict explanations, miner compatibility fixes and notification retry backoff.
+Install it through Mux's own updater. Its guidance was tested with actual Qwen
+0.8B, 2B and 4B models. Existing mission settings and worker allocations are
+preserved. See the [OS release notes](release/notes/v0.8.13.md) for validation.
+
+Fresh-install media keeps the embedded versions listed above. After setup,
+use Settings to update an existing installation to the current OS release.
 
 Version 0.8.10 supplies managed Local AI runtime 0.1.3 and safely upgrades
 existing public Local AI installations in place. Downloaded models, model
@@ -76,9 +93,9 @@ paid access at its next online licence check or when its existing offline
 access expires; an offline PC cannot be disabled instantly. Treat the proof as
 a secret and keep it safe. See the [licence restore guide](docs/LICENCE_RESTORE.md).
 
-The OS update installs the separately signed 5tratMux 0.9.54 runtime
-(0.9.54-dev on DEV) through the existing updater and retains the 0.8.8 handoff
-fix.
+The earlier 0.8.10 OS update installed the separately signed 5tratMux 0.9.54
+runtime (0.9.54-dev on DEV) through the existing updater and retained the
+0.8.8 handoff fix.
 
 Version 0.8.7 refreshes the UEFI, BIOS and Raspberry Pi installation media and
 the Linux/Pi helpers. Fresh installs retain the embedded version and update
