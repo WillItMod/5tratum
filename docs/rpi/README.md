@@ -94,19 +94,73 @@ Use the checksum guide:
 
 ## Raspberry Pi 5: external NVMe not detected
 
-If you're running 5tratumOS on a Raspberry Pi 5 (OS on microSD) and want to use an NVMe as an external drive for apps/core downloads:
+For an NVMe connected through the Pi 5 PCIe connector, a HAT+ device should be
+detected automatically. A non-HAT+ adapter may need the connector enabled:
 
-- **Issue:** the Pi/OS did not recognize the external NVMe
-- **Solution:**
-  1) In 5tratumOS: go to Settings and enable SSH and set your SSH password.
-  2) SSH into your Pi (username: `admin`).
-  3) Follow the "Mount a storage device" section from the official Raspberry Pi documentation:
-     - https://www.raspberrypi.com/documentation/computers/configuration.html#automatically-mount-a-storage-device
-  4) Enable the external PCIe port:
-     - `sudo nano /boot/firmware/config.txt`
-     - Add these two lines:
-       - `dtparam=pciex1`
-       - `dtparam=pciex1_gen=3`
-  5) Restart/reboot the Pi. If all goes well you should see the NVMe listed in Settings -> Storage & Drives.
+1. Enable SSH in 5tratumOS Settings and connect using your configured SSH account.
+2. Edit `/boot/firmware/config.txt` with `sudo nano /boot/firmware/config.txt`.
+3. Add `dtparam=pciex1` if it is not already enabled, then save and reboot.
+
+Keep the default PCIe Gen 2 speed while setting up or troubleshooting storage.
+`dtparam=pciex1_gen=3` is **not required** to detect or use an NVMe. Raspberry Pi
+states that the Pi 5 is not certified for Gen 3 and that the connection may be
+unstable. If that line was added while following an older version of this guide,
+remove or comment it out and reboot to return to the default speed.
+See the official [PCIe enablement and speed documentation](https://www.raspberrypi.com/documentation/computers/raspberry-pi.html#enable-pcie).
+
+These PCIe settings do not apply to an SSD connected by USB. Using an SSD for app
+data also does not require changing the Pi's boot device.
+
+## Make the drive available for app data
+
+A detected disk still needs a mounted filesystem. Check the device, filesystem
+and mount location with this read-only command:
+
+```sh
+lsblk -o NAME,SIZE,FSTYPE,UUID,MOUNTPOINTS
+```
+
+For an existing filesystem, follow Raspberry Pi's
+[automatic mounting guide](https://www.raspberrypi.com/documentation/computers/configuration.html#automatically-mount-a-storage-device),
+then register its actual mountpoint in **Settings -> Storage & Drives** and save.
+Select the mounted drive root, for example `/mnt/ssd`, rather than an application
+subdirectory such as `/mnt/ssd/5tratumos/apps`. An ordinary directory on the OS
+disk is not an external drive, even if its name contains `ssd` or `data`.
+Do not format a drive containing app or wallet data to resolve a move error.
+
+Choosing a default drive applies to **new installs**. For an existing app, use
+its **Move data...** action and review the source and destination paths. To move
+back to the system drive, select **OS disk (system)**. The move copies the app's
+data; shared container images and the OS app launcher remain on the OS disk.
+
+## Check a move and its retained backup
+
+The normal app data entry is `/var/lib/5tratumos/apps/<app-id>`. When stored on an
+external drive, that entry is a symbolic link to
+`<mountpoint>/5tratumos/apps/<app-id>`. A move back to the OS disk replaces the
+link with a local data directory. A custom filesystem mounted beneath the OS
+data path needs separate review, because the pathname alone does not identify
+which physical drive holds the data.
+
+The original data is retained for recovery after a move. Existing destination
+data also requires explicit review and confirmation before replacement and is
+retained as a backup. As a result, the source drive's used space may stay the
+same after a successful move. Check the move status, the active data path and
+the app itself before using **Storage -> Scan unused data** to review backups.
+
+For diagnosis, replace `APP_ID` with the installed app's ID:
+
+```sh
+readlink -f /var/lib/5tratumos/apps/APP_ID
+findmnt --target /var/lib/5tratumos/apps/APP_ID
+findmnt --target /
+```
+
+Compare the resolved path and filesystem source with the chosen destination.
+These commands inspect the filesystem mapping; they do not prove that every
+running app container uses it. If a move fails, or the app still appears to use
+the old drive, keep the exact error, source path, destination path and mount
+details for diagnosis. Leave the retained copies in place until the active app
+data has been verified.
 
 Credit: Eric Jim
